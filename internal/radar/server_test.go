@@ -14,15 +14,30 @@ import (
 
 func testServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	tempDir := t.TempDir()
+	return testServerWithPaths(t, filepath.Join(tempDir, "config.json"), filepath.Join(tempDir, "history.db"))
+}
+
+func testServerWithPaths(t *testing.T, configPath string, dbPath string) *httptest.Server {
+	t.Helper()
+	cfg := DefaultConfig()
+	cfg.DatabasePath = dbPath
+	if appErr := NewConfigManager(configPath).Save(cfg); appErr != nil {
+		t.Fatalf("save test config: %v", appErr)
+	}
 	server := NewServer(ServerOptions{
 		FrontendDir: filepath.Join("..", "..", "frontend"),
 		Store:       NewSessionStore(t.TempDir()),
-		Config:      NewConfigManager(filepath.Join(t.TempDir(), "config.json")),
+		Config:      NewConfigManager(configPath),
 	})
 	return httptest.NewServer(server.Routes())
 }
 
 func uploadFixture(t *testing.T, baseURL string, fileName string) (map[string]any, int) {
+	return uploadFixtureWithWhitelist(t, baseURL, fileName, []string{"76561190000000001", "76561190000000002", "76561190000000003"})
+}
+
+func uploadFixtureWithWhitelist(t *testing.T, baseURL string, fileName string, whitelist []string) (map[string]any, int) {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -30,13 +45,26 @@ func uploadFixture(t *testing.T, baseURL string, fileName string) (map[string]an
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := os.Open(fixturePath(t))
+	sourcePath := fixturePath(t)
+	if candidate := fixtureNamedPath(t, fileName); fileExists(candidate) {
+		sourcePath = candidate
+	}
+	file, err := os.Open(sourcePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer file.Close()
 	if _, err := io.Copy(part, file); err != nil {
 		t.Fatal(err)
+	}
+	if whitelist != nil {
+		data, err := json.Marshal(whitelist)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.WriteField("whitelist_steam_ids", string(data)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
@@ -53,11 +81,16 @@ func uploadFixture(t *testing.T, baseURL string, fileName string) (map[string]an
 	return payload, resp.StatusCode
 }
 
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func TestAPIUploadRadarAndErrors(t *testing.T) {
 	ts := testServer(t)
 	defer ts.Close()
 
-	upload, status := uploadFixture(t, ts.URL, "sample.dem")
+	upload, status := uploadFixture(t, ts.URL, "history.dem")
 	if status != http.StatusOK {
 		t.Fatalf("upload status %d: %+v", status, upload)
 	}
@@ -101,6 +134,248 @@ func TestAPIUploadRadarAndErrors(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != httpStatusNotFound {
 		t.Fatalf("expected not found, got %d", resp.StatusCode)
+	}
+}
+
+func TestAPIUploadMissingMatchTimeSavesByFileFingerprint(t *testing.T) {
+	ts := testServer(t)
+	defer ts.Close()
+
+	upload, status := uploadFixture(t, ts.URL, "no-match-time.dem")
+	if status != http.StatusOK {
+		t.Fatalf("expected no-match-time save status, got %d: %+v", status, upload)
+	}
+	if upload["save_status"] != string(DemoSaveStatusSaved) || upload["status"] != "parsed" {
+		t.Fatalf("bad no-match-time save payload: %+v", upload)
+	}
+	duplicate, status := uploadFixture(t, ts.URL, "no-match-time.dem")
+	if status != http.StatusOK || duplicate["save_status"] != string(DemoSaveStatusDuplicate) {
+		t.Fatalf("expected no-match-time duplicate by file fingerprint, got %d: %+v", status, duplicate)
+	}
+}
+
+func TestAPIUploadWithoutWhitelistDoesNotSaveHistory(t *testing.T) {
+	ts := testServer(t)
+	defer ts.Close()
+
+	upload, status := uploadFixtureWithWhitelist(t, ts.URL, "history.dem", []string{})
+	if status != http.StatusOK {
+		t.Fatalf("upload status %d: %+v", status, upload)
+	}
+	if upload["save_status"] != string(DemoSaveStatusNotSaved) {
+		t.Fatalf("expected not_saved without whitelist, got %+v", upload)
+	}
+	resp, err := http.Get(ts.URL + "/api/players")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var playersPayload map[string][]SavedPlayer
+	if err := json.NewDecoder(resp.Body).Decode(&playersPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(playersPayload["players"]) != 0 {
+		t.Fatalf("expected no saved players without whitelist: %+v", playersPayload)
+	}
+}
+
+func TestAPIHistoryDuplicateRestartPlayersAggregateAndConfigSwitch(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	dbPath := filepath.Join(tempDir, "history.db")
+	ts := testServerWithPaths(t, configPath, dbPath)
+
+	upload, status := uploadFixture(t, ts.URL, "history.dem")
+	if status != http.StatusOK || upload["save_status"] != string(DemoSaveStatusSaved) {
+		t.Fatalf("expected saved upload, status %d payload %+v", status, upload)
+	}
+	duplicate, status := uploadFixture(t, ts.URL, "history.dem")
+	if status != http.StatusOK || duplicate["save_status"] != string(DemoSaveStatusDuplicate) {
+		t.Fatalf("expected duplicate upload, status %d payload %+v", status, duplicate)
+	}
+
+	resp, err := http.Get(ts.URL + "/api/players")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var playersPayload map[string][]SavedPlayer
+	if err := json.NewDecoder(resp.Body).Decode(&playersPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(playersPayload["players"]) != 3 {
+		t.Fatalf("bad players payload: %+v", playersPayload)
+	}
+	steamID := "76561190000000001"
+	resp, err = http.Get(ts.URL + "/api/players/" + steamID + "/matches")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var matchesPayload struct {
+		Player  SavedPlayer         `json:"player"`
+		Matches []PlayerMatchRecord `json:"matches"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&matchesPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if matchesPayload.Player.SteamID != steamID || len(matchesPayload.Matches) != 1 {
+		t.Fatalf("bad matches payload: %+v", matchesPayload)
+	}
+	radarReq := bytes.NewBufferString(`{"demo_record_ids":["` + matchesPayload.Matches[0].DemoRecordID + `"]}`)
+	resp, err = http.Post(ts.URL+"/api/players/"+steamID+"/radar", "application/json", radarReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var aggregate AggregateRadarResponse
+	if err := json.NewDecoder(resp.Body).Decode(&aggregate); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if aggregate.MatchCount != 1 || aggregate.Radar.Dimensions[0] != "KPR" {
+		t.Fatalf("bad aggregate response: %+v", aggregate)
+	}
+	ts.Close()
+
+	restarted := testServerWithPaths(t, configPath, dbPath)
+	defer restarted.Close()
+	resp, err = http.Get(restarted.URL + "/api/players")
+	if err != nil {
+		t.Fatal(err)
+	}
+	playersPayload = map[string][]SavedPlayer{}
+	if err := json.NewDecoder(resp.Body).Decode(&playersPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(playersPayload["players"]) != 3 {
+		t.Fatalf("expected persisted players after restart: %+v", playersPayload)
+	}
+
+	newDBPath := filepath.Join(tempDir, "new-history.db")
+	saveBody := bytes.NewBufferString(`{"export_width":1920,"export_height":1080,"theme_color":"#00ffff","color_preset":"default","last_player_identifier_type":"name","database_path":"` + filepath.ToSlash(newDBPath) + `"}`)
+	req, _ := http.NewRequest(http.MethodPut, restarted.URL+"/api/config", saveBody)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected config switch success, got %d", resp.StatusCode)
+	}
+	resp, err = http.Get(restarted.URL + "/api/players")
+	if err != nil {
+		t.Fatal(err)
+	}
+	playersPayload = map[string][]SavedPlayer{}
+	if err := json.NewDecoder(resp.Body).Decode(&playersPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(playersPayload["players"]) != 0 {
+		t.Fatalf("expected new empty database after switch: %+v", playersPayload)
+	}
+
+	badBody := bytes.NewBufferString(`{"export_width":1920,"export_height":1080,"theme_color":"#00ffff","color_preset":"default","last_player_identifier_type":"name","database_path":"` + filepath.ToSlash(tempDir) + `"}`)
+	req, _ = http.NewRequest(http.MethodPut, restarted.URL+"/api/config", badBody)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusBadRequest {
+		t.Fatalf("expected invalid config path failure, got %d", resp.StatusCode)
+	}
+	resp, err = http.Get(restarted.URL + "/api/players")
+	if err != nil {
+		t.Fatal(err)
+	}
+	playersPayload = map[string][]SavedPlayer{}
+	if err := json.NewDecoder(resp.Body).Decode(&playersPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(playersPayload["players"]) != 0 {
+		t.Fatalf("invalid switch should keep current new db: %+v", playersPayload)
+	}
+}
+
+func TestAPIDeletePlayerRecord(t *testing.T) {
+	ts := testServer(t)
+	defer ts.Close()
+
+	if upload, status := uploadFixture(t, ts.URL, "history.dem"); status != http.StatusOK || upload["save_status"] != string(DemoSaveStatusSaved) {
+		t.Fatalf("upload status %d payload %+v", status, upload)
+	}
+	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/api/players/76561190000000001", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete status: %d", resp.StatusCode)
+	}
+	resp, err = http.Get(ts.URL + "/api/players")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var playersPayload map[string][]SavedPlayer
+	if err := json.NewDecoder(resp.Body).Decode(&playersPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(playersPayload["players"]) != 2 {
+		t.Fatalf("expected one deleted player: %+v", playersPayload)
+	}
+}
+
+func TestAPIDeletePlayerMatchRecord(t *testing.T) {
+	ts := testServer(t)
+	defer ts.Close()
+
+	if upload, status := uploadFixture(t, ts.URL, "history.dem"); status != http.StatusOK || upload["save_status"] != string(DemoSaveStatusSaved) {
+		t.Fatalf("upload status %d payload %+v", status, upload)
+	}
+	steamID := "76561190000000001"
+	resp, err := http.Get(ts.URL + "/api/players/" + steamID + "/matches")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var matchesPayload struct {
+		Matches []PlayerMatchRecord `json:"matches"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&matchesPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(matchesPayload.Matches) != 1 {
+		t.Fatalf("expected one match: %+v", matchesPayload)
+	}
+	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/api/players/"+steamID+"/matches/"+matchesPayload.Matches[0].DemoRecordID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete match status: %d", resp.StatusCode)
+	}
+	resp, err = http.Get(ts.URL + "/api/players/" + steamID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusNotFound {
+		t.Fatalf("expected player removed after deleting only match, got %d", resp.StatusCode)
 	}
 }
 

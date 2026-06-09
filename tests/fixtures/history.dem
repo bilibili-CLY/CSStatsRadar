@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "match_time": "2026-06-09T08:00:00Z",
+    "map_name": "de_mirage",
+    "server_name": "fixture"
+  },
+  "players": [
+    {"name": "Alpha", "steam_id": "76561190000000001"},
+    {"name": "Bravo", "steam_id": "76561190000000002"},
+    {"name": "Alpha", "steam_id": "76561190000000003"}
+  ],
+  "rounds": [
+    {"round_number": 1},
+    {"round_number": 2},
+    {"round_number": 3},
+    {"round_number": 4}
+  ],
+  "kills": [
+    {"round_number": 1, "attacker_steam_id": "76561190000000001", "victim_steam_id": "76561190000000002"},
+    {"round_number": 2, "attacker_steam_id": "76561190000000002", "victim_steam_id": "76561190000000001", "assister_steam_id": "76561190000000003"},
+    {"round_number": 3, "attacker_steam_id": "76561190000000001", "victim_steam_id": "76561190000000002", "traded_player_steam_id": "76561190000000001"}
+  ],
+  "damages": [
+    {"round_number": 1, "attacker_steam_id": "76561190000000001", "victim_steam_id": "76561190000000002", "damage": 100},
+    {"round_number": 2, "attacker_steam_id": "76561190000000001", "victim_steam_id": "76561190000000002", "damage": 42},
+    {"round_number": 3, "attacker_steam_id": "76561190000000001", "victim_steam_id": "76561190000000002", "damage": 91}
+  ],
+  "survivals": [
+    {"round_number": 1, "steam_id": "76561190000000001", "survived": true},
+    {"round_number": 2, "steam_id": "76561190000000001", "survived": false},
+    {"round_number": 3, "steam_id": "76561190000000001", "survived": true},
+    {"round_number": 4, "steam_id": "76561190000000001", "survived": true},
+    {"round_number": 1, "steam_id": "76561190000000002", "survived": false},
+    {"round_number": 2, "steam_id": "76561190000000002", "survived": true},
+    {"round_number": 3, "steam_id": "76561190000000002", "survived": false},
+    {"round_number": 4, "steam_id": "76561190000000002", "survived": true}
+  ],
+  "trade_data_available": false
+}

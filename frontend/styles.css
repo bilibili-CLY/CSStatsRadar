@@ -13,6 +13,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   height: 100vh;
@@ -42,6 +46,7 @@ select {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid rgba(122, 184, 199, 0.18);
+  gap: 16px;
 }
 
 h1,
@@ -76,6 +81,26 @@ h2 {
   padding: 8px 10px;
   border-radius: 8px;
   box-shadow: 0 0 20px rgba(0, 255, 255, 0.12);
+}
+
+.view-tabs {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tab {
+  width: auto;
+  min-width: 104px;
+  min-height: 36px;
+  padding: 7px 12px;
+  color: var(--muted);
+}
+
+.tab.active {
+  color: #001518;
+  background: var(--accent);
+  border-color: transparent;
 }
 
 .workspace {
@@ -169,9 +194,23 @@ label {
   margin-bottom: 10px;
 }
 
+#colorPreset {
+  margin-bottom: 12px;
+}
+
+#saveConfigBtn {
+  margin-top: 4px;
+}
+
+#exportBtn {
+  margin-top: 8px;
+}
+
 .preview-area {
   position: relative;
-  display: block;
+  display: grid;
+  gap: 14px;
+  align-content: start;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -187,13 +226,102 @@ canvas {
   box-shadow: inset 0 0 45px rgba(0, 255, 255, 0.06), 0 18px 80px rgba(0, 0, 0, 0.36);
 }
 
+.history-area {
+  min-width: 0;
+}
+
+.history-card {
+  border: 1px solid rgba(96, 135, 149, 0.24);
+  border-radius: 8px;
+  background: rgba(11, 17, 25, 0.9);
+  padding: 14px;
+  min-width: 0;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.history-header h2 {
+  margin-bottom: 2px;
+}
+
+.history-header button,
+.detail-actions button,
+.delete-player-btn,
+.delete-match-btn {
+  width: auto;
+}
+
+.delete-player-btn,
+.delete-match-btn {
+  min-height: 32px;
+  padding: 6px 9px;
+  color: #ffd6da;
+  border-color: rgba(255, 95, 109, 0.36);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.records-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 680px;
+}
+
+.records-table th,
+.records-table td {
+  border-bottom: 1px solid rgba(123, 159, 172, 0.16);
+  padding: 9px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.records-table th {
+  color: #d6f9ff;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.records-table tbody tr {
+  cursor: default;
+}
+
+.records-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.match-check {
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+}
+
+.empty-state {
+  border: 1px dashed rgba(123, 159, 172, 0.28);
+  border-radius: 8px;
+  padding: 18px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.025);
+}
+
 .candidate-list,
 .metric-list {
   display: grid;
   gap: 8px;
 }
 
-.candidate,
+.candidate-row,
 .metric-row {
   border: 1px solid rgba(123, 159, 172, 0.2);
   border-radius: 8px;
@@ -201,14 +329,24 @@ canvas {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.candidate-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
 .candidate {
   text-align: left;
   display: grid;
   gap: 3px;
   color: var(--text);
+  border: 0;
+  background: transparent;
+  min-width: 0;
 }
 
-.candidate.selected {
+.candidate-row.selected {
   border-color: color-mix(in srgb, var(--accent), #ffffff 18%);
   background: color-mix(in srgb, var(--accent), transparent 84%);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent), transparent 55%), 0 0 18px color-mix(in srgb, var(--accent), transparent 80%);
@@ -221,6 +359,14 @@ canvas {
 .candidate span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.whitelist-btn {
+  width: 86px;
+  min-height: 100%;
+  padding: 7px 8px;
+  font-size: 12px;
+  color: var(--accent);
 }
 
 .metric-row {
@@ -289,6 +435,24 @@ canvas {
   .workspace {
     grid-template-columns: 1fr;
     overflow: visible;
+  }
+
+  .topbar {
+    height: auto;
+    min-height: 72px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding-bottom: 12px;
+  }
+
+  .view-tabs {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .tab {
+    flex: 1;
   }
 
   .control-rail,

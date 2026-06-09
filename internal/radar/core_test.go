@@ -11,6 +11,11 @@ func fixturePath(t *testing.T) string {
 	return filepath.Join("..", "..", "tests", "fixtures", "sample.dem")
 }
 
+func fixtureNamedPath(t *testing.T, name string) string {
+	t.Helper()
+	return filepath.Join("..", "..", "tests", "fixtures", name)
+}
+
 func TestUploadParserResolverStatsAndRadar(t *testing.T) {
 	store := NewSessionStore(t.TempDir())
 	file, err := os.Open(fixturePath(t))
@@ -79,6 +84,33 @@ func TestUploadParserResolverStatsAndRadar(t *testing.T) {
 	}
 	if radar.Radar.Note != RadarNote {
 		t.Fatalf("missing note: %s", radar.Radar.Note)
+	}
+}
+
+func TestJSONFixtureMetaParsing(t *testing.T) {
+	data, appErr := JSONFixtureParser{}.Parse(fixtureNamedPath(t, "history.dem"))
+	if appErr != nil {
+		t.Fatalf("parse history fixture: %v", appErr)
+	}
+	if data.Meta.MatchTime == nil || data.Meta.MatchTime.Format("2006-01-02T15:04:05Z07:00") != "2026-06-09T08:00:00Z" {
+		t.Fatalf("bad match time: %+v", data.Meta.MatchTime)
+	}
+	if data.Meta.MapName != "de_mirage" || data.Meta.ServerName != "fixture" {
+		t.Fatalf("bad meta: %+v", data.Meta)
+	}
+	missing, appErr := JSONFixtureParser{}.Parse(fixtureNamedPath(t, "no-match-time.dem"))
+	if appErr != nil {
+		t.Fatalf("parse no match time fixture: %v", appErr)
+	}
+	if missing.Meta.MatchTime != nil || missing.Meta.MapName != "de_mirage" {
+		t.Fatalf("expected missing match time only: %+v", missing.Meta)
+	}
+	legacy, appErr := JSONFixtureParser{}.Parse(fixturePath(t))
+	if appErr != nil {
+		t.Fatalf("parse legacy fixture: %v", appErr)
+	}
+	if legacy.Meta.MatchTime != nil || legacy.Meta.MapName != "" {
+		t.Fatalf("legacy fixture should keep empty meta: %+v", legacy.Meta)
 	}
 }
 

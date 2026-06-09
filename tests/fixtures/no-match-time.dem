@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "map_name": "de_mirage",
+    "server_name": "fixture"
+  },
+  "players": [
+    {"name": "Alpha", "steam_id": "76561190000000001"},
+    {"name": "Bravo", "steam_id": "76561190000000002"}
+  ],
+  "rounds": [
+    {"round_number": 1}
+  ],
+  "kills": [],
+  "survivals": [
+    {"round_number": 1, "steam_id": "76561190000000001", "survived": true}
+  ],
+  "trade_data_available": false
+}

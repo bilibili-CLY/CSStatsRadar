@@ -13,12 +13,16 @@
           <h1>CS2 雷达工作台</h1>
           <p>本地 Demo 解析与静态雷达图导出</p>
         </div>
+        <nav class="view-tabs" aria-label="视图切换">
+          <button id="currentDemoTab" class="tab active" type="button">当前 Demo</button>
+          <button id="playerRecordsTab" class="tab" type="button">玩家记录</button>
+        </nav>
         <span class="status-dot">本地 API</span>
       </header>
 
       <main class="workspace">
         <aside class="control-rail" aria-label="控制区">
-          <section class="panel">
+          <section id="demoPanel" class="panel">
             <h2>Demo 文件</h2>
             <label class="file-drop">
               <input id="demoFile" type="file" accept=".dem" />
@@ -28,7 +32,7 @@
             <div id="uploadState" class="muted">等待上传本地 Demo。</div>
           </section>
 
-          <section class="panel">
+          <section id="playerPanel" class="panel">
             <h2>选择玩家</h2>
             <div id="candidates" class="candidate-list"></div>
           </section>
@@ -39,23 +43,33 @@
               <label>宽度<input id="exportWidth" type="number" min="1" value="1920" /></label>
               <label>高度<input id="exportHeight" type="number" min="1" value="1080" /></label>
             </div>
+            <label>雷达标题<input id="radarTitle" type="text" autocomplete="off" /></label>
+            <label>日期副标题<input id="radarSubtitle" type="text" autocomplete="off" /></label>
             <label>主题色<input id="themeColor" type="color" value="#00ffff" /></label>
+            <label>数据库路径<input id="databasePath" type="text" autocomplete="off" /></label>
             <select id="colorPreset" aria-label="颜色预设">
               <option value="default">默认青色</option>
-              <option value="ember">赤焰红</option>
-              <option value="lime">荧光绿</option>
+              <option value="red">红色</option>
+              <option value="orange">橙色</option>
+              <option value="yellow">黄色</option>
+              <option value="green">绿色</option>
+              <option value="blue">蓝色</option>
+              <option value="indigo">靛蓝</option>
+              <option value="violet">紫色</option>
             </select>
+            <button id="saveConfigBtn" type="button">保存配置</button>
             <button id="exportBtn" disabled>导出 PNG</button>
           </section>
         </aside>
 
         <section class="preview-area">
           <canvas id="radarCanvas" width="1280" height="720" aria-label="雷达图预览"></canvas>
+          <div id="historyArea" class="history-area" hidden></div>
           <div id="chartTooltip" class="chart-tooltip" hidden></div>
         </section>
 
         <aside class="metric-rail" aria-label="数据指标">
-          <h2>数据指标</h2>
+          <h2 id="metricTitle">数据指标</h2>
           <div id="metricValues" class="metric-list"></div>
           <div id="errorNotice" class="error" hidden></div>
         </aside>

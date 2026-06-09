@@ -2,15 +2,19 @@ package radar
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
 )
 
 type DemoParser interface {
@@ -35,6 +39,11 @@ func (p JSONFixtureParser) Parse(filePath string) (DemoData, *AppError) {
 		Damages            *[]DamageEvent  `json:"damages"`
 		Survivals          []SurvivalState `json:"survivals"`
 		TradeDataAvailable *bool           `json:"trade_data_available"`
+		Meta               struct {
+			MatchTime  *string `json:"match_time"`
+			MapName    string  `json:"map_name"`
+			ServerName string  `json:"server_name"`
+		} `json:"meta"`
 	}
 	if err := json.Unmarshal(trimmed, &raw); err != nil {
 		return DemoData{}, NewAppError("demo_parse_failed", httpStatusBadRequest, "Demo fixture 结构无效："+err.Error(), nil)
@@ -46,6 +55,19 @@ func (p JSONFixtureParser) Parse(filePath string) (DemoData, *AppError) {
 	if raw.TradeDataAvailable != nil {
 		tradeDataAvailable = *raw.TradeDataAvailable
 	}
+	meta := DemoMeta{
+		MapName:    raw.Meta.MapName,
+		ServerName: raw.Meta.ServerName,
+		FileSHA256: hashBytes(trimmed),
+	}
+	if raw.Meta.MatchTime != nil && *raw.Meta.MatchTime != "" {
+		parsed, err := time.Parse(time.RFC3339, *raw.Meta.MatchTime)
+		if err != nil {
+			return DemoData{}, NewAppError("demo_parse_failed", httpStatusBadRequest, "Demo fixture meta.match_time 无效："+err.Error(), nil)
+		}
+		utc := parsed.UTC()
+		meta.MatchTime = &utc
+	}
 	return DemoData{
 		Players:            raw.Players,
 		Rounds:             raw.Rounds,
@@ -54,6 +76,7 @@ func (p JSONFixtureParser) Parse(filePath string) (DemoData, *AppError) {
 		Survivals:          raw.Survivals,
 		TradeDataAvailable: tradeDataAvailable,
 		Source:             "fixture:" + filepath.Base(filePath),
+		Meta:               meta,
 	}, nil
 }
 
@@ -77,6 +100,12 @@ func (p DemoinfocsParser) Parse(filePath string) (data DemoData, appErr *AppErro
 	defer parser.Close()
 
 	builder := newDemoinfocsDataBuilder(parser)
+	builder.meta.FileSHA256 = hashBytesFromFile(filePath)
+	parser.RegisterNetMessageHandler(func(serverInfo *msg.CSVCMsg_ServerInfo) {
+		if serverInfo.GetMapName() != "" {
+			builder.meta.MapName = serverInfo.GetMapName()
+		}
+	})
 	parser.RegisterEventHandler(func(e events.RoundStart) {
 		if parser.GameState().IsWarmupPeriod() {
 			return
@@ -122,6 +151,7 @@ type demoinfocsDataBuilder struct {
 	kills        []KillEvent
 	damages      []DamageEvent
 	survivals    []SurvivalState
+	meta         DemoMeta
 }
 
 func newDemoinfocsDataBuilder(parser demoinfocs.Parser) *demoinfocsDataBuilder {
@@ -221,6 +251,7 @@ func (b *demoinfocsDataBuilder) data() DemoData {
 		Survivals:          b.survivals,
 		TradeDataAvailable: false,
 		Source:             "demoinfocs",
+		Meta:               b.meta,
 	}
 }
 
@@ -229,4 +260,17 @@ func playerID(player *common.Player) string {
 		return ""
 	}
 	return strconv.FormatUint(player.SteamID64, 10)
+}
+
+func hashBytes(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func hashBytesFromFile(filePath string) string {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return ""
+	}
+	return hashBytes(data)
 }

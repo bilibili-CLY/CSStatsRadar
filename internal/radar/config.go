@@ -17,7 +17,19 @@ func DefaultConfig() AppConfig {
 		ThemeColor:               "#00ffff",
 		ColorPreset:              "default",
 		LastPlayerIdentifierType: IdentifierName,
+		DatabasePath:             DefaultDatabasePath(),
 	}
+}
+
+func DefaultDatabasePath() string {
+	if value := os.Getenv("CS_RADAR_DB_PATH"); value != "" {
+		return value
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".", ".csplayerstatsradar", "player_stats.db")
+	}
+	return filepath.Join(home, ".csplayerstatsradar", "player_stats.db")
 }
 
 func DefaultConfigPath() string {
@@ -62,6 +74,7 @@ func (m *ConfigManager) Read() (AppConfig, *AppError) {
 		"theme_color":                 cfg.ThemeColor,
 		"color_preset":                cfg.ColorPreset,
 		"last_player_identifier_type": cfg.LastPlayerIdentifierType,
+		"database_path":               cfg.DatabasePath,
 	}
 	for key, value := range raw {
 		if _, ok := merged[key]; ok {
@@ -114,6 +127,9 @@ func ValidateConfigMap(raw map[string]any, errorCode string) (AppConfig, *AppErr
 	if value, ok := raw["last_player_identifier_type"].(string); ok {
 		cfg.LastPlayerIdentifierType = IdentifierType(value)
 	}
+	if value, ok := raw["database_path"].(string); ok {
+		cfg.DatabasePath = value
+	}
 	return cfg, ValidateConfig(cfg, errorCode)
 }
 
@@ -126,6 +142,12 @@ func ValidateConfig(cfg AppConfig, errorCode string) *AppError {
 	}
 	if cfg.LastPlayerIdentifierType != IdentifierName && cfg.LastPlayerIdentifierType != IdentifierSteamID {
 		return NewAppError(errorCode, httpStatusBadRequest, "玩家标识类型必须是 name 或 steam_id。", nil)
+	}
+	if cfg.DatabasePath == "" {
+		return NewAppError(errorCode, httpStatusBadRequest, "数据库路径不能为空。", nil)
+	}
+	if info, err := os.Stat(cfg.DatabasePath); err == nil && info.IsDir() {
+		return NewAppError(errorCode, httpStatusBadRequest, "数据库路径不能是目录。", nil)
 	}
 	return nil
 }
