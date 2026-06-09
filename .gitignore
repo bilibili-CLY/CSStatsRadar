@@ -1,0 +1,43 @@
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Local environment and tool caches
+.env
+.env.*
+.venv/
+.tools/
+
+# Local planning/task documents
+Doc/
+
+# Python leftovers from earlier prototypes
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Go build/test outputs
+bin/
+dist/
+build/
+*.test
+*.prof
+*.cover
+coverage/
+
+# Frontend/package-manager outputs if the static UI later gets tooling
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local runtime data
+tmp/
+temp/
+uploads/
+*.log

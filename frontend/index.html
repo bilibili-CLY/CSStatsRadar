@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CS2 雷达工作台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>CS2 雷达工作台</h1>
+          <p>本地 Demo 解析与静态雷达图导出</p>
+        </div>
+        <span class="status-dot">本地 API</span>
+      </header>
+
+      <main class="workspace">
+        <aside class="control-rail" aria-label="控制区">
+          <section class="panel">
+            <h2>Demo 文件</h2>
+            <label class="file-drop">
+              <input id="demoFile" type="file" accept=".dem" />
+              <span id="fileName">选择已解压的 .dem 文件</span>
+            </label>
+            <button id="uploadBtn" class="primary">上传并解析</button>
+            <div id="uploadState" class="muted">等待上传本地 Demo。</div>
+          </section>
+
+          <section class="panel">
+            <h2>选择玩家</h2>
+            <div id="candidates" class="candidate-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2>导出设置</h2>
+            <div class="grid2">
+              <label>宽度<input id="exportWidth" type="number" min="1" value="1920" /></label>
+              <label>高度<input id="exportHeight" type="number" min="1" value="1080" /></label>
+            </div>
+            <label>主题色<input id="themeColor" type="color" value="#00ffff" /></label>
+            <select id="colorPreset" aria-label="颜色预设">
+              <option value="default">默认青色</option>
+              <option value="ember">赤焰红</option>
+              <option value="lime">荧光绿</option>
+            </select>
+            <button id="exportBtn" disabled>导出 PNG</button>
+          </section>
+        </aside>
+
+        <section class="preview-area">
+          <canvas id="radarCanvas" width="1280" height="720" aria-label="雷达图预览"></canvas>
+          <div id="chartTooltip" class="chart-tooltip" hidden></div>
+        </section>
+
+        <aside class="metric-rail" aria-label="数据指标">
+          <h2>数据指标</h2>
+          <div id="metricValues" class="metric-list"></div>
+          <div id="errorNotice" class="error" hidden></div>
+        </aside>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>
