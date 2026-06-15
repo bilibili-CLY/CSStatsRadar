@@ -33,6 +33,8 @@ var ErrorMessages = map[string]string{
 	"match_record_not_found":      "未找到比赛记录。",
 	"aggregate_radar_unavailable": "所选比赛无法生成综合雷达。",
 	"invalid_aggregate_request":   "综合雷达请求无效。",
+	"invalid_player_image":        "玩家图片请求无效。",
+	"player_image_save_failed":    "玩家图片保存失败。",
 }
 
 func NewAppError(code string, status int, message string, extra map[string]any) *AppError {

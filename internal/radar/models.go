@@ -68,6 +68,51 @@ type DemoSession struct {
 	Data       *DemoData `json:"-"`
 }
 
+type NormalizedPoint struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+type ShowcaseLayout struct {
+	RadarPosition NormalizedPoint `json:"radar_position"`
+	NamePosition  NormalizedPoint `json:"name_position"`
+	ImagePosition NormalizedPoint `json:"image_position"`
+}
+
+type ShowcaseConfig struct {
+	DefaultDurationMS int            `json:"default_duration_ms"`
+	Layout            ShowcaseLayout `json:"layout"`
+	MusicPath         string         `json:"music_path,omitempty"`
+}
+
+type PlayerImageSourceType string
+
+const (
+	PlayerImageSourceUpload      PlayerImageSourceType = "upload"
+	PlayerImageSourceExternalURL PlayerImageSourceType = "external_url"
+)
+
+type PlayerImage struct {
+	SteamID         string                `json:"steam_id"`
+	ImageSourceType PlayerImageSourceType `json:"image_source_type"`
+	ImagePath       string                `json:"image_path,omitempty"`
+	ImageURL        string                `json:"image_url,omitempty"`
+	PublicURL       string                `json:"public_url,omitempty"`
+	UpdatedAt       time.Time             `json:"updated_at"`
+}
+
+type PlayerMVPBackground struct {
+	SteamID   string    `json:"steam_id"`
+	ImagePath string    `json:"image_path,omitempty"`
+	PublicURL string    `json:"public_url,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type ShowcaseMusic struct {
+	MusicPath string `json:"music_path,omitempty"`
+	PublicURL string `json:"public_url,omitempty"`
+}
+
 type AppConfig struct {
 	ExportWidth              int            `json:"export_width"`
 	ExportHeight             int            `json:"export_height"`
@@ -75,6 +120,7 @@ type AppConfig struct {
 	ColorPreset              string         `json:"color_preset"`
 	LastPlayerIdentifierType IdentifierType `json:"last_player_identifier_type"`
 	DatabasePath             string         `json:"database_path"`
+	Showcase                 ShowcaseConfig `json:"showcase"`
 	Warning                  string         `json:"warning,omitempty"`
 }
 

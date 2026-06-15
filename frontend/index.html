@@ -16,6 +16,7 @@
         <nav class="view-tabs" aria-label="视图切换">
           <button id="currentDemoTab" class="tab active" type="button">当前 Demo</button>
           <button id="playerRecordsTab" class="tab" type="button">玩家记录</button>
+          <button id="showcaseTab" class="tab" type="button">展示轮播</button>
         </nav>
         <span class="status-dot">本地 API</span>
       </header>
@@ -37,7 +38,51 @@
             <div id="candidates" class="candidate-list"></div>
           </section>
 
-          <section class="panel">
+          <section id="showcasePanel" class="panel" hidden>
+            <h2>展示轮播</h2>
+            <div id="showcaseQueueList" class="showcase-player-list"></div>
+            <div class="showcase-toolbar">
+              <button id="toggleShowcaseBtn" type="button" disabled>播放</button>
+              <button id="prevShowcaseBtn" type="button" disabled>上一位</button>
+              <button id="nextShowcaseBtn" type="button" disabled>下一位</button>
+              <button id="fullscreenShowcaseBtn" type="button" disabled>全屏</button>
+              <button id="resetShowcaseLayoutBtn" type="button">重置布局</button>
+            </div>
+          </section>
+
+          <section id="showcaseImagePanel" class="panel" hidden>
+            <h2>展示资源</h2>
+            <div id="showcaseImagePlayer" class="muted">选择一个玩家后配置图片。</div>
+            <label>显示时长（秒）<input id="showcaseDurationSeconds" type="number" min="0.5" step="0.5" value="4" /></label>
+            <label class="resource-upload">
+              上传图片
+              <span class="resource-upload-control">
+                <input id="showcaseImageFile" type="file" accept="image/*" />
+                <span id="showcaseImageFileName">未选择文件</span>
+              </span>
+            </label>
+            <label>外部图片 URL<input id="showcaseImageUrl" type="url" autocomplete="off" /></label>
+            <button id="saveShowcaseImageUrlBtn" type="button">保存外部图片</button>
+            <button id="clearShowcaseImageBtn" type="button">清空图片</button>
+            <label class="resource-upload">
+              MVP 背景图
+              <span class="resource-upload-control">
+                <input id="showcaseMvpBackgroundFile" type="file" accept="image/*" />
+                <span id="showcaseMvpBackgroundFileName">未选择文件</span>
+              </span>
+            </label>
+            <button id="clearShowcaseMvpBackgroundBtn" type="button">清空 MVP 背景</button>
+            <label class="resource-upload">
+              全局背景音乐
+              <span class="resource-upload-control">
+                <input id="showcaseMusicFile" type="file" accept="audio/*" />
+                <span id="showcaseMusicFileName">未选择文件</span>
+              </span>
+            </label>
+            <button id="clearShowcaseMusicBtn" type="button">清空背景音乐</button>
+          </section>
+
+          <section id="exportSettingsPanel" class="panel">
             <h2>导出设置</h2>
             <div class="grid2">
               <label>宽度<input id="exportWidth" type="number" min="1" value="1920" /></label>
@@ -65,6 +110,12 @@
         <section class="preview-area">
           <canvas id="radarCanvas" width="1280" height="720" aria-label="雷达图预览"></canvas>
           <div id="historyArea" class="history-area" hidden></div>
+          <div id="showcaseArea" class="showcase-area" hidden>
+            <canvas id="showcaseCanvas" class="showcase-canvas" width="1280" height="720" aria-label="展示轮播预览"></canvas>
+            <div id="showcaseTimeline" class="showcase-timeline">
+              <div id="showcaseTimelineBar" class="showcase-timeline-bar"></div>
+            </div>
+          </div>
           <div id="chartTooltip" class="chart-tooltip" hidden></div>
         </section>
 
@@ -75,6 +126,6 @@
         </aside>
       </main>
     </div>
-    <script src="/app.js"></script>
+    <script src="/app.js?v=20260616-particle-fps"></script>
   </body>
 </html>

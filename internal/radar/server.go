@@ -8,24 +8,30 @@ import (
 )
 
 type ServerOptions struct {
-	FrontendDir string
-	StaticFS    fs.FS
-	Store       *SessionStore
-	Parser      DemoParser
-	Config      *ConfigManager
-	History     *HistoryService
+	FrontendDir            string
+	StaticFS               fs.FS
+	Store                  *SessionStore
+	Parser                 DemoParser
+	Config                 *ConfigManager
+	History                *HistoryService
+	PlayerImageDir         string
+	PlayerMVPBackgroundDir string
+	ShowcaseMusicDir       string
 }
 
 type Server struct {
-	frontendDir string
-	staticFS    fs.FS
-	store       *SessionStore
-	parser      DemoParser
-	config      *ConfigManager
-	history     *HistoryService
-	resolver    PlayerResolver
-	stats       PlayerStatsCalculator
-	assembler   RadarAssembler
+	frontendDir            string
+	staticFS               fs.FS
+	store                  *SessionStore
+	parser                 DemoParser
+	config                 *ConfigManager
+	history                *HistoryService
+	playerImageDir         string
+	playerMVPBackgroundDir string
+	showcaseMusicDir       string
+	resolver               PlayerResolver
+	stats                  PlayerStatsCalculator
+	assembler              RadarAssembler
 }
 
 func NewServer(options ServerOptions) *Server {
@@ -55,16 +61,31 @@ func NewServer(options ServerOptions) *Server {
 			history = NewManagedHistoryService(NewHistoryStoreManager(nil))
 		}
 	}
+	playerImageDir := options.PlayerImageDir
+	if playerImageDir == "" {
+		playerImageDir = DefaultPlayerImageDir()
+	}
+	playerMVPBackgroundDir := options.PlayerMVPBackgroundDir
+	if playerMVPBackgroundDir == "" {
+		playerMVPBackgroundDir = DefaultPlayerMVPBackgroundDir()
+	}
+	showcaseMusicDir := options.ShowcaseMusicDir
+	if showcaseMusicDir == "" {
+		showcaseMusicDir = DefaultShowcaseMusicDir()
+	}
 	return &Server{
-		frontendDir: frontendDir,
-		staticFS:    options.StaticFS,
-		store:       store,
-		parser:      parser,
-		config:      config,
-		history:     history,
-		resolver:    PlayerResolver{},
-		stats:       PlayerStatsCalculator{},
-		assembler:   RadarAssembler{},
+		frontendDir:            frontendDir,
+		staticFS:               options.StaticFS,
+		store:                  store,
+		parser:                 parser,
+		config:                 config,
+		history:                history,
+		playerImageDir:         playerImageDir,
+		playerMVPBackgroundDir: playerMVPBackgroundDir,
+		showcaseMusicDir:       showcaseMusicDir,
+		resolver:               PlayerResolver{},
+		stats:                  PlayerStatsCalculator{},
+		assembler:              RadarAssembler{},
 	}
 }
 
@@ -75,6 +96,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/players", s.handlePlayers)
 	mux.HandleFunc("/api/players/", s.handlePlayerSubroutes)
+	mux.HandleFunc("/api/player-images/", s.handlePlayerImageAsset)
+	mux.HandleFunc("/api/player-mvp-backgrounds/", s.handlePlayerMVPBackgroundAsset)
+	mux.HandleFunc("/api/showcase/music", s.handleShowcaseMusic)
+	mux.HandleFunc("/api/showcase-music/", s.handleShowcaseMusicAsset)
 	if s.staticFS != nil {
 		mux.Handle("/", http.FileServer(http.FS(s.staticFS)))
 	} else {
@@ -290,6 +315,11 @@ func (s *Server) handlePlayerSubroutes(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/players/")
 	parts := strings.Split(path, "/")
+	if len(parts) == 2 && parts[0] != "" && (parts[1] == "image" || parts[1] == "image-url" || parts[1] == "image-upload" || parts[1] == "mvp-background") {
+		if s.handlePlayerImageConfig(w, r, parts[0], parts[1]) {
+			return
+		}
+	}
 	if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodGet {
 		player, appErr := s.history.GetPlayer(parts[0])
 		if appErr != nil {

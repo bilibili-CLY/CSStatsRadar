@@ -206,6 +206,247 @@ label {
   margin-top: 8px;
 }
 
+.showcase-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.showcase-player-list,
+.showcase-queue-list {
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.showcase-player-row {
+  border: 1px solid rgba(123, 159, 172, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 9px;
+}
+
+.showcase-player-row[draggable="true"] {
+  cursor: grab;
+}
+
+.showcase-player-row.dragging {
+  opacity: 0.55;
+  border-color: color-mix(in srgb, var(--accent), #ffffff 22%);
+}
+
+.showcase-player-row.selected {
+  border-color: color-mix(in srgb, var(--accent), #ffffff 12%);
+  background: color-mix(in srgb, var(--accent), transparent 88%);
+}
+
+.showcase-player-row.active-image-player {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent), transparent 48%);
+}
+
+.showcase-player-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.showcase-check,
+.showcase-match-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  margin: 0;
+  color: var(--text);
+}
+
+.showcase-check input,
+.showcase-match-row input {
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+}
+
+.showcase-check span,
+.showcase-match-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.showcase-title-edit,
+.showcase-subtitle-edit {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.showcase-title-edit {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  line-height: 1.28;
+}
+
+.showcase-subtitle-edit {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.showcase-subtitle-edit.placeholder {
+  color: rgba(136, 160, 173, 0.62);
+}
+
+.showcase-title-edit:hover,
+.showcase-subtitle-edit:hover {
+  color: var(--accent);
+}
+
+.showcase-text-input {
+  width: 100%;
+  min-height: 0;
+  border-radius: 4px;
+  padding: 2px 4px;
+  background: rgba(0, 255, 255, 0.08);
+  border-color: color-mix(in srgb, var(--accent), transparent 35%);
+}
+
+.showcase-text-input.title {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.28;
+}
+
+.showcase-text-input.subtitle {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.showcase-check small,
+.showcase-match-row small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.showcase-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin-left: 26px;
+}
+
+.showcase-row-actions button {
+  width: auto;
+  min-height: 32px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.resource-upload {
+  cursor: pointer;
+}
+
+.resource-upload-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(123, 159, 172, 0.28);
+  background: #080e15;
+  color: var(--text);
+  padding: 9px 10px 9px 98px;
+  overflow: hidden;
+}
+
+.resource-upload-control::before {
+  content: "选择文件";
+  position: absolute;
+  left: 8px;
+  top: 7px;
+  min-width: 76px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent), #ffffff 8%);
+  color: #001518;
+  font-weight: 700;
+  line-height: 26px;
+  text-align: center;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent), transparent 82%);
+}
+
+.resource-upload-control input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.resource-upload-control span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.resource-upload:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+.resource-upload:has(input:disabled) .resource-upload-control {
+  border-color: rgba(123, 159, 172, 0.12);
+}
+
+.resource-upload:has(input:disabled) .resource-upload-control::before,
+.resource-upload:has(input:disabled) .resource-upload-control span {
+  color: #52616b;
+}
+
+.showcase-match-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(123, 159, 172, 0.14);
+}
+
+.showcase-match-row {
+  border: 1px solid rgba(123, 159, 172, 0.14);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+#showcaseImagePlayer {
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
+#showcaseImagePanel .grid2 {
+  align-items: end;
+}
+
+#showcaseImagePanel button {
+  margin-bottom: 10px;
+}
+
 .preview-area {
   position: relative;
   display: grid;
@@ -214,6 +455,73 @@ label {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+}
+
+.showcase-area {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  outline: none;
+}
+
+.showcase-canvas {
+  cursor: default;
+  border-color: rgba(0, 255, 255, 0.28);
+  box-shadow: inset 0 0 70px rgba(0, 255, 255, 0.08), 0 22px 90px rgba(0, 0, 0, 0.48);
+}
+
+.showcase-dragging .showcase-canvas {
+  cursor: grabbing;
+}
+
+.showcase-timeline {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(123, 159, 172, 0.18);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.showcase-timeline-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #ffffff);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent), transparent 40%);
+}
+
+.showcase-area:fullscreen,
+.showcase-area.showcase-fullscreen-fallback {
+  width: 100vw;
+  height: 100vh;
+  padding: 0;
+  background: #020407;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 18px;
+  gap: 0;
+}
+
+.showcase-area.showcase-fullscreen-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.showcase-area:fullscreen .showcase-canvas,
+.showcase-area.showcase-fullscreen-fallback .showcase-canvas {
+  width: 100vw !important;
+  height: auto !important;
+  max-height: calc(100vh - 18px);
+  border: 0;
+  border-radius: 0;
+}
+
+.showcase-area:fullscreen .showcase-timeline,
+.showcase-area.showcase-fullscreen-fallback .showcase-timeline {
+  margin: 4px 18px;
 }
 
 canvas {

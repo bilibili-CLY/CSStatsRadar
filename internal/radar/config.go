@@ -18,6 +18,14 @@ func DefaultConfig() AppConfig {
 		ColorPreset:              "default",
 		LastPlayerIdentifierType: IdentifierName,
 		DatabasePath:             DefaultDatabasePath(),
+		Showcase: ShowcaseConfig{
+			DefaultDurationMS: 4000,
+			Layout: ShowcaseLayout{
+				RadarPosition: NormalizedPoint{X: 0.36, Y: 0.56},
+				NamePosition:  NormalizedPoint{X: 0.72, Y: 0.22},
+				ImagePosition: NormalizedPoint{X: 0.72, Y: 0.54},
+			},
+		},
 	}
 }
 
@@ -75,6 +83,7 @@ func (m *ConfigManager) Read() (AppConfig, *AppError) {
 		"color_preset":                cfg.ColorPreset,
 		"last_player_identifier_type": cfg.LastPlayerIdentifierType,
 		"database_path":               cfg.DatabasePath,
+		"showcase":                    cfg.Showcase,
 	}
 	for key, value := range raw {
 		if _, ok := merged[key]; ok {
@@ -130,6 +139,7 @@ func ValidateConfigMap(raw map[string]any, errorCode string) (AppConfig, *AppErr
 	if value, ok := raw["database_path"].(string); ok {
 		cfg.DatabasePath = value
 	}
+	cfg.Showcase = parseShowcaseConfig(raw["showcase"], cfg.Showcase)
 	return cfg, ValidateConfig(cfg, errorCode)
 }
 
@@ -149,7 +159,80 @@ func ValidateConfig(cfg AppConfig, errorCode string) *AppError {
 	if info, err := os.Stat(cfg.DatabasePath); err == nil && info.IsDir() {
 		return NewAppError(errorCode, httpStatusBadRequest, "数据库路径不能是目录。", nil)
 	}
+	if cfg.Showcase.DefaultDurationMS <= 0 {
+		return NewAppError(errorCode, httpStatusBadRequest, "展示默认时长必须为正整数。", nil)
+	}
+	if !isNormalizedPoint(cfg.Showcase.Layout.RadarPosition) ||
+		!isNormalizedPoint(cfg.Showcase.Layout.NamePosition) ||
+		!isNormalizedPoint(cfg.Showcase.Layout.ImagePosition) {
+		return NewAppError(errorCode, httpStatusBadRequest, "展示布局坐标必须在 0 到 1 之间。", nil)
+	}
 	return nil
+}
+
+func parseShowcaseConfig(raw any, fallback ShowcaseConfig) ShowcaseConfig {
+	cfg := fallback
+	switch value := raw.(type) {
+	case ShowcaseConfig:
+		return value
+	case map[string]any:
+		if duration, ok := numberToInt(value["default_duration_ms"]); ok {
+			cfg.DefaultDurationMS = duration
+		}
+		if layout, ok := value["layout"].(map[string]any); ok {
+			cfg.Layout.RadarPosition = parseNormalizedPoint(layout["radar_position"], cfg.Layout.RadarPosition)
+			cfg.Layout.NamePosition = parseNormalizedPoint(layout["name_position"], cfg.Layout.NamePosition)
+			cfg.Layout.ImagePosition = parseNormalizedPoint(layout["image_position"], cfg.Layout.ImagePosition)
+		}
+		if musicPath, ok := value["music_path"].(string); ok {
+			cfg.MusicPath = musicPath
+		}
+	}
+	return cfg
+}
+
+func parseNormalizedPoint(raw any, fallback NormalizedPoint) NormalizedPoint {
+	point := fallback
+	if value, ok := raw.(NormalizedPoint); ok {
+		return value
+	}
+	value, ok := raw.(map[string]any)
+	if !ok {
+		return point
+	}
+	if x, ok := numberToFloat(value["x"]); ok {
+		point.X = x
+	}
+	if y, ok := numberToFloat(value["y"]); ok {
+		point.Y = y
+	}
+	return point
+}
+
+func numberToInt(raw any) (int, bool) {
+	switch value := raw.(type) {
+	case int:
+		return value, true
+	case float64:
+		return int(value), true
+	default:
+		return 0, false
+	}
+}
+
+func numberToFloat(raw any) (float64, bool) {
+	switch value := raw.(type) {
+	case int:
+		return float64(value), true
+	case float64:
+		return value, true
+	default:
+		return 0, false
+	}
+}
+
+func isNormalizedPoint(point NormalizedPoint) bool {
+	return point.X >= 0 && point.X <= 1 && point.Y >= 0 && point.Y <= 1
 }
 
 const (

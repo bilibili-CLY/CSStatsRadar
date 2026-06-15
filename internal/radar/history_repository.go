@@ -12,6 +12,12 @@ type HistoryRepository interface {
 	GetPlayer(steamID string) (*SavedPlayer, *AppError)
 	ListPlayerMatches(steamID string) ([]PlayerMatchRecord, *AppError)
 	GetMetricSnapshots(steamID string, demoRecordIDs []string) ([]PlayerMatchRecord, *AppError)
+	GetPlayerImage(steamID string) (*PlayerImage, *AppError)
+	SavePlayerImage(image PlayerImage) (*PlayerImage, *AppError)
+	DeletePlayerImage(steamID string) *AppError
+	GetPlayerMVPBackground(steamID string) (*PlayerMVPBackground, *AppError)
+	SavePlayerMVPBackground(background PlayerMVPBackground) (*PlayerMVPBackground, *AppError)
+	DeletePlayerMVPBackground(steamID string) *AppError
 	DeletePlayer(steamID string) *AppError
 	DeletePlayerMatch(steamID string, demoRecordID string) *AppError
 }

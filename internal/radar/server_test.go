@@ -7,8 +7,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -19,6 +21,14 @@ func testServer(t *testing.T) *httptest.Server {
 }
 
 func testServerWithPaths(t *testing.T, configPath string, dbPath string) *httptest.Server {
+	return testServerWithPathsAndImageDir(t, configPath, dbPath, filepath.Join(t.TempDir(), "player-images"))
+}
+
+func testServerWithPathsAndImageDir(t *testing.T, configPath string, dbPath string, imageDir string) *httptest.Server {
+	return testServerWithAssetDirs(t, configPath, dbPath, imageDir, filepath.Join(t.TempDir(), "player-mvp-backgrounds"), filepath.Join(t.TempDir(), "showcase-music"))
+}
+
+func testServerWithAssetDirs(t *testing.T, configPath string, dbPath string, imageDir string, mvpBackgroundDir string, musicDir string) *httptest.Server {
 	t.Helper()
 	cfg := DefaultConfig()
 	cfg.DatabasePath = dbPath
@@ -26,9 +36,12 @@ func testServerWithPaths(t *testing.T, configPath string, dbPath string) *httpte
 		t.Fatalf("save test config: %v", appErr)
 	}
 	server := NewServer(ServerOptions{
-		FrontendDir: filepath.Join("..", "..", "frontend"),
-		Store:       NewSessionStore(t.TempDir()),
-		Config:      NewConfigManager(configPath),
+		FrontendDir:            filepath.Join("..", "..", "frontend"),
+		Store:                  NewSessionStore(t.TempDir()),
+		Config:                 NewConfigManager(configPath),
+		PlayerImageDir:         imageDir,
+		PlayerMVPBackgroundDir: mvpBackgroundDir,
+		ShowcaseMusicDir:       musicDir,
 	})
 	return httptest.NewServer(server.Routes())
 }
@@ -377,6 +390,371 @@ func TestAPIDeletePlayerMatchRecord(t *testing.T) {
 	if resp.StatusCode != httpStatusNotFound {
 		t.Fatalf("expected player removed after deleting only match, got %d", resp.StatusCode)
 	}
+}
+
+func TestAPIPlayerImages(t *testing.T) {
+	tempDir := t.TempDir()
+	ts := testServerWithPathsAndImageDir(t, filepath.Join(tempDir, "config.json"), filepath.Join(tempDir, "history.db"), filepath.Join(tempDir, "player-images"))
+	defer ts.Close()
+
+	if upload, status := uploadFixture(t, ts.URL, "history.dem"); status != http.StatusOK || upload["save_status"] != string(DemoSaveStatusSaved) {
+		t.Fatalf("upload status %d payload %+v", status, upload)
+	}
+	steamID := "76561190000000001"
+
+	resp, err := http.Get(ts.URL + "/api/players/" + steamID + "/image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imagePayload struct {
+		Image *PlayerImage `json:"image"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&imagePayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || imagePayload.Image != nil {
+		t.Fatalf("expected empty image config, status %d payload %+v", resp.StatusCode, imagePayload)
+	}
+
+	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/players/"+steamID+"/image-url", strings.NewReader(`{"image_url":""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusBadRequest {
+		t.Fatalf("expected empty image URL to fail, got %d", resp.StatusCode)
+	}
+
+	req, err = http.NewRequest(http.MethodPut, ts.URL+"/api/players/"+steamID+"/image-url", strings.NewReader(`{"image_url":"https://example.com/player.png"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagePayload = struct {
+		Image *PlayerImage `json:"image"`
+	}{}
+	if err := json.NewDecoder(resp.Body).Decode(&imagePayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || imagePayload.Image == nil || imagePayload.Image.ImageURL != "https://example.com/player.png" || imagePayload.Image.PublicURL != "" {
+		t.Fatalf("bad external image response, status %d payload %+v", resp.StatusCode, imagePayload)
+	}
+
+	uploadBody, contentType := playerImageUploadBody(t, "ignored-original.png", "image/png", []byte{0x89, 'P', 'N', 'G', '\r', '\n'})
+	resp, err = http.Post(ts.URL+"/api/players/"+steamID+"/image-upload", contentType, uploadBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagePayload = struct {
+		Image *PlayerImage `json:"image"`
+	}{}
+	if err := json.NewDecoder(resp.Body).Decode(&imagePayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || imagePayload.Image == nil || imagePayload.Image.ImageSourceType != PlayerImageSourceUpload || imagePayload.Image.PublicURL == "" {
+		t.Fatalf("bad upload image response, status %d payload %+v", resp.StatusCode, imagePayload)
+	}
+	if strings.Contains(filepath.Base(imagePayload.Image.ImagePath), "ignored-original") {
+		t.Fatalf("upload should not use original filename directly: %+v", imagePayload.Image)
+	}
+
+	resp, err = http.Get(ts.URL + imagePayload.Image.PublicURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" || len(imageBytes) == 0 {
+		t.Fatalf("bad public image response, status %d content-type %q len %d", resp.StatusCode, resp.Header.Get("Content-Type"), len(imageBytes))
+	}
+
+	req, err = http.NewRequest(http.MethodDelete, ts.URL+"/api/players/"+steamID+"/image", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete image status: %d", resp.StatusCode)
+	}
+	resp, err = http.Get(ts.URL + "/api/players/" + steamID + "/image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	imagePayload = struct {
+		Image *PlayerImage `json:"image"`
+	}{}
+	if err := json.NewDecoder(resp.Body).Decode(&imagePayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || imagePayload.Image != nil {
+		t.Fatalf("expected cleared image, status %d payload %+v", resp.StatusCode, imagePayload)
+	}
+
+	req, err = http.NewRequest(http.MethodPut, ts.URL+"/api/players/missing/image-url", strings.NewReader(`{"image_url":"https://example.com/player.png"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusNotFound {
+		t.Fatalf("expected missing player failure, got %d", resp.StatusCode)
+	}
+}
+
+func TestAPIPlayerImageUploadValidationAndAssetSafety(t *testing.T) {
+	tempDir := t.TempDir()
+	ts := testServerWithPathsAndImageDir(t, filepath.Join(tempDir, "config.json"), filepath.Join(tempDir, "history.db"), filepath.Join(tempDir, "player-images"))
+	defer ts.Close()
+
+	if upload, status := uploadFixture(t, ts.URL, "history.dem"); status != http.StatusOK || upload["save_status"] != string(DemoSaveStatusSaved) {
+		t.Fatalf("upload status %d payload %+v", status, upload)
+	}
+	steamID := "76561190000000001"
+
+	resp, err := http.Post(ts.URL+"/api/players/"+steamID+"/image-upload", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusBadRequest {
+		t.Fatalf("expected non-multipart upload failure, got %d", resp.StatusCode)
+	}
+
+	body, contentType := playerImageUploadBody(t, "not-image.txt", "text/plain", []byte("not image"))
+	resp, err = http.Post(ts.URL+"/api/players/"+steamID+"/image-upload", contentType, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusBadRequest {
+		t.Fatalf("expected non-image upload failure, got %d", resp.StatusCode)
+	}
+
+	resp, err = http.Get(ts.URL + "/api/player-images/%2e%2e/secret.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusNotFound {
+		t.Fatalf("expected traversal to be rejected, got %d", resp.StatusCode)
+	}
+	resp, err = http.Get(ts.URL + "/api/player-images/missing.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusNotFound {
+		t.Fatalf("expected missing asset 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestAPIPlayerMVPBackgroundAndShowcaseMusic(t *testing.T) {
+	tempDir := t.TempDir()
+	ts := testServerWithAssetDirs(
+		t,
+		filepath.Join(tempDir, "config.json"),
+		filepath.Join(tempDir, "history.db"),
+		filepath.Join(tempDir, "player-images"),
+		filepath.Join(tempDir, "player-mvp-backgrounds"),
+		filepath.Join(tempDir, "showcase-music"),
+	)
+	defer ts.Close()
+
+	if upload, status := uploadFixture(t, ts.URL, "history.dem"); status != http.StatusOK || upload["save_status"] != string(DemoSaveStatusSaved) {
+		t.Fatalf("upload status %d payload %+v", status, upload)
+	}
+	steamID := "76561190000000001"
+
+	body, contentType := playerImageUploadBody(t, "mvp.png", "image/png", []byte{0x89, 'P', 'N', 'G', '\r', '\n'})
+	resp, err := http.Post(ts.URL+"/api/players/"+steamID+"/mvp-background", contentType, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backgroundPayload struct {
+		Background *PlayerMVPBackground `json:"background"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&backgroundPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || backgroundPayload.Background == nil || backgroundPayload.Background.PublicURL == "" {
+		t.Fatalf("bad MVP background upload response, status %d payload %+v", resp.StatusCode, backgroundPayload)
+	}
+
+	resp, err = http.Get(ts.URL + backgroundPayload.Background.PublicURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("bad MVP background asset response, status %d content-type %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	resp, err = http.Get(ts.URL + "/api/players/" + steamID + "/mvp-background")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backgroundPayload = struct {
+		Background *PlayerMVPBackground `json:"background"`
+	}{}
+	if err := json.NewDecoder(resp.Body).Decode(&backgroundPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || backgroundPayload.Background == nil {
+		t.Fatalf("expected saved MVP background, status %d payload %+v", resp.StatusCode, backgroundPayload)
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/api/players/"+steamID+"/mvp-background", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete MVP background status: %d", resp.StatusCode)
+	}
+	resp, err = http.Get(ts.URL + "/api/players/" + steamID + "/mvp-background")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backgroundPayload = struct {
+		Background *PlayerMVPBackground `json:"background"`
+	}{}
+	if err := json.NewDecoder(resp.Body).Decode(&backgroundPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || backgroundPayload.Background != nil {
+		t.Fatalf("expected cleared MVP background, status %d payload %+v", resp.StatusCode, backgroundPayload)
+	}
+
+	body, contentType = playerImageUploadBody(t, "track.mp3", "audio/mpeg", []byte("id3 data"))
+	resp, err = http.Post(ts.URL+"/api/showcase/music", contentType, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var musicPayload struct {
+		Music *ShowcaseMusic `json:"music"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&musicPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || musicPayload.Music == nil || musicPayload.Music.PublicURL == "" {
+		t.Fatalf("bad showcase music upload response, status %d payload %+v", resp.StatusCode, musicPayload)
+	}
+	resp, err = http.Get(ts.URL + musicPayload.Music.PublicURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "audio/") {
+		t.Fatalf("bad showcase music asset response, status %d content-type %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	resp, err = http.Get(ts.URL + "/api/showcase/music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	musicPayload = struct {
+		Music *ShowcaseMusic `json:"music"`
+	}{}
+	if err := json.NewDecoder(resp.Body).Decode(&musicPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || musicPayload.Music == nil {
+		t.Fatalf("expected saved showcase music, status %d payload %+v", resp.StatusCode, musicPayload)
+	}
+	req, err = http.NewRequest(http.MethodDelete, ts.URL+"/api/showcase/music", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete showcase music status: %d", resp.StatusCode)
+	}
+	resp, err = http.Get(ts.URL + "/api/showcase/music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	musicPayload = struct {
+		Music *ShowcaseMusic `json:"music"`
+	}{}
+	if err := json.NewDecoder(resp.Body).Decode(&musicPayload); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || musicPayload.Music != nil {
+		t.Fatalf("expected cleared showcase music, status %d payload %+v", resp.StatusCode, musicPayload)
+	}
+
+	resp, err = http.Get(ts.URL + "/api/player-mvp-backgrounds/%2e%2e/secret.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusNotFound {
+		t.Fatalf("expected MVP background traversal rejection, got %d", resp.StatusCode)
+	}
+	resp, err = http.Get(ts.URL + "/api/showcase-music/%2e%2e/secret.mp3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != httpStatusNotFound {
+		t.Fatalf("expected showcase music traversal rejection, got %d", resp.StatusCode)
+	}
+}
+
+func playerImageUploadBody(t *testing.T, fileName string, contentType string, content []byte) (io.Reader, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", `form-data; name="file"; filename="`+fileName+`"`)
+	header.Set("Content-Type", contentType)
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &body, writer.FormDataContentType()
 }
 
 func TestAPIInvalidFileDemoNotFoundAndConfig(t *testing.T) {

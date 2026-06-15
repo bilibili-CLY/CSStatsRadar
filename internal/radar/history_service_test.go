@@ -102,6 +102,8 @@ type fakeHistoryRepository struct {
 	dedupe      map[string]string
 	players     map[string]SavedPlayer
 	matches     map[string][]PlayerMatchRecord
+	images      map[string]PlayerImage
+	backgrounds map[string]PlayerMVPBackground
 	savedInputs map[string]SaveParsedDemoInput
 	saveCalls   int
 }
@@ -112,6 +114,8 @@ func newFakeHistoryRepository() *fakeHistoryRepository {
 		dedupe:      map[string]string{},
 		players:     map[string]SavedPlayer{},
 		matches:     map[string][]PlayerMatchRecord{},
+		images:      map[string]PlayerImage{},
+		backgrounds: map[string]PlayerMVPBackground{},
 		savedInputs: map[string]SaveParsedDemoInput{},
 	}
 }
@@ -180,12 +184,68 @@ func (r *fakeHistoryRepository) GetMetricSnapshots(steamID string, demoRecordIDs
 	return result, nil
 }
 
+func (r *fakeHistoryRepository) GetPlayerImage(steamID string) (*PlayerImage, *AppError) {
+	if _, ok := r.players[steamID]; !ok {
+		return nil, NewAppError("player_record_not_found", httpStatusNotFound, "", nil)
+	}
+	image, ok := r.images[steamID]
+	if !ok {
+		return nil, nil
+	}
+	return &image, nil
+}
+
+func (r *fakeHistoryRepository) SavePlayerImage(image PlayerImage) (*PlayerImage, *AppError) {
+	if _, ok := r.players[image.SteamID]; !ok {
+		return nil, NewAppError("player_record_not_found", httpStatusNotFound, "", nil)
+	}
+	r.images[image.SteamID] = image
+	return &image, nil
+}
+
+func (r *fakeHistoryRepository) DeletePlayerImage(steamID string) *AppError {
+	if _, ok := r.players[steamID]; !ok {
+		return NewAppError("player_record_not_found", httpStatusNotFound, "", nil)
+	}
+	delete(r.images, steamID)
+	return nil
+}
+
+func (r *fakeHistoryRepository) GetPlayerMVPBackground(steamID string) (*PlayerMVPBackground, *AppError) {
+	if _, ok := r.players[steamID]; !ok {
+		return nil, NewAppError("player_record_not_found", httpStatusNotFound, "", nil)
+	}
+	background, ok := r.backgrounds[steamID]
+	if !ok {
+		return nil, nil
+	}
+	return &background, nil
+}
+
+func (r *fakeHistoryRepository) SavePlayerMVPBackground(background PlayerMVPBackground) (*PlayerMVPBackground, *AppError) {
+	if _, ok := r.players[background.SteamID]; !ok {
+		return nil, NewAppError("player_record_not_found", httpStatusNotFound, "", nil)
+	}
+	r.backgrounds[background.SteamID] = background
+	return &background, nil
+}
+
+func (r *fakeHistoryRepository) DeletePlayerMVPBackground(steamID string) *AppError {
+	if _, ok := r.players[steamID]; !ok {
+		return NewAppError("player_record_not_found", httpStatusNotFound, "", nil)
+	}
+	delete(r.backgrounds, steamID)
+	return nil
+}
+
 func (r *fakeHistoryRepository) DeletePlayer(steamID string) *AppError {
 	if _, ok := r.players[steamID]; !ok {
 		return NewAppError("player_record_not_found", httpStatusNotFound, "", nil)
 	}
 	delete(r.players, steamID)
 	delete(r.matches, steamID)
+	delete(r.images, steamID)
+	delete(r.backgrounds, steamID)
 	return nil
 }
 

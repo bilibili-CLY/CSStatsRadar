@@ -1,3 +1,5 @@
+const defaultShowcaseDurationMs = 4000;
+
 const state = {
   demoId: null,
   players: [],
@@ -21,14 +23,74 @@ const state = {
     color_preset: "default",
     last_player_identifier_type: "name",
     database_path: "",
+    showcase: {
+      default_duration_ms: defaultShowcaseDurationMs,
+      layout: {
+        radar_position: { x: 0.36, y: 0.56 },
+        name_position: { x: 0.72, y: 0.22 },
+        image_position: { x: 0.72, y: 0.54 },
+      },
+    },
+  },
+  showcase: {
+    playersLoaded: false,
+    players: [],
+    expandedSteamIds: new Set(),
+    selectedSteamIds: new Set(),
+    matchesBySteamId: new Map(),
+    matchErrorsBySteamId: new Map(),
+    selectedMatchIdsBySteamId: new Map(),
+    imagesBySteamId: new Map(),
+    mvpBackgroundsBySteamId: new Map(),
+    activeImageSteamId: "",
+    slides: [],
+    buildErrors: new Map(),
+    currentIndex: 0,
+    status: "empty",
+    currentTimeMs: 0,
+    lastFrameTime: 0,
+    timelineDragging: false,
+    activeDragTarget: null,
+    draggedQueueSteamId: "",
+    particles: [],
+    particleFadeLevel: 1,
+    particlesEnabled: true,
+    previewFrameId: 0,
+    lastPreviewFrameTime: 0,
+    currentThemeColor: "#00ffff",
+    targetThemeColor: "#00ffff",
+    animationStartTime: 0,
+    music: null,
   },
 };
 
 const el = {
   currentDemoTab: document.querySelector("#currentDemoTab"),
   playerRecordsTab: document.querySelector("#playerRecordsTab"),
+  showcaseTab: document.querySelector("#showcaseTab"),
   demoPanel: document.querySelector("#demoPanel"),
   playerPanel: document.querySelector("#playerPanel"),
+  showcasePanel: document.querySelector("#showcasePanel"),
+  showcaseImagePanel: document.querySelector("#showcaseImagePanel"),
+  showcaseQueueList: document.querySelector("#showcaseQueueList"),
+  showcaseImagePlayer: document.querySelector("#showcaseImagePlayer"),
+  showcaseDurationSeconds: document.querySelector("#showcaseDurationSeconds"),
+  showcaseImageFile: document.querySelector("#showcaseImageFile"),
+  showcaseImageFileName: document.querySelector("#showcaseImageFileName"),
+  showcaseImageUrl: document.querySelector("#showcaseImageUrl"),
+  saveShowcaseImageUrlBtn: document.querySelector("#saveShowcaseImageUrlBtn"),
+  clearShowcaseImageBtn: document.querySelector("#clearShowcaseImageBtn"),
+  showcaseMvpBackgroundFile: document.querySelector("#showcaseMvpBackgroundFile"),
+  showcaseMvpBackgroundFileName: document.querySelector("#showcaseMvpBackgroundFileName"),
+  clearShowcaseMvpBackgroundBtn: document.querySelector("#clearShowcaseMvpBackgroundBtn"),
+  showcaseMusicFile: document.querySelector("#showcaseMusicFile"),
+  showcaseMusicFileName: document.querySelector("#showcaseMusicFileName"),
+  clearShowcaseMusicBtn: document.querySelector("#clearShowcaseMusicBtn"),
+  toggleShowcaseBtn: document.querySelector("#toggleShowcaseBtn"),
+  prevShowcaseBtn: document.querySelector("#prevShowcaseBtn"),
+  nextShowcaseBtn: document.querySelector("#nextShowcaseBtn"),
+  fullscreenShowcaseBtn: document.querySelector("#fullscreenShowcaseBtn"),
+  resetShowcaseLayoutBtn: document.querySelector("#resetShowcaseLayoutBtn"),
   demoFile: document.querySelector("#demoFile"),
   fileName: document.querySelector("#fileName"),
   uploadBtn: document.querySelector("#uploadBtn"),
@@ -36,6 +98,7 @@ const el = {
   candidates: document.querySelector("#candidates"),
   metricValues: document.querySelector("#metricValues"),
   errorNotice: document.querySelector("#errorNotice"),
+  exportSettingsPanel: document.querySelector("#exportSettingsPanel"),
   exportBtn: document.querySelector("#exportBtn"),
   exportWidth: document.querySelector("#exportWidth"),
   exportHeight: document.querySelector("#exportHeight"),
@@ -47,6 +110,10 @@ const el = {
   saveConfigBtn: document.querySelector("#saveConfigBtn"),
   canvas: document.querySelector("#radarCanvas"),
   historyArea: document.querySelector("#historyArea"),
+  showcaseArea: document.querySelector("#showcaseArea"),
+  showcaseCanvas: document.querySelector("#showcaseCanvas"),
+  showcaseTimeline: document.querySelector("#showcaseTimeline"),
+  showcaseTimelineBar: document.querySelector("#showcaseTimelineBar"),
   chartTooltip: document.querySelector("#chartTooltip"),
   metricTitle: document.querySelector("#metricTitle"),
 };
@@ -70,6 +137,33 @@ const metricCaptions = {
 };
 
 const ratingTip = "Rating 是我们自制算法的第一版综合评分，用本地 Demo 解析出的击杀、死亡、伤害、KAST 和影响力近似计算，不等同于 HLTV 官方 Rating。";
+
+const defaultShowcaseLayout = {
+  radar_position: { x: 0.36, y: 0.56 },
+  name_position: { x: 0.72, y: 0.22 },
+  image_position: { x: 0.72, y: 0.54 },
+};
+
+const showcaseColorPresets = ["#00ffff", "#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#007aff", "#4f46e5", "#af52de"];
+
+const showcaseImageCache = new Map();
+const showcaseAnimDuration = 1500;
+const bestColor = "#ffd76a";
+const showcaseAudio = new Audio();
+showcaseAudio.loop = true;
+
+function configureShowcaseAudio() {
+  const url = effectiveMusicUrl();
+  if (!url) {
+    showcaseAudio.pause();
+    showcaseAudio.removeAttribute("src");
+    return;
+  }
+  if (showcaseAudio.getAttribute("src") !== url) {
+    showcaseAudio.src = url;
+    showcaseAudio.load();
+  }
+}
 
 function setAccent(color) {
   document.documentElement.style.setProperty("--accent", color);
@@ -99,28 +193,43 @@ function clearError() {
 function setView(view) {
   state.view = view;
   const isCurrent = view === "current";
+  const isRecords = view === "records";
+  const isShowcase = view === "showcase";
   el.currentDemoTab.classList.toggle("active", isCurrent);
-  el.playerRecordsTab.classList.toggle("active", !isCurrent);
+  el.playerRecordsTab.classList.toggle("active", isRecords);
+  el.showcaseTab.classList.toggle("active", isShowcase);
   el.demoPanel.hidden = !isCurrent;
   el.playerPanel.hidden = !isCurrent;
-  el.historyArea.hidden = isCurrent;
-  el.canvas.hidden = !isCurrent && !state.aggregateRadarData;
-  el.metricTitle.textContent = isCurrent ? "数据指标" : state.aggregateRadarData ? "综合指标" : "玩家记录";
+  el.showcasePanel.hidden = !isShowcase;
+  el.showcaseImagePanel.hidden = !isShowcase;
+  el.exportSettingsPanel.hidden = isShowcase;
+  el.historyArea.hidden = !isRecords;
+  el.showcaseArea.hidden = !isShowcase;
+  el.canvas.hidden = isShowcase || (!isCurrent && !state.aggregateRadarData);
+  el.metricTitle.textContent = isCurrent ? "数据指标" : isShowcase ? "展示轮播" : state.aggregateRadarData ? "综合指标" : "玩家记录";
   if (isCurrent) {
     syncRadarTextControls(state.radarData, false);
     renderMetricList(state.radarData);
     renderPreview();
-  } else {
+  } else if (isRecords) {
     syncRadarTextControls(state.aggregateRadarData, false);
     if (state.selectedSavedPlayer) renderHistoryArea();
     else loadSavedPlayers();
     renderMetricList(state.aggregateRadarData);
     if (state.aggregateRadarData) renderPreview();
+  } else if (isShowcase) {
+    renderMetricList(null);
+    syncRadarTextControls(null, false);
+    renderShowcaseQueueList();
+    renderShowcaseImagePanel(currentShowcaseImagePlayer());
+    updateShowcaseControls();
+    renderShowcasePreview();
   }
 }
 
 function activeRadarData() {
   if (state.view === "records") return state.aggregateRadarData;
+  if (state.view === "showcase") return null;
   return state.radarData;
 }
 
@@ -303,6 +412,10 @@ function renderMetricList(radarData) {
 }
 
 function renderPreview() {
+  if (state.view === "showcase") {
+    renderShowcasePreview();
+    return;
+  }
   const radarData = activeRadarData();
   if (state.view === "records" && !radarData) {
     el.canvas.hidden = true;
@@ -453,6 +566,21 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function lerpHexColor(c1, c2, t) {
+  const a = c1.replace("#", "");
+  const b = c2.replace("#", "");
+  const r1 = parseInt(a.slice(0, 2), 16);
+  const g1 = parseInt(a.slice(2, 4), 16);
+  const b1 = parseInt(a.slice(4, 6), 16);
+  const r2 = parseInt(b.slice(0, 2), 16);
+  const g2 = parseInt(b.slice(2, 4), 16);
+  const b2 = parseInt(b.slice(4, 6), 16);
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const blue = Math.round(b1 + (b2 - b1) * t);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${blue.toString(16).padStart(2, "0")}`;
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
 }
@@ -471,7 +599,18 @@ function hideTooltip() {
 async function loadConfig() {
   try {
     const config = await api("/api/config");
-    state.config = { ...state.config, ...config };
+    state.config = {
+      ...state.config,
+      ...config,
+      showcase: {
+        ...state.config.showcase,
+        ...(config.showcase || {}),
+        layout: {
+          ...state.config.showcase.layout,
+          ...(config.showcase?.layout || {}),
+        },
+      },
+    };
     el.exportWidth.value = state.config.export_width;
     el.exportHeight.value = state.config.export_height;
     syncRadarTextControls(activeRadarData(), false);
@@ -479,6 +618,7 @@ async function loadConfig() {
     el.colorPreset.value = presetColors[state.config.color_preset] ? state.config.color_preset : "default";
     el.databasePath.value = state.config.database_path || "";
     setAccent(state.config.theme_color);
+    renderShowcasePreview();
     if (config.warning) showError({ code: "config_read_failed", message: config.warning });
   } catch (error) {
     showError(error);
@@ -505,6 +645,7 @@ async function saveConfig() {
     state.config = nextConfig;
     setAccent(state.config.theme_color);
     renderPreview();
+    renderShowcasePreview();
     if (state.view === "records") {
       state.savedPlayersLoaded = false;
       state.selectedSavedPlayer = null;
@@ -610,6 +751,7 @@ async function deletePlayerRecord(steamId) {
   if (!window.confirm(`删除 ${playerName} 的所有玩家记录？`)) return;
   try {
     await api(`/api/players/${encodeURIComponent(steamId)}`, { method: "DELETE" });
+    clearShowcasePlayerState(steamId);
     if (state.selectedSavedPlayer?.steam_id === steamId) {
       state.selectedSavedPlayer = null;
       state.playerMatches = [];
@@ -658,6 +800,7 @@ function renderPlayerDetail() {
       </div>
       <div class="detail-actions">
         <button id="generateAggregateBtn" type="button" ${state.selectedMatchIds.size ? "" : "disabled"}>生成综合雷达图</button>
+        <button id="addToShowcaseBtn" type="button" ${state.selectedMatchIds.size ? "" : "disabled"}>加入展示轮播</button>
         <button id="exportAggregateBtn" type="button" ${state.aggregateRadarData ? "" : "disabled"}>导出综合 PNG</button>
       </div>
       <table class="records-table matches-table">
@@ -678,6 +821,7 @@ function renderPlayerDetail() {
     renderPreview();
   });
   el.historyArea.querySelector("#generateAggregateBtn").addEventListener("click", () => generateAggregateRadar());
+  el.historyArea.querySelector("#addToShowcaseBtn").addEventListener("click", () => addSelectedMatchesToShowcase());
   el.historyArea.querySelector("#exportAggregateBtn").addEventListener("click", exportAggregateRadar);
   el.historyArea.querySelectorAll(".delete-match-btn").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -702,7 +846,14 @@ async function deleteMatchRecord(demoRecordId) {
     await api(`/api/players/${encodeURIComponent(state.selectedSavedPlayer.steam_id)}/matches/${encodeURIComponent(demoRecordId)}`, {
       method: "DELETE",
     });
+    const deletedSteamId = state.selectedSavedPlayer.steam_id;
     state.selectedMatchIds.delete(demoRecordId);
+    state.showcase.matchesBySteamId.delete(deletedSteamId);
+    state.showcase.selectedMatchIdsBySteamId.get(deletedSteamId)?.delete(demoRecordId);
+    state.showcase.slides = state.showcase.slides.filter((slide) => !(slide.player?.steam_id === deletedSteamId && slide.selectedDemoRecordIds.includes(demoRecordId)));
+    if (!state.showcase.slides.length) state.showcase.status = "empty";
+    recomputeShowcaseBestMarkers();
+    updateShowcaseControls();
     state.aggregateRadarData = null;
     renderMetricList(null);
     state.savedPlayersLoaded = false;
@@ -726,6 +877,22 @@ async function deleteMatchRecord(demoRecordId) {
     }
     showError(error);
   }
+}
+
+function clearShowcasePlayerState(steamId) {
+  state.showcase.playersLoaded = false;
+  state.showcase.players = state.showcase.players.filter((player) => player.steam_id !== steamId);
+  state.showcase.expandedSteamIds.delete(steamId);
+  state.showcase.selectedSteamIds.delete(steamId);
+  state.showcase.matchesBySteamId.delete(steamId);
+  state.showcase.matchErrorsBySteamId.delete(steamId);
+  state.showcase.selectedMatchIdsBySteamId.delete(steamId);
+  state.showcase.imagesBySteamId.delete(steamId);
+  state.showcase.mvpBackgroundsBySteamId.delete(steamId);
+  state.showcase.slides = state.showcase.slides.filter((slide) => slide.player?.steam_id !== steamId);
+  if (state.showcase.activeImageSteamId === steamId) state.showcase.activeImageSteamId = "";
+  if (!state.showcase.slides.length) state.showcase.status = "empty";
+  updateShowcaseControls();
 }
 
 async function generateAggregateRadar() {
@@ -756,6 +923,992 @@ function exportAggregateRadar() {
   exportRadarImage(state.aggregateRadarData, "aggregate-radar");
 }
 
+async function fetchAggregateRadarForShowcase(steamId, demoRecordIds) {
+  return api(`/api/players/${encodeURIComponent(steamId)}/radar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ demo_record_ids: demoRecordIds }),
+  });
+}
+
+function assignShowcaseThemeColor(index) {
+  return showcaseColorPresets[index % showcaseColorPresets.length];
+}
+
+function createShowcaseSlide(radarData, selectedDemoRecordIds, image, mvpBackground, index = 0) {
+  return {
+    player: radarData.player,
+    radar: radarData.radar,
+    matchCount: radarData.match_count || selectedDemoRecordIds.length,
+    selectedDemoRecordIds,
+    displayTitle: radarData.player?.name || radarData.player?.steam_id || "",
+    displaySubtitle: "",
+    themeColor: assignShowcaseThemeColor(index),
+    image: image || null,
+    mvpBackground: mvpBackground || null,
+    bestMetricIndexes: [],
+    isMvp: false,
+    durationMs: state.config.showcase?.default_duration_ms || defaultShowcaseDurationMs,
+  };
+}
+
+async function addSelectedMatchesToShowcase() {
+  clearError();
+  if (!state.selectedSavedPlayer || !state.selectedMatchIds.size) {
+    return showError({ code: "invalid_aggregate_request", message: "请选择比赛记录。" });
+  }
+  const steamId = state.selectedSavedPlayer.steam_id;
+  const demoRecordIds = Array.from(state.selectedMatchIds);
+  const button = el.historyArea.querySelector("#addToShowcaseBtn");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "加入中...";
+  }
+  try {
+    const [radarData, image, mvpBackground] = await Promise.all([
+      fetchAggregateRadarForShowcase(steamId, demoRecordIds),
+      loadPlayerImage(steamId),
+      loadPlayerMVPBackground(steamId),
+    ]);
+    const existingIndex = state.showcase.slides.findIndex((slide) => slide.player?.steam_id === steamId);
+    const targetIndex = existingIndex >= 0 ? existingIndex : state.showcase.slides.length;
+    const slide = createShowcaseSlide(radarData, demoRecordIds, image, mvpBackground, targetIndex);
+    if (existingIndex >= 0) state.showcase.slides[existingIndex] = slide;
+    else state.showcase.slides.push(slide);
+    recomputeShowcaseBestMarkers();
+    state.showcase.currentIndex = existingIndex >= 0 ? existingIndex : state.showcase.slides.length - 1;
+    state.showcase.currentTimeMs = slideStartTime(state.showcase.currentIndex);
+    state.showcase.status = state.showcase.slides.length ? "ready" : "empty";
+    state.showcase.animationStartTime = performance.now();
+    state.showcase.activeImageSteamId = steamId;
+    updateShowcaseControls();
+    renderShowcaseQueueList();
+    renderShowcasePreview();
+    state.selectedSavedPlayer = null;
+    state.playerMatches = [];
+    state.selectedMatchIds = new Set();
+    state.aggregateRadarData = null;
+    renderMetricList(null);
+    await loadSavedPlayers();
+  } catch (error) {
+    showError(error);
+  } finally {
+    if (button) {
+      button.disabled = !state.selectedMatchIds.size;
+      button.textContent = "加入展示轮播";
+    }
+  }
+}
+
+function renderShowcaseQueueList() {
+  if (!state.showcase.slides.length) {
+    el.showcaseQueueList.innerHTML = `<div class="empty-state">从“玩家记录”详情页勾选比赛后，点击“加入展示轮播”。</div>`;
+    return;
+  }
+  el.showcaseQueueList.innerHTML = state.showcase.slides
+    .map((slide, index) => {
+      const steamId = slide.player?.steam_id || "";
+      const isActive = index === state.showcase.currentIndex ? "active-image-player" : "";
+      return `
+        <div class="showcase-player-row ${isActive}" draggable="true" data-steam-id="${escapeHtml(steamId)}">
+          <div class="showcase-player-main">
+            <div class="showcase-check">
+              <span class="queue-index">${index + 1}</span>
+              <span>
+                <button class="showcase-title-edit" type="button" data-index="${index}">${escapeHtml(showcaseDisplayTitle(slide))}</button>
+                <button class="showcase-subtitle-edit ${slide.displaySubtitle ? "" : "placeholder"}" type="button" data-index="${index}">
+                  ${escapeHtml(slide.displaySubtitle || "点击添加图中副标题")}
+                </button>
+              </span>
+            </div>
+            <div class="showcase-row-actions">
+              <button class="showcase-image-select" type="button" data-steam-id="${escapeHtml(steamId)}">资源</button>
+              <button class="showcase-preview-select" type="button" data-index="${index}">预览</button>
+              <button class="showcase-remove" type="button" data-steam-id="${escapeHtml(steamId)}">删除</button>
+            </div>
+          </div>
+        </div>`;
+    })
+    .join("");
+  el.showcaseQueueList.querySelectorAll(".showcase-player-row").forEach((row) => {
+    row.addEventListener("dragstart", () => {
+      state.showcase.draggedQueueSteamId = row.dataset.steamId;
+      row.classList.add("drag-source");
+    });
+    row.addEventListener("dragend", () => {
+      state.showcase.draggedQueueSteamId = "";
+      row.classList.remove("drag-source");
+    });
+    row.addEventListener("dragover", (event) => event.preventDefault());
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      reorderShowcaseQueue(state.showcase.draggedQueueSteamId, row.dataset.steamId);
+    });
+  });
+  el.showcaseQueueList.querySelectorAll(".showcase-title-edit").forEach((button) => {
+    button.addEventListener("mousedown", (event) => event.stopPropagation());
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      beginShowcaseSlideTextEdit(button, Number(button.dataset.index), "title");
+    });
+  });
+  el.showcaseQueueList.querySelectorAll(".showcase-subtitle-edit").forEach((button) => {
+    button.addEventListener("mousedown", (event) => event.stopPropagation());
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      beginShowcaseSlideTextEdit(button, Number(button.dataset.index), "subtitle");
+    });
+  });
+  el.showcaseQueueList.querySelectorAll(".showcase-image-select").forEach((button) => {
+    button.addEventListener("click", async () => {
+      state.showcase.activeImageSteamId = button.dataset.steamId;
+      await Promise.all([loadPlayerImage(button.dataset.steamId), loadPlayerMVPBackground(button.dataset.steamId)]);
+      renderShowcaseQueueList();
+      renderShowcaseImagePanel(currentShowcaseImagePlayer());
+      renderShowcasePreview();
+    });
+  });
+  el.showcaseQueueList.querySelectorAll(".showcase-preview-select").forEach((button) => {
+    button.addEventListener("click", () => seekShowcase(slideStartTime(Number(button.dataset.index))));
+  });
+  el.showcaseQueueList.querySelectorAll(".showcase-remove").forEach((button) => {
+    button.addEventListener("click", () => removeShowcaseSlide(button.dataset.steamId));
+  });
+}
+
+function showcaseDisplayTitle(slide) {
+  return slide.displayTitle || slide.player?.name || slide.player?.steam_id || "Unknown";
+}
+
+function beginShowcaseSlideTextEdit(button, index, field) {
+  const slide = state.showcase.slides[index];
+  if (!slide) return;
+  const isTitle = field === "title";
+  const currentValue = isTitle ? showcaseDisplayTitle(slide) : slide.displaySubtitle || "";
+  const input = document.createElement("input");
+  const row = button.closest(".showcase-player-row");
+  input.className = `showcase-text-input ${isTitle ? "title" : "subtitle"}`;
+  input.type = "text";
+  input.value = currentValue;
+  input.placeholder = isTitle ? "输入图中名称" : "输入图中副标题";
+  row?.setAttribute("draggable", "false");
+  button.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let finished = false;
+  const finish = (save) => {
+    if (finished) return;
+    finished = true;
+    if (save) {
+      const trimmed = input.value.trim();
+      if (isTitle) slide.displayTitle = trimmed || slide.player?.name || slide.player?.steam_id || "";
+      else slide.displaySubtitle = trimmed;
+      state.showcase.particlesEnabled = true;
+      state.showcase.particles = [];
+      renderShowcasePreview();
+    }
+    row?.setAttribute("draggable", "true");
+    renderShowcaseQueueList();
+  };
+
+  input.addEventListener("mousedown", (event) => event.stopPropagation());
+  input.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+}
+
+function reorderShowcaseQueue(sourceSteamId, targetSteamId) {
+  if (!sourceSteamId || !targetSteamId || sourceSteamId === targetSteamId) return;
+  const from = state.showcase.slides.findIndex((slide) => slide.player?.steam_id === sourceSteamId);
+  const to = state.showcase.slides.findIndex((slide) => slide.player?.steam_id === targetSteamId);
+  if (from < 0 || to < 0) return;
+  const [slide] = state.showcase.slides.splice(from, 1);
+  state.showcase.slides.splice(to, 0, slide);
+  recomputeShowcaseBestMarkers();
+  state.showcase.currentIndex = Math.min(state.showcase.currentIndex, state.showcase.slides.length - 1);
+  state.showcase.currentTimeMs = slideStartTime(state.showcase.currentIndex);
+  renderShowcaseQueueList();
+  renderShowcasePreview();
+}
+
+function removeShowcaseSlide(steamId) {
+  state.showcase.slides = state.showcase.slides.filter((slide) => slide.player?.steam_id !== steamId);
+  if (state.showcase.activeImageSteamId === steamId) state.showcase.activeImageSteamId = "";
+  if (!state.showcase.slides.length) {
+    state.showcase.status = "empty";
+    state.showcase.currentIndex = 0;
+    state.showcase.currentTimeMs = 0;
+  } else {
+    state.showcase.currentIndex = Math.min(state.showcase.currentIndex, state.showcase.slides.length - 1);
+    state.showcase.currentTimeMs = slideStartTime(state.showcase.currentIndex);
+  }
+  recomputeShowcaseBestMarkers();
+  updateShowcaseControls();
+  renderShowcaseQueueList();
+  renderShowcaseImagePanel(currentShowcaseImagePlayer());
+  renderShowcasePreview();
+}
+
+function recomputeShowcaseBestMarkers() {
+  const slides = state.showcase.slides;
+  slides.forEach((slide) => {
+    slide.bestMetricIndexes = [];
+    slide.isMvp = false;
+  });
+  if (!slides.length) return;
+  const dimensions = slides[0]?.radar?.dimensions || [];
+  dimensions.forEach((_, metricIndex) => {
+    const values = slides
+      .map((slide) => slide.radar?.values?.[metricIndex])
+      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+      .map(Number);
+    if (!values.length) return;
+    const max = Math.max(...values);
+    slides.forEach((slide) => {
+      const value = Number(slide.radar?.values?.[metricIndex]);
+      if (Number.isFinite(value) && value === max) {
+        slide.bestMetricIndexes.push(metricIndex);
+        slide.isMvp = true;
+      }
+    });
+  });
+}
+
+async function loadPlayerImage(steamId) {
+  const data = await api(`/api/players/${encodeURIComponent(steamId)}/image`);
+  state.showcase.imagesBySteamId.set(steamId, data.image || null);
+  syncShowcaseSlideImage(steamId, data.image || null);
+  return data.image || null;
+}
+
+async function loadPlayerMVPBackground(steamId) {
+  const data = await api(`/api/players/${encodeURIComponent(steamId)}/mvp-background`);
+  state.showcase.mvpBackgroundsBySteamId.set(steamId, data.background || null);
+  syncShowcaseSlideMVPBackground(steamId, data.background || null);
+  return data.background || null;
+}
+
+async function uploadPlayerMVPBackground(steamId, file) {
+  clearError();
+  const form = new FormData();
+  form.append("file", file);
+  const data = await api(`/api/players/${encodeURIComponent(steamId)}/mvp-background`, { method: "POST", body: form });
+  state.showcase.mvpBackgroundsBySteamId.set(steamId, data.background || null);
+  syncShowcaseSlideMVPBackground(steamId, data.background || null);
+  renderShowcaseImagePanel(currentShowcaseImagePlayer());
+  renderShowcaseQueueList();
+  renderShowcasePreview();
+}
+
+async function clearPlayerMVPBackground(steamId) {
+  clearError();
+  await api(`/api/players/${encodeURIComponent(steamId)}/mvp-background`, { method: "DELETE" });
+  state.showcase.mvpBackgroundsBySteamId.set(steamId, null);
+  syncShowcaseSlideMVPBackground(steamId, null);
+  renderShowcaseImagePanel(currentShowcaseImagePlayer());
+  renderShowcaseQueueList();
+  renderShowcasePreview();
+}
+
+async function loadShowcaseMusic() {
+  const data = await api("/api/showcase/music");
+  state.showcase.music = data.music || null;
+  return state.showcase.music;
+}
+
+async function uploadShowcaseMusic(file) {
+  clearError();
+  const form = new FormData();
+  form.append("file", file);
+  const data = await api("/api/showcase/music", { method: "POST", body: form });
+  state.showcase.music = data.music || null;
+  configureShowcaseAudio();
+}
+
+async function clearShowcaseMusic() {
+  clearError();
+  await api("/api/showcase/music", { method: "DELETE" });
+  state.showcase.music = null;
+  configureShowcaseAudio();
+}
+
+function effectiveImageUrl(image) {
+  if (!image) return "";
+  if (image.image_source_type === "upload") return image.public_url || "";
+  if (image.image_source_type === "external_url") return image.image_url || "";
+  return "";
+}
+
+function effectiveMVPBackgroundUrl(background) {
+  return background?.public_url || "";
+}
+
+function effectiveMusicUrl() {
+  return state.showcase.music?.public_url || (state.config.showcase?.music_path ? `/api/showcase-music/${encodeURIComponent(state.config.showcase.music_path.split(/[\\/]/).pop())}` : "");
+}
+
+async function uploadPlayerImage(steamId, file) {
+  clearError();
+  const form = new FormData();
+  form.append("file", file);
+  const data = await api(`/api/players/${encodeURIComponent(steamId)}/image-upload`, { method: "POST", body: form });
+  state.showcase.imagesBySteamId.set(steamId, data.image || null);
+  syncShowcaseSlideImage(steamId, data.image || null);
+  renderShowcaseImagePanel(currentShowcaseImagePlayer());
+  renderShowcasePreview();
+}
+
+async function savePlayerImageUrl(steamId, imageUrl) {
+  clearError();
+  const data = await api(`/api/players/${encodeURIComponent(steamId)}/image-url`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image_url: imageUrl }),
+  });
+  state.showcase.imagesBySteamId.set(steamId, data.image || null);
+  syncShowcaseSlideImage(steamId, data.image || null);
+  renderShowcaseImagePanel(currentShowcaseImagePlayer());
+  renderShowcasePreview();
+}
+
+async function clearPlayerImage(steamId) {
+  clearError();
+  await api(`/api/players/${encodeURIComponent(steamId)}/image`, { method: "DELETE" });
+  state.showcase.imagesBySteamId.set(steamId, null);
+  syncShowcaseSlideImage(steamId, null);
+  renderShowcaseImagePanel(currentShowcaseImagePlayer());
+  renderShowcasePreview();
+}
+
+function syncShowcaseSlideImage(steamId, image) {
+  state.showcase.slides.forEach((slide) => {
+    if (slide.player?.steam_id === steamId) slide.image = image || null;
+  });
+}
+
+function syncShowcaseSlideMVPBackground(steamId, background) {
+  state.showcase.slides.forEach((slide) => {
+    if (slide.player?.steam_id === steamId) slide.mvpBackground = background || null;
+  });
+}
+
+function currentShowcaseImagePlayer() {
+  const steamId = state.showcase.activeImageSteamId || state.showcase.slides[state.showcase.currentIndex]?.player?.steam_id || "";
+  return state.showcase.slides.find((slide) => slide.player?.steam_id === steamId)?.player || null;
+}
+
+function currentShowcaseResourceSlide() {
+  const steamId = state.showcase.activeImageSteamId || state.showcase.slides[state.showcase.currentIndex]?.player?.steam_id || "";
+  return state.showcase.slides.find((slide) => slide.player?.steam_id === steamId) || null;
+}
+
+function isEditableEventTarget(target) {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || Boolean(target?.isContentEditable);
+}
+
+function renderShowcaseImagePanel(player) {
+  const slide = currentShowcaseResourceSlide();
+  if (!player) {
+    el.showcaseImagePlayer.textContent = "选择一个玩家后配置图片。";
+    el.showcaseDurationSeconds.value = defaultShowcaseDurationMs / 1000;
+    el.showcaseDurationSeconds.disabled = true;
+    el.showcaseImageUrl.value = "";
+    el.showcaseImageFile.value = "";
+    el.showcaseImageFileName.textContent = "未选择文件";
+    el.showcaseImageFile.disabled = true;
+    el.showcaseImageUrl.disabled = true;
+    el.saveShowcaseImageUrlBtn.disabled = true;
+    el.clearShowcaseImageBtn.disabled = true;
+    el.showcaseMvpBackgroundFile.disabled = true;
+    el.showcaseMvpBackgroundFileName.textContent = "未选择文件";
+    el.clearShowcaseMvpBackgroundBtn.disabled = true;
+    el.showcaseMusicFile.disabled = false;
+    el.showcaseMusicFileName.textContent = "未选择文件";
+    el.clearShowcaseMusicBtn.disabled = false;
+    return;
+  }
+  const image = state.showcase.imagesBySteamId.get(player.steam_id) || null;
+  const background = state.showcase.mvpBackgroundsBySteamId.get(player.steam_id) || null;
+  el.showcaseImagePlayer.textContent = `${player.name} / ${player.steam_id}`;
+  el.showcaseDurationSeconds.value = ((slide?.durationMs || defaultShowcaseDurationMs) / 1000).toFixed(1).replace(/\.0$/, "");
+  el.showcaseDurationSeconds.disabled = false;
+  el.showcaseImageUrl.value = image?.image_source_type === "external_url" ? image.image_url : "";
+  el.showcaseImageFile.value = "";
+  el.showcaseImageFileName.textContent = "未选择文件";
+  el.showcaseImageFile.disabled = false;
+  el.showcaseImageUrl.disabled = false;
+  el.saveShowcaseImageUrlBtn.disabled = false;
+  el.clearShowcaseImageBtn.disabled = false;
+  el.showcaseMvpBackgroundFile.value = "";
+  el.showcaseMvpBackgroundFileName.textContent = "未选择文件";
+  el.showcaseMvpBackgroundFile.disabled = false;
+  el.clearShowcaseMvpBackgroundBtn.disabled = !background;
+  el.showcaseMusicFile.disabled = false;
+  el.showcaseMusicFileName.textContent = "未选择文件";
+  el.clearShowcaseMusicBtn.disabled = false;
+}
+
+function renderShowcasePreview(timestamp = performance.now()) {
+  if (!el.showcaseCanvas || el.showcaseArea.hidden) return;
+  const rect = el.showcaseArea.getBoundingClientRect();
+  const width = Math.max(720, Math.floor(rect.width || 1280));
+  const height = Math.max(405, Math.floor(width * 0.5625));
+  const slide = state.showcase.slides[state.showcase.currentIndex] || null;
+  const frameDeltaMs = state.showcase.lastPreviewFrameTime ? Math.min(50, timestamp - state.showcase.lastPreviewFrameTime) : 16.67;
+  state.showcase.lastPreviewFrameTime = timestamp;
+  drawShowcase(el.showcaseCanvas, slide, state.config.showcase.layout, { width, height, frameDeltaMs, exportMode: false });
+  renderShowcaseTimeline();
+  if (shouldContinueShowcasePreview(slide)) {
+    scheduleShowcasePreview();
+  } else {
+    state.showcase.lastPreviewFrameTime = 0;
+  }
+}
+
+function shouldContinueShowcasePreview(slide) {
+  return Boolean(slide && state.view === "showcase" && (state.showcase.particlesEnabled || state.showcase.status === "playing" || showcaseAnimationProgress(1800) < 1));
+}
+
+function scheduleShowcasePreview() {
+  if (state.showcase.previewFrameId) return;
+  state.showcase.previewFrameId = requestAnimationFrame((timestamp) => {
+    state.showcase.previewFrameId = 0;
+    renderShowcasePreview(timestamp);
+  });
+}
+
+function drawShowcase(canvas, slide, layout, options = {}) {
+  const width = Math.floor(options.width || canvas.clientWidth || canvas.width);
+  const height = Math.floor(options.height || canvas.clientHeight || canvas.height);
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  const cssWidth = `${width}px`;
+  const cssHeight = `${height}px`;
+  if (canvas.style.width !== cssWidth) canvas.style.width = cssWidth;
+  if (canvas.style.height !== cssHeight) canvas.style.height = cssHeight;
+  const ctx = canvas.getContext("2d");
+  const accent = slide?.themeColor || state.config.theme_color || "#00ffff";
+  state.showcase.targetThemeColor = accent;
+  state.showcase.currentThemeColor = lerpHexColor(state.showcase.currentThemeColor || accent, state.showcase.targetThemeColor, options.exportMode ? 1 : 0.08);
+  const theme = state.showcase.currentThemeColor;
+  const bg = ctx.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, hexToRgba(theme, 0.2));
+  bg.addColorStop(0.5, "#071018");
+  bg.addColorStop(1, "#020304");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+  if (slide?.isMvp) drawShowcaseMVPBackground(ctx, slide, width, height);
+  if (state.showcase.particlesEnabled && !options.exportMode) drawShowcaseParticles(ctx, width, height, theme, options.frameDeltaMs || 16.67);
+  ctx.save();
+  ctx.strokeStyle = hexToRgba(theme, 0.12);
+  ctx.lineWidth = 1;
+  for (let x = 0; x < width; x += width / 16) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + width * 0.08, height);
+    ctx.stroke();
+  }
+  ctx.restore();
+  if (!slide) {
+    ctx.fillStyle = "#88a0ad";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `700 ${Math.max(18, width / 48)}px Inter, sans-serif`;
+    ctx.fillText("选择玩家和比赛后生成展示轮播", width / 2, height / 2);
+    return;
+  }
+  const rects = showcaseElementRectsForSize(width, height, layout, slide);
+  drawShowcaseRadar(ctx, slide, rects.radar);
+  drawShowcaseName(ctx, slide, rects.namePoint);
+  drawShowcaseImage(ctx, slide, rects.image);
+}
+
+function drawShowcaseMVPBackground(ctx, slide, width, height) {
+  const url = effectiveMVPBackgroundUrl(slide.mvpBackground);
+  if (!url) return;
+  const cached = showcaseImageCache.get(url);
+  if (cached?.status === "loaded") {
+    const image = cached.image;
+    const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    const x = (width - drawWidth) / 2;
+    const y = (height - drawHeight) / 2;
+    const fade = showcaseAnimationProgress(1800);
+    ctx.save();
+    ctx.globalAlpha = 0.55 * fade;
+    ctx.drawImage(image, x, y, drawWidth, drawHeight);
+    const mask = ctx.createLinearGradient(0, 0, width, 0);
+    mask.addColorStop(0, "rgba(0,0,0,0.15)");
+    mask.addColorStop(0.55, "rgba(0,0,0,0.62)");
+    mask.addColorStop(1, "rgba(0,0,0,0.88)");
+    ctx.fillStyle = mask;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+    return;
+  }
+  if (!cached) {
+    const image = new Image();
+    showcaseImageCache.set(url, { status: "loading", image });
+    image.onload = () => {
+      showcaseImageCache.set(url, { status: "loaded", image });
+      renderShowcasePreview();
+    };
+    image.onerror = () => {
+      showcaseImageCache.set(url, { status: "error", image });
+      renderShowcasePreview();
+    };
+    image.src = url;
+  }
+}
+
+function drawShowcaseParticles(ctx, width, height, color, frameDeltaMs = 16.67) {
+  if (!state.showcase.particles.length || state.showcase.particles[0].width !== width || state.showcase.particles[0].height !== height) {
+    state.showcase.particles = Array.from({ length: 75 }, (_, index) => {
+      const isNebula = index >= 50;
+      const seedA = Math.sin(index * 43.7) * 0.5 + 0.5;
+      const seedB = Math.cos(index * 29.1) * 0.5 + 0.5;
+      const direction = index % 2 === 0 ? 1 : -1;
+      return {
+        width,
+        height,
+        type: isNebula ? "nebula" : "normal",
+        x: seedA * width,
+        y: seedB * height,
+        vx: (seedB - 0.5) * (isNebula ? 0.16 : 0.28),
+        vy: direction * (isNebula ? 0.08 + (index % 5) * 0.025 : 0.16 + (index % 7) * 0.035),
+        size: isNebula ? 5 + (index % 5) : 1 + (index % 3),
+      };
+    });
+  }
+  const frameScale = frameDeltaMs / 16.67;
+  ctx.save();
+  state.showcase.particles.forEach((particle) => {
+    particle.x += particle.vx * frameScale;
+    particle.y += particle.vy * frameScale;
+    if (particle.y < -150) particle.y = height + 150;
+    if (particle.y > height + 150) particle.y = -150;
+    if (particle.x < -80) particle.x = width + 80;
+    if (particle.x > width + 80) particle.x = -80;
+    const distanceFromCenter = Math.abs(particle.y - height / 2) / (height / 2);
+    const alpha = Math.max(0.05, Math.min(1, distanceFromCenter)) * (particle.type === "nebula" ? 0.22 : 0.65);
+    const bloom = particle.size * (particle.type === "nebula" ? 15 : 10);
+    const gradient = ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, bloom);
+    gradient.addColorStop(0, hexToRgba(color, alpha));
+    gradient.addColorStop(0.3, hexToRgba(color, alpha * 0.35));
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(particle.x, particle.y, bloom, 0, Math.PI * 2);
+    ctx.fill();
+    if (particle.type === "normal") {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.75, alpha)})`;
+      ctx.beginPath();
+      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  ctx.restore();
+}
+
+function showcaseAnimationProgress(duration = showcaseAnimDuration) {
+  const started = state.showcase.animationStartTime || performance.now();
+  const raw = Math.min(1, (performance.now() - started) / duration);
+  return raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
+}
+
+function drawShowcaseRadar(ctx, slide, rect) {
+  const { x, y, width, height } = rect;
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const radius = Math.min(width, height) * 0.36;
+  const dimensions = slide.radar?.dimensions || ["KPR", "Surviving", "ADR", "KAST", "Impact", "Rating"];
+  const values = slide.radar?.values || [];
+  const maxValues = slide.radar?.max_values || [];
+  const displayTypes = slide.radar?.display_types || [];
+  const accent = slide.themeColor;
+  const grow = showcaseAnimationProgress();
+  ctx.save();
+  ctx.strokeStyle = "rgba(190, 230, 240, 0.18)";
+  ctx.lineWidth = Math.max(1, width / 520);
+  for (let level = 1; level <= 5; level += 1) {
+    drawPolygon(ctx, cx, cy, radius * (level / 5), dimensions.length);
+    ctx.stroke();
+  }
+  dimensions.forEach((_, index) => {
+    const point = axisPoint(cx, cy, radius, index, dimensions.length);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+  });
+  const points = dimensions.map((_, index) => {
+    const maxValue = maxValues[index] || 1;
+    const value = values[index] ?? 0;
+    const normalized = Math.max(0, Math.min(1.25, (value / maxValue) * grow));
+    return axisPoint(cx, cy, radius * normalized, index, dimensions.length);
+  });
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = Math.max(18, width / 18);
+  ctx.fillStyle = hexToRgba(accent, 0.22);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = Math.max(2, width / 220);
+  pathPoints(ctx, points);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#e7f8ff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  dimensions.forEach((label, index) => {
+    const point = axisPoint(cx, cy, radius * 1.25, index, dimensions.length);
+    const isBest = slide.bestMetricIndexes?.includes(index);
+    ctx.font = `850 ${Math.max(16, width / 27)}px Inter, sans-serif`;
+    ctx.fillStyle = "#e7f8ff";
+    ctx.fillText(label, point.x, point.y - Math.max(8, height / 52));
+    ctx.font = `750 ${Math.max(13, width / 34)}px Inter, sans-serif`;
+    ctx.fillStyle = accent;
+    ctx.fillText(formatMetric(values[index], displayTypes[index]), point.x, point.y + Math.max(11, height / 42));
+    if (isBest) {
+      ctx.save();
+      const bestY = point.y + Math.max(42, height / 14);
+      const bestSize = Math.max(22, width / 22);
+      const bestSpacing = Math.max(2, width / 95);
+      ctx.font = `900 ${bestSize}px "Marker Felt", Papyrus, Copperplate, Impact, fantasy`;
+      ctx.fillStyle = bestColor;
+      ctx.shadowColor = bestColor;
+      ctx.shadowBlur = Math.max(14, width / 28);
+      ctx.lineWidth = Math.max(3, width / 180);
+      ctx.strokeStyle = "rgba(255, 247, 172, 0.62)";
+      drawCenteredSpacedText(ctx, "BEST", point.x, bestY, bestSpacing, true);
+      drawCenteredSpacedText(ctx, "BEST", point.x, bestY, bestSpacing, false);
+      ctx.restore();
+    }
+  });
+  ctx.restore();
+}
+
+function drawCenteredSpacedText(ctx, text, x, y, spacing, stroke = false) {
+  const chars = Array.from(text);
+  const width = chars.reduce((sum, char) => sum + ctx.measureText(char).width, 0) + spacing * Math.max(0, chars.length - 1);
+  let cursor = x - width / 2;
+  chars.forEach((char) => {
+    const charWidth = ctx.measureText(char).width;
+    const drawX = cursor + charWidth / 2;
+    if (stroke) ctx.strokeText(char, drawX, y);
+    else ctx.fillText(char, drawX, y);
+    cursor += charWidth + spacing;
+  });
+}
+
+function drawShowcaseName(ctx, slide, point) {
+  const name = showcaseDisplayTitle(slide);
+  const subtitle = slide.displaySubtitle || "";
+  const enter = showcaseAnimationProgress(1200);
+  ctx.save();
+  ctx.globalAlpha = enter;
+  ctx.translate(point.x, point.y);
+  ctx.scale(0.82 + enter * 0.18, 0.82 + enter * 0.18);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = slide.themeColor;
+  ctx.shadowBlur = 22;
+  ctx.fillStyle = "#f2fbff";
+  ctx.font = `900 ${Math.max(32, ctx.canvas.width / 24)}px Inter, sans-serif`;
+  ctx.fillText(name, 0, 0);
+  if (subtitle) {
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(210, 232, 240, 0.72)";
+    ctx.font = `650 ${Math.max(13, ctx.canvas.width / 86)}px Inter, sans-serif`;
+    ctx.fillText(subtitle, 0, Math.max(32, ctx.canvas.height / 18));
+  }
+  ctx.restore();
+}
+
+function drawShowcaseImage(ctx, slide, rect) {
+  const url = effectiveImageUrl(slide.image);
+  if (!url) return;
+  const cached = showcaseImageCache.get(url);
+  if (cached?.status === "loaded") {
+    const image = cached.image;
+    const scale = Math.min(rect.width / image.naturalWidth, rect.height / image.naturalHeight);
+    const width = image.naturalWidth * scale;
+    const height = image.naturalHeight * scale;
+    const x = rect.x + (rect.width - width) / 2;
+    const y = rect.y + (rect.height - height) / 2;
+    const enter = showcaseAnimationProgress(1500);
+    ctx.save();
+    ctx.globalAlpha = enter;
+    ctx.translate(x + width / 2, y + height / 2);
+    ctx.scale(0.72 + enter * 0.28, 0.72 + enter * 0.28);
+    ctx.shadowColor = slide.themeColor;
+    ctx.shadowBlur = 28;
+    ctx.drawImage(image, -width / 2, -height / 2, width, height);
+    ctx.restore();
+    return;
+  }
+  if (!cached) {
+    const image = new Image();
+    showcaseImageCache.set(url, { status: "loading", image });
+    image.onload = () => {
+      showcaseImageCache.set(url, { status: "loaded", image });
+      renderShowcasePreview();
+    };
+    image.onerror = () => {
+      showcaseImageCache.set(url, { status: "error", image });
+      renderShowcasePreview();
+    };
+    image.src = url;
+  }
+}
+
+function showcaseElementRects(canvas, layout) {
+  return showcaseElementRectsForSize(canvas.width, canvas.height, layout, state.showcase.slides[state.showcase.currentIndex] || null);
+}
+
+function showcaseElementRectsForSize(width, height, layout, slide) {
+  const radarSize = Math.min(width * 0.42, height * 0.68);
+  const imageWidth = width * 0.24;
+  const imageHeight = height * 0.42;
+  const radarCenter = denormalizePoint(layout.radar_position, { width, height, left: 0, top: 0 });
+  const namePoint = denormalizePoint(layout.name_position, { width, height, left: 0, top: 0 });
+  const imageCenter = denormalizePoint(layout.image_position, { width, height, left: 0, top: 0 });
+  const nameWidth = Math.max(width * 0.24, (slide?.player?.name || slide?.player?.steam_id || "").length * (width / 36));
+  const nameHeight = Math.max(64, height * 0.12);
+  return {
+    radar: { x: radarCenter.x - radarSize / 2, y: radarCenter.y - radarSize / 2, width: radarSize, height: radarSize },
+    name: { x: namePoint.x - nameWidth / 2, y: namePoint.y - nameHeight / 2, width: nameWidth, height: nameHeight },
+    namePoint,
+    image: { x: imageCenter.x - imageWidth / 2, y: imageCenter.y - imageHeight / 2, width: imageWidth, height: imageHeight },
+  };
+}
+
+function totalShowcaseDuration() {
+  return state.showcase.slides.reduce((sum, slide) => sum + (slide.durationMs || defaultShowcaseDurationMs), 0);
+}
+
+function currentShowcaseSegment(globalTimeMs) {
+  let elapsed = 0;
+  for (let index = 0; index < state.showcase.slides.length; index += 1) {
+    const duration = state.showcase.slides[index].durationMs || defaultShowcaseDurationMs;
+    if (globalTimeMs < elapsed + duration || index === state.showcase.slides.length - 1) {
+      return { index, offsetMs: Math.max(0, globalTimeMs - elapsed), startMs: elapsed, durationMs: duration };
+    }
+    elapsed += duration;
+  }
+  return { index: 0, offsetMs: 0, startMs: 0, durationMs: 0 };
+}
+
+function startShowcase() {
+  if (!state.showcase.slides.length) return;
+  if (state.showcase.status === "ended") seekShowcase(0);
+  state.showcase.status = "playing";
+  state.showcase.lastFrameTime = 0;
+  configureShowcaseAudio();
+  if (effectiveMusicUrl()) showcaseAudio.play().catch(() => {});
+  updateShowcaseControls();
+  requestAnimationFrame(updateShowcasePlayback);
+}
+
+function pauseShowcase() {
+  if (state.showcase.status === "playing") state.showcase.status = "paused";
+  showcaseAudio.pause();
+  updateShowcaseControls();
+}
+
+function toggleShowcasePlayback() {
+  if (state.showcase.status === "playing") pauseShowcase();
+  else startShowcase();
+}
+
+function nextShowcaseSlide() {
+  if (!state.showcase.slides.length) return;
+  const next = Math.min(state.showcase.slides.length - 1, state.showcase.currentIndex + 1);
+  seekShowcase(slideStartTime(next));
+}
+
+function previousShowcaseSlide() {
+  if (!state.showcase.slides.length) return;
+  const prev = Math.max(0, state.showcase.currentIndex - 1);
+  seekShowcase(slideStartTime(prev));
+}
+
+function slideStartTime(index) {
+  return state.showcase.slides.slice(0, index).reduce((sum, slide) => sum + (slide.durationMs || defaultShowcaseDurationMs), 0);
+}
+
+function seekShowcase(globalTimeMs) {
+  const total = totalShowcaseDuration();
+  state.showcase.currentTimeMs = Math.max(0, Math.min(globalTimeMs, Math.max(0, total - 1)));
+  const segment = currentShowcaseSegment(state.showcase.currentTimeMs);
+  const changed = state.showcase.currentIndex !== segment.index;
+  state.showcase.currentIndex = segment.index;
+  if (changed) state.showcase.animationStartTime = performance.now();
+  if (state.showcase.status === "ended" && state.showcase.currentTimeMs < total) state.showcase.status = "paused";
+  renderShowcasePreview();
+  updateShowcaseControls();
+}
+
+function updateShowcasePlayback(timestamp) {
+  if (state.showcase.status !== "playing") return;
+  if (!state.showcase.lastFrameTime) state.showcase.lastFrameTime = timestamp;
+  const delta = timestamp - state.showcase.lastFrameTime;
+  state.showcase.lastFrameTime = timestamp;
+  const total = totalShowcaseDuration();
+  state.showcase.currentTimeMs += delta;
+  if (state.showcase.currentTimeMs >= total) {
+    state.showcase.currentTimeMs = total;
+    state.showcase.currentIndex = Math.max(0, state.showcase.slides.length - 1);
+    state.showcase.status = "ended";
+    showcaseAudio.pause();
+    renderShowcasePreview();
+    updateShowcaseControls();
+    return;
+  }
+  const nextIndex = currentShowcaseSegment(state.showcase.currentTimeMs).index;
+  if (nextIndex !== state.showcase.currentIndex) state.showcase.animationStartTime = performance.now();
+  state.showcase.currentIndex = nextIndex;
+  renderShowcasePreview();
+  requestAnimationFrame(updateShowcasePlayback);
+}
+
+function renderShowcaseTimeline() {
+  const total = totalShowcaseDuration();
+  const progress = total ? Math.min(1, state.showcase.currentTimeMs / total) : 0;
+  el.showcaseTimelineBar.style.width = `${progress * 100}%`;
+}
+
+function updateShowcaseControls() {
+  const hasSlides = state.showcase.slides.length > 0;
+  el.toggleShowcaseBtn.disabled = !hasSlides;
+  el.prevShowcaseBtn.disabled = !hasSlides;
+  el.nextShowcaseBtn.disabled = !hasSlides;
+  el.fullscreenShowcaseBtn.disabled = !hasSlides;
+  el.toggleShowcaseBtn.textContent = state.showcase.status === "playing" ? "暂停" : "播放";
+}
+
+function enterShowcaseFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.();
+    return;
+  }
+  if (el.showcaseArea.classList.contains("showcase-fullscreen-fallback")) {
+    el.showcaseArea.classList.remove("showcase-fullscreen-fallback");
+    renderShowcasePreview();
+    return;
+  }
+  const request = el.showcaseArea.requestFullscreen?.();
+  if (request?.catch) {
+    request.catch(() => {
+      el.showcaseArea.classList.add("showcase-fullscreen-fallback");
+      renderShowcasePreview();
+    });
+  } else {
+    el.showcaseArea.classList.add("showcase-fullscreen-fallback");
+    renderShowcasePreview();
+  }
+}
+
+function normalizePoint(clientX, clientY, rect) {
+  return {
+    x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+    y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
+  };
+}
+
+function denormalizePoint(point, rect) {
+  return {
+    x: rect.left + point.x * rect.width,
+    y: rect.top + point.y * rect.height,
+  };
+}
+
+function hitTestShowcaseElement(event) {
+  if (!state.showcase.slides.length) return null;
+  const canvasRect = el.showcaseCanvas.getBoundingClientRect();
+  const scaleX = el.showcaseCanvas.width / canvasRect.width;
+  const scaleY = el.showcaseCanvas.height / canvasRect.height;
+  const x = (event.clientX - canvasRect.left) * scaleX;
+  const y = (event.clientY - canvasRect.top) * scaleY;
+  const rects = showcaseElementRects(el.showcaseCanvas, state.config.showcase.layout);
+  for (const target of ["radar", "name", "image"]) {
+    const rect = rects[target];
+    if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) return target;
+  }
+  return null;
+}
+
+function beginShowcaseDrag(target, event) {
+  if (state.view !== "showcase" || document.fullscreenElement || !state.showcase.slides.length || !target) return;
+  state.showcase.activeDragTarget = target;
+  el.showcaseArea.classList.add("showcase-dragging");
+  updateShowcaseDrag(event);
+}
+
+function updateShowcaseDrag(event) {
+  const target = state.showcase.activeDragTarget;
+  if (!target) return;
+  const rect = el.showcaseCanvas.getBoundingClientRect();
+  const point = normalizePoint(event.clientX, event.clientY, rect);
+  const layout = cloneShowcaseLayout(state.config.showcase.layout);
+  if (target === "radar") layout.radar_position = point;
+  if (target === "name") layout.name_position = point;
+  if (target === "image") layout.image_position = point;
+  state.config.showcase.layout = layout;
+  renderShowcasePreview();
+}
+
+async function endShowcaseDrag() {
+  if (!state.showcase.activeDragTarget) return;
+  state.showcase.activeDragTarget = null;
+  el.showcaseArea.classList.remove("showcase-dragging");
+  await saveShowcaseLayout(state.config.showcase.layout);
+}
+
+function cloneShowcaseLayout(layout) {
+  return {
+    radar_position: { ...(layout?.radar_position || defaultShowcaseLayout.radar_position) },
+    name_position: { ...(layout?.name_position || defaultShowcaseLayout.name_position) },
+    image_position: { ...(layout?.image_position || defaultShowcaseLayout.image_position) },
+  };
+}
+
+async function saveShowcaseLayout(layout) {
+  const nextConfig = {
+    ...state.config,
+    showcase: {
+      ...state.config.showcase,
+      layout: cloneShowcaseLayout(layout),
+    },
+  };
+  try {
+    await api("/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nextConfig),
+    });
+    state.config = nextConfig;
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function resetShowcaseLayout() {
+  state.config.showcase.layout = cloneShowcaseLayout(defaultShowcaseLayout);
+  renderShowcasePreview();
+  await saveShowcaseLayout(state.config.showcase.layout);
+}
+
 el.demoFile.addEventListener("change", () => {
   const file = el.demoFile.files[0];
   el.fileName.textContent = file ? file.name : "选择已解压的 .dem 文件";
@@ -763,6 +1916,7 @@ el.demoFile.addEventListener("change", () => {
 
 el.currentDemoTab.addEventListener("click", () => setView("current"));
 el.playerRecordsTab.addEventListener("click", () => setView("records"));
+el.showcaseTab.addEventListener("click", () => setView("showcase"));
 
 el.uploadBtn.addEventListener("click", async () => {
   clearError();
@@ -783,7 +1937,9 @@ el.uploadBtn.addEventListener("click", async () => {
     syncRadarTextControls(null);
     if (data.save_status === "saved" || data.save_status === "duplicate") {
       state.savedPlayersLoaded = false;
+      state.showcase.playersLoaded = false;
       if (state.view === "records") loadSavedPlayers();
+      if (state.view === "showcase") renderShowcaseQueueList();
     }
     el.exportBtn.disabled = true;
     renderMetricList(null);
@@ -795,9 +1951,9 @@ el.uploadBtn.addEventListener("click", async () => {
       state.demoId = error.demo_id;
       state.players = error.players;
       state.selectedPlayer = null;
-    state.radarData = null;
-    syncRadarTextControls(null);
-    el.exportBtn.disabled = true;
+      state.radarData = null;
+      syncRadarTextControls(null);
+      el.exportBtn.disabled = true;
       renderMetricList(null);
       renderPreview();
       renderCandidates(error.players);
@@ -867,10 +2023,151 @@ el.radarSubtitle.addEventListener("input", () => {
 el.databasePath.addEventListener("change", saveConfig);
 el.saveConfigBtn.addEventListener("click", saveConfig);
 
+el.toggleShowcaseBtn.addEventListener("click", toggleShowcasePlayback);
+el.prevShowcaseBtn.addEventListener("click", previousShowcaseSlide);
+el.nextShowcaseBtn.addEventListener("click", nextShowcaseSlide);
+el.fullscreenShowcaseBtn.addEventListener("click", enterShowcaseFullscreen);
+el.resetShowcaseLayoutBtn.addEventListener("click", resetShowcaseLayout);
+el.showcaseDurationSeconds.addEventListener("change", () => {
+  const slide = currentShowcaseResourceSlide();
+  if (!slide) return;
+  const seconds = Number(el.showcaseDurationSeconds.value);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    el.showcaseDurationSeconds.value = ((slide.durationMs || defaultShowcaseDurationMs) / 1000).toFixed(1).replace(/\.0$/, "");
+    return showError({ code: "invalid_showcase_duration", message: "显示时长必须大于 0 秒。" });
+  }
+  slide.durationMs = Math.round(seconds * 1000);
+  const total = totalShowcaseDuration();
+  state.showcase.currentTimeMs = Math.min(state.showcase.currentTimeMs, Math.max(0, total - 1));
+  renderShowcaseTimeline();
+  renderShowcasePreview();
+});
+el.showcaseImageFile.addEventListener("change", async () => {
+  const player = currentShowcaseImagePlayer();
+  const file = el.showcaseImageFile.files[0];
+  el.showcaseImageFileName.textContent = file?.name || "未选择文件";
+  if (!player || !file) return;
+  try {
+    await uploadPlayerImage(player.steam_id, file);
+  } catch (error) {
+    showError(error);
+  }
+});
+el.saveShowcaseImageUrlBtn.addEventListener("click", async () => {
+  const player = currentShowcaseImagePlayer();
+  if (!player) return;
+  try {
+    await savePlayerImageUrl(player.steam_id, el.showcaseImageUrl.value.trim());
+  } catch (error) {
+    showError(error);
+  }
+});
+el.clearShowcaseImageBtn.addEventListener("click", async () => {
+  const player = currentShowcaseImagePlayer();
+  if (!player) return;
+  try {
+    await clearPlayerImage(player.steam_id);
+  } catch (error) {
+    showError(error);
+  }
+});
+el.showcaseMvpBackgroundFile.addEventListener("change", async () => {
+  const player = currentShowcaseImagePlayer();
+  const file = el.showcaseMvpBackgroundFile.files[0];
+  el.showcaseMvpBackgroundFileName.textContent = file?.name || "未选择文件";
+  if (!player || !file) return;
+  try {
+    await uploadPlayerMVPBackground(player.steam_id, file);
+  } catch (error) {
+    showError(error);
+  }
+});
+el.clearShowcaseMvpBackgroundBtn.addEventListener("click", async () => {
+  const player = currentShowcaseImagePlayer();
+  if (!player) return;
+  try {
+    await clearPlayerMVPBackground(player.steam_id);
+  } catch (error) {
+    showError(error);
+  }
+});
+el.showcaseMusicFile.addEventListener("change", async () => {
+  const file = el.showcaseMusicFile.files[0];
+  el.showcaseMusicFileName.textContent = file?.name || "未选择文件";
+  if (!file) return;
+  try {
+    await uploadShowcaseMusic(file);
+  } catch (error) {
+    showError(error);
+  }
+});
+el.clearShowcaseMusicBtn.addEventListener("click", async () => {
+  try {
+    await clearShowcaseMusic();
+  } catch (error) {
+    showError(error);
+  }
+});
+el.showcaseTimeline.addEventListener("mousedown", (event) => {
+  if (!state.showcase.slides.length) return;
+  state.showcase.timelineDragging = true;
+  const rect = el.showcaseTimeline.getBoundingClientRect();
+  seekShowcase(((event.clientX - rect.left) / rect.width) * totalShowcaseDuration());
+});
+window.addEventListener("mousemove", (event) => {
+  if (state.showcase.timelineDragging) {
+    const rect = el.showcaseTimeline.getBoundingClientRect();
+    seekShowcase(((event.clientX - rect.left) / rect.width) * totalShowcaseDuration());
+  }
+  if (state.showcase.activeDragTarget) updateShowcaseDrag(event);
+});
+window.addEventListener("mouseup", () => {
+  state.showcase.timelineDragging = false;
+  endShowcaseDrag();
+});
+el.showcaseCanvas.addEventListener("mousedown", (event) => beginShowcaseDrag(hitTestShowcaseElement(event), event));
+el.showcaseCanvas.addEventListener("mousemove", (event) => {
+  if (state.view !== "showcase" || document.fullscreenElement || !state.showcase.slides.length) {
+    el.showcaseCanvas.style.cursor = "";
+    return;
+  }
+  el.showcaseCanvas.style.cursor = hitTestShowcaseElement(event) ? "grab" : "";
+});
+document.addEventListener("keydown", (event) => {
+  if (state.view !== "showcase") return;
+  if (isEditableEventTarget(event.target)) return;
+  if (event.code === "Space") {
+    event.preventDefault();
+    toggleShowcasePlayback();
+  } else if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    previousShowcaseSlide();
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    nextShowcaseSlide();
+  } else if (event.key === "f" || event.key === "F" || event.key === "F11") {
+    event.preventDefault();
+    enterShowcaseFullscreen();
+  } else if (event.key === "p" || event.key === "P") {
+    state.showcase.particlesEnabled = !state.showcase.particlesEnabled;
+    renderShowcasePreview();
+  } else if (event.key === "Escape" && el.showcaseArea.classList.contains("showcase-fullscreen-fallback")) {
+    el.showcaseArea.classList.remove("showcase-fullscreen-fallback");
+    renderShowcasePreview();
+  }
+});
+document.addEventListener("fullscreenchange", () => {
+  el.showcaseArea.classList.remove("showcase-fullscreen-fallback");
+  renderShowcasePreview();
+});
+
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(renderPreview, 80);
+  resizeTimer = setTimeout(() => {
+    renderPreview();
+    renderShowcasePreview();
+  }, 80);
 });
 
 el.canvas.addEventListener("mousemove", (event) => {
@@ -885,4 +2182,9 @@ el.canvas.addEventListener("mousemove", (event) => {
 });
 el.canvas.addEventListener("mouseleave", hideTooltip);
 
-loadConfig().then(() => setView(state.view));
+loadConfig().then(async () => {
+  configureShowcaseAudio();
+  await loadShowcaseMusic().catch(() => {});
+  configureShowcaseAudio();
+  setView(state.view);
+});
