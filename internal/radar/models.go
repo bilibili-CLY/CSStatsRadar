@@ -83,6 +83,9 @@ type ShowcaseConfig struct {
 	DefaultDurationMS int            `json:"default_duration_ms"`
 	Layout            ShowcaseLayout `json:"layout"`
 	MusicPath         string         `json:"music_path,omitempty"`
+	ShowBestMarkers   bool           `json:"show_best_markers"`
+	AudioOffsetMS     int            `json:"audio_offset_ms"`
+	FFmpegPath        string         `json:"ffmpeg_path,omitempty"`
 }
 
 type PlayerImageSourceType string
@@ -215,6 +218,15 @@ type PlayerMatchRecord struct {
 
 type AggregateRadarRequest struct {
 	DemoRecordIDs []string `json:"demo_record_ids"`
+}
+
+type ShowcaseVideoExportRequest struct {
+	Width         int      `json:"width"`
+	Height        int      `json:"height"`
+	FPS           int      `json:"fps"`
+	DurationMS    int      `json:"duration_ms"`
+	AudioOffsetMS int      `json:"audio_offset_ms"`
+	Frames        []string `json:"frames"`
 }
 
 type AggregateRadarResponse struct {

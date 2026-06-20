@@ -757,6 +757,37 @@ func playerImageUploadBody(t *testing.T, fileName string, contentType string, co
 	return &body, writer.FormDataContentType()
 }
 
+func TestShowcaseVideoRequiresFFmpegPath(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := DefaultConfig()
+	cfg.DatabasePath = filepath.Join(t.TempDir(), "history.db")
+	if appErr := NewConfigManager(configPath).Save(cfg); appErr != nil {
+		t.Fatalf("save test config: %v", appErr)
+	}
+	server := NewServer(ServerOptions{Config: NewConfigManager(configPath)})
+	payload := bytes.NewBufferString(`{"width":1280,"height":720,"fps":60,"duration_ms":1000,"frames":["data:image/png;base64,AAAA"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/showcase/video", payload)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.handleShowcaseVideo(rec, req)
+
+	if rec.Code != httpStatusBadRequest {
+		t.Fatalf("expected missing ffmpeg to fail with bad request, got %d", rec.Code)
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != "showcase_video_unavailable" {
+		t.Fatalf("unexpected error code: %+v", body)
+	}
+}
+
 func TestAPIInvalidFileDemoNotFoundAndConfig(t *testing.T) {
 	ts := testServer(t)
 	defer ts.Close()

@@ -20,6 +20,7 @@ func DefaultConfig() AppConfig {
 		DatabasePath:             DefaultDatabasePath(),
 		Showcase: ShowcaseConfig{
 			DefaultDurationMS: 4000,
+			ShowBestMarkers:   true,
 			Layout: ShowcaseLayout{
 				RadarPosition: NormalizedPoint{X: 0.36, Y: 0.56},
 				NamePosition:  NormalizedPoint{X: 0.72, Y: 0.22},
@@ -162,6 +163,9 @@ func ValidateConfig(cfg AppConfig, errorCode string) *AppError {
 	if cfg.Showcase.DefaultDurationMS <= 0 {
 		return NewAppError(errorCode, httpStatusBadRequest, "展示默认时长必须为正整数。", nil)
 	}
+	if cfg.Showcase.AudioOffsetMS < -60000 || cfg.Showcase.AudioOffsetMS > 60000 {
+		return NewAppError(errorCode, httpStatusBadRequest, "音乐偏移必须在 -60 到 60 秒之间。", nil)
+	}
 	if !isNormalizedPoint(cfg.Showcase.Layout.RadarPosition) ||
 		!isNormalizedPoint(cfg.Showcase.Layout.NamePosition) ||
 		!isNormalizedPoint(cfg.Showcase.Layout.ImagePosition) {
@@ -186,6 +190,15 @@ func parseShowcaseConfig(raw any, fallback ShowcaseConfig) ShowcaseConfig {
 		}
 		if musicPath, ok := value["music_path"].(string); ok {
 			cfg.MusicPath = musicPath
+		}
+		if showBestMarkers, ok := value["show_best_markers"].(bool); ok {
+			cfg.ShowBestMarkers = showBestMarkers
+		}
+		if audioOffsetMS, ok := numberToInt(value["audio_offset_ms"]); ok {
+			cfg.AudioOffsetMS = audioOffsetMS
+		}
+		if ffmpegPath, ok := value["ffmpeg_path"].(string); ok {
+			cfg.FFmpegPath = ffmpegPath
 		}
 	}
 	return cfg

@@ -19,6 +19,7 @@ type HistoryRepository interface {
 	SavePlayerMVPBackground(background PlayerMVPBackground) (*PlayerMVPBackground, *AppError)
 	DeletePlayerMVPBackground(steamID string) *AppError
 	DeletePlayer(steamID string) *AppError
+	DeleteAllPlayers() *AppError
 	DeletePlayerMatch(steamID string, demoRecordID string) *AppError
 }
 

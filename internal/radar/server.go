@@ -99,6 +99,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/player-images/", s.handlePlayerImageAsset)
 	mux.HandleFunc("/api/player-mvp-backgrounds/", s.handlePlayerMVPBackgroundAsset)
 	mux.HandleFunc("/api/showcase/music", s.handleShowcaseMusic)
+	mux.HandleFunc("/api/showcase/video", s.handleShowcaseVideo)
 	mux.HandleFunc("/api/showcase-music/", s.handleShowcaseMusicAsset)
 	if s.staticFS != nil {
 		mux.Handle("/", http.FileServer(http.FS(s.staticFS)))
@@ -292,20 +293,28 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.NotFound(w, r)
-		return
-	}
 	if s.history == nil {
 		writeError(w, NewAppError("database_open_failed", httpStatusInternal, "", nil))
 		return
 	}
-	players, appErr := s.history.ListPlayers()
-	if appErr != nil {
-		writeError(w, appErr)
+	switch r.Method {
+	case http.MethodGet:
+		players, appErr := s.history.ListPlayers()
+		if appErr != nil {
+			writeError(w, appErr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"players": players})
+	case http.MethodDelete:
+		if appErr := s.history.DeleteAllPlayers(); appErr != nil {
+			writeError(w, appErr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	default:
+		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"players": players})
 }
 
 func (s *Server) handlePlayerSubroutes(w http.ResponseWriter, r *http.Request) {

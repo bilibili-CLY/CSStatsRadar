@@ -24,6 +24,9 @@ func TestConfigDefaultsSaveReadAndCorruptFallback(t *testing.T) {
 	if cfg.Showcase.DefaultDurationMS != 4000 {
 		t.Fatalf("unexpected default showcase duration: %+v", cfg.Showcase)
 	}
+	if !cfg.Showcase.ShowBestMarkers || cfg.Showcase.AudioOffsetMS != 0 || cfg.Showcase.FFmpegPath != "" {
+		t.Fatalf("unexpected default showcase options: %+v", cfg.Showcase)
+	}
 	if cfg.Showcase.Layout.RadarPosition != (NormalizedPoint{X: 0.36, Y: 0.56}) {
 		t.Fatalf("unexpected default radar position: %+v", cfg.Showcase.Layout)
 	}
@@ -94,6 +97,9 @@ func TestShowcaseConfigSaveAndRead(t *testing.T) {
 	cfg.DatabasePath = filepath.Join(t.TempDir(), "stats.db")
 	cfg.Showcase = ShowcaseConfig{
 		DefaultDurationMS: 8000,
+		ShowBestMarkers:   false,
+		AudioOffsetMS:     1250,
+		FFmpegPath:        filepath.Join(t.TempDir(), "ffmpeg"),
 		Layout: ShowcaseLayout{
 			RadarPosition: NormalizedPoint{X: 0.2, Y: 0.3},
 			NamePosition:  NormalizedPoint{X: 0.4, Y: 0.5},
@@ -114,6 +120,9 @@ func TestShowcaseConfigSaveAndRead(t *testing.T) {
 	}
 	if roundtrip.Showcase.Layout.ImagePosition != (NormalizedPoint{X: 0.6, Y: 0.7}) {
 		t.Fatalf("showcase layout did not roundtrip: %+v", roundtrip.Showcase.Layout)
+	}
+	if roundtrip.Showcase.ShowBestMarkers || roundtrip.Showcase.AudioOffsetMS != 1250 || roundtrip.Showcase.FFmpegPath != cfg.Showcase.FFmpegPath {
+		t.Fatalf("showcase options did not roundtrip: %+v", roundtrip.Showcase)
 	}
 }
 
@@ -197,6 +206,12 @@ func TestInvalidShowcaseConfig(t *testing.T) {
 	cases = append(cases, cfg)
 	cfg = base
 	cfg.Showcase.Layout.ImagePosition.X = 2
+	cases = append(cases, cfg)
+	cfg = base
+	cfg.Showcase.AudioOffsetMS = -60001
+	cases = append(cases, cfg)
+	cfg = base
+	cfg.Showcase.AudioOffsetMS = 60001
 	cases = append(cases, cfg)
 
 	for _, cfg := range cases {

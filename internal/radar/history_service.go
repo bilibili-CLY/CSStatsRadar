@@ -132,6 +132,14 @@ func (s *HistoryService) DeletePlayer(steamID string) *AppError {
 	return repo.DeletePlayer(steamID)
 }
 
+func (s *HistoryService) DeleteAllPlayers() *AppError {
+	repo := s.currentRepo()
+	if repo == nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "", nil)
+	}
+	return repo.DeleteAllPlayers()
+}
+
 func (s *HistoryService) DeletePlayerMatch(steamID string, demoRecordID string) *AppError {
 	repo := s.currentRepo()
 	if repo == nil {

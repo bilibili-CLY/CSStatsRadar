@@ -249,6 +249,14 @@ func (r *fakeHistoryRepository) DeletePlayer(steamID string) *AppError {
 	return nil
 }
 
+func (r *fakeHistoryRepository) DeleteAllPlayers() *AppError {
+	r.players = map[string]SavedPlayer{}
+	r.matches = map[string][]PlayerMatchRecord{}
+	r.images = map[string]PlayerImage{}
+	r.backgrounds = map[string]PlayerMVPBackground{}
+	return nil
+}
+
 func (r *fakeHistoryRepository) DeletePlayerMatch(steamID string, demoRecordID string) *AppError {
 	matches := r.matches[steamID]
 	for i, match := range matches {

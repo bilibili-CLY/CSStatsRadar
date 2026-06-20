@@ -397,6 +397,39 @@ func (r *SQLiteHistoryRepository) DeletePlayer(steamID string) *AppError {
 	return nil
 }
 
+func (r *SQLiteHistoryRepository) DeleteAllPlayers() *AppError {
+	db, appErr := r.currentDB()
+	if appErr != nil {
+		return appErr
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "数据库事务启动失败："+err.Error(), nil)
+	}
+	defer tx.Rollback()
+
+	statements := []struct {
+		sql   string
+		label string
+	}{
+		{`DELETE FROM player_match_stats`, "玩家比赛统计清空失败："},
+		{`DELETE FROM player_images`, "玩家图片清空失败："},
+		{`DELETE FROM player_mvp_backgrounds`, "MVP 背景清空失败："},
+		{`DELETE FROM demo_players`, "Demo 玩家关联清空失败："},
+		{`DELETE FROM players`, "玩家记录清空失败："},
+		{`DELETE FROM demos`, "Demo 记录清空失败："},
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement.sql); err != nil {
+			return NewAppError("database_open_failed", httpStatusInternal, statement.label+err.Error(), nil)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "数据库提交失败："+err.Error(), nil)
+	}
+	return nil
+}
+
 func (r *SQLiteHistoryRepository) DeletePlayerMatch(steamID string, demoRecordID string) *AppError {
 	db, appErr := r.currentDB()
 	if appErr != nil {

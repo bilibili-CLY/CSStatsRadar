@@ -35,6 +35,9 @@ var ErrorMessages = map[string]string{
 	"invalid_aggregate_request":   "综合雷达请求无效。",
 	"invalid_player_image":        "玩家图片请求无效。",
 	"player_image_save_failed":    "玩家图片保存失败。",
+	"invalid_showcase_video":      "展示视频导出请求无效。",
+	"showcase_video_unavailable":  "展示视频导出不可用。",
+	"showcase_video_failed":       "展示视频导出失败。",
 }
 
 func NewAppError(code string, status int, message string, extra map[string]any) *AppError {

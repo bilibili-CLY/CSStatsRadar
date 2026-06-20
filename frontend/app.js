@@ -16,6 +16,8 @@ const state = {
   selectedSavedPlayer: null,
   playerMatches: [],
   selectedMatchIds: new Set(),
+  matchSelectionDragging: false,
+  matchSelectionMode: "select",
   config: {
     export_width: 1920,
     export_height: 1080,
@@ -25,6 +27,9 @@ const state = {
     database_path: "",
     showcase: {
       default_duration_ms: defaultShowcaseDurationMs,
+      show_best_markers: true,
+      audio_offset_ms: 0,
+      ffmpeg_path: "",
       layout: {
         radar_position: { x: 0.36, y: 0.56 },
         name_position: { x: 0.72, y: 0.22 },
@@ -61,6 +66,13 @@ const state = {
     targetThemeColor: "#00ffff",
     animationStartTime: 0,
     music: null,
+    waveformUrl: "",
+    waveformPeaks: [],
+    waveformExpanded: true,
+    waveformDragging: false,
+    audioContext: null,
+    exportingVideo: false,
+    renderingExport: false,
   },
 };
 
@@ -68,6 +80,7 @@ const el = {
   currentDemoTab: document.querySelector("#currentDemoTab"),
   playerRecordsTab: document.querySelector("#playerRecordsTab"),
   showcaseTab: document.querySelector("#showcaseTab"),
+  workspace: document.querySelector("#workspace"),
   demoPanel: document.querySelector("#demoPanel"),
   playerPanel: document.querySelector("#playerPanel"),
   showcasePanel: document.querySelector("#showcasePanel"),
@@ -75,6 +88,8 @@ const el = {
   showcaseQueueList: document.querySelector("#showcaseQueueList"),
   showcaseImagePlayer: document.querySelector("#showcaseImagePlayer"),
   showcaseDurationSeconds: document.querySelector("#showcaseDurationSeconds"),
+  showcaseThemePreset: document.querySelector("#showcaseThemePreset"),
+  showBestMarkers: document.querySelector("#showBestMarkers"),
   showcaseImageFile: document.querySelector("#showcaseImageFile"),
   showcaseImageFileName: document.querySelector("#showcaseImageFileName"),
   showcaseImageUrl: document.querySelector("#showcaseImageUrl"),
@@ -86,10 +101,10 @@ const el = {
   showcaseMusicFile: document.querySelector("#showcaseMusicFile"),
   showcaseMusicFileName: document.querySelector("#showcaseMusicFileName"),
   clearShowcaseMusicBtn: document.querySelector("#clearShowcaseMusicBtn"),
-  toggleShowcaseBtn: document.querySelector("#toggleShowcaseBtn"),
-  prevShowcaseBtn: document.querySelector("#prevShowcaseBtn"),
-  nextShowcaseBtn: document.querySelector("#nextShowcaseBtn"),
-  fullscreenShowcaseBtn: document.querySelector("#fullscreenShowcaseBtn"),
+  showcaseFFmpegPath: document.querySelector("#showcaseFFmpegPath"),
+  saveShowcaseSettingsBtn: document.querySelector("#saveShowcaseSettingsBtn"),
+  exportShowcaseVideoBtn: document.querySelector("#exportShowcaseVideoBtn"),
+  showcaseVideoStatus: document.querySelector("#showcaseVideoStatus"),
   resetShowcaseLayoutBtn: document.querySelector("#resetShowcaseLayoutBtn"),
   demoFile: document.querySelector("#demoFile"),
   fileName: document.querySelector("#fileName"),
@@ -114,6 +129,12 @@ const el = {
   showcaseCanvas: document.querySelector("#showcaseCanvas"),
   showcaseTimeline: document.querySelector("#showcaseTimeline"),
   showcaseTimelineBar: document.querySelector("#showcaseTimelineBar"),
+  showcaseAudioTimeline: document.querySelector("#showcaseAudioTimeline"),
+  toggleAudioWaveformBtn: document.querySelector("#toggleAudioWaveformBtn"),
+  showcaseWaveformCanvas: document.querySelector("#showcaseWaveformCanvas"),
+  showcaseAudioPlayhead: document.querySelector("#showcaseAudioPlayhead"),
+  showcaseAudioOffset: document.querySelector("#showcaseAudioOffset"),
+  showcaseAudioOffsetSeconds: document.querySelector("#showcaseAudioOffsetSeconds"),
   chartTooltip: document.querySelector("#chartTooltip"),
   metricTitle: document.querySelector("#metricTitle"),
 };
@@ -127,6 +148,11 @@ const presetColors = {
   blue: "#007aff",
   indigo: "#4f46e5",
   violet: "#af52de",
+};
+
+const showcaseThemeOptions = {
+  random: "",
+  ...presetColors,
 };
 
 const metricCaptions = {
@@ -151,18 +177,59 @@ const showcaseAnimDuration = 1500;
 const bestColor = "#ffd76a";
 const showcaseAudio = new Audio();
 showcaseAudio.loop = true;
+showcaseAudio.addEventListener("loadedmetadata", () => syncShowcaseAudioToTimeline(state.showcase.status === "playing"));
 
 function configureShowcaseAudio() {
   const url = effectiveMusicUrl();
   if (!url) {
     showcaseAudio.pause();
     showcaseAudio.removeAttribute("src");
+    state.showcase.waveformUrl = "";
+    state.showcase.waveformPeaks = [];
+    renderAudioWaveform();
     return;
   }
   if (showcaseAudio.getAttribute("src") !== url) {
     showcaseAudio.src = url;
     showcaseAudio.load();
   }
+  if (state.showcase.waveformUrl !== url) {
+    state.showcase.waveformUrl = url;
+    loadAudioWaveform();
+  }
+}
+
+function audioOffsetMs() {
+  return Number(state.config.showcase?.audio_offset_ms || 0);
+}
+
+function timelineAudioTimeSeconds(globalTimeMs = state.showcase.currentTimeMs) {
+  const rawMs = globalTimeMs - audioOffsetMs();
+  if (rawMs < 0) return null;
+  const seconds = rawMs / 1000;
+  if (Number.isFinite(showcaseAudio.duration) && showcaseAudio.duration > 0) {
+    return seconds % showcaseAudio.duration;
+  }
+  return seconds;
+}
+
+function syncShowcaseAudioToTimeline(shouldPlay = state.showcase.status === "playing") {
+  const url = effectiveMusicUrl();
+  if (!url) return;
+  configureShowcaseAudio();
+  const nextTime = timelineAudioTimeSeconds();
+  if (nextTime === null) {
+    showcaseAudio.pause();
+    return;
+  }
+  if (Number.isFinite(nextTime) && Math.abs((showcaseAudio.currentTime || 0) - nextTime) > 0.18) {
+    try {
+      showcaseAudio.currentTime = nextTime;
+    } catch {
+      return;
+    }
+  }
+  if (shouldPlay) showcaseAudio.play().catch(() => {});
 }
 
 function setAccent(color) {
@@ -198,6 +265,8 @@ function setView(view) {
   el.currentDemoTab.classList.toggle("active", isCurrent);
   el.playerRecordsTab.classList.toggle("active", isRecords);
   el.showcaseTab.classList.toggle("active", isShowcase);
+  el.workspace.classList.toggle("showcase-view", isShowcase);
+  el.workspace.classList.toggle("records-view", isRecords);
   el.demoPanel.hidden = !isCurrent;
   el.playerPanel.hidden = !isCurrent;
   el.showcasePanel.hidden = !isShowcase;
@@ -206,7 +275,7 @@ function setView(view) {
   el.historyArea.hidden = !isRecords;
   el.showcaseArea.hidden = !isShowcase;
   el.canvas.hidden = isShowcase || (!isCurrent && !state.aggregateRadarData);
-  el.metricTitle.textContent = isCurrent ? "数据指标" : isShowcase ? "展示轮播" : state.aggregateRadarData ? "综合指标" : "玩家记录";
+  el.metricTitle.textContent = isCurrent ? "数据指标" : isShowcase ? "展示轮播" : "玩家记录";
   if (isCurrent) {
     syncRadarTextControls(state.radarData, false);
     renderMetricList(state.radarData);
@@ -215,7 +284,7 @@ function setView(view) {
     syncRadarTextControls(state.aggregateRadarData, false);
     if (state.selectedSavedPlayer) renderHistoryArea();
     else loadSavedPlayers();
-    renderMetricList(state.aggregateRadarData);
+    renderMetricList(null);
     if (state.aggregateRadarData) renderPreview();
   } else if (isShowcase) {
     renderMetricList(null);
@@ -223,6 +292,7 @@ function setView(view) {
     renderShowcaseQueueList();
     renderShowcaseImagePanel(currentShowcaseImagePlayer());
     updateShowcaseControls();
+    renderAudioWaveform();
     renderShowcasePreview();
   }
 }
@@ -426,6 +496,12 @@ function renderPreview() {
   const width = Math.max(640, Math.floor(rect.width));
   const height = Math.max(420, Math.floor(rect.height));
   drawRadar(el.canvas, radarData, { width, height, themeColor: state.config.theme_color });
+  updateExportButton();
+}
+
+function updateExportButton() {
+  const radarData = activeRadarData();
+  el.exportBtn.disabled = !radarData;
 }
 
 function drawRadar(targetCanvas, radarData, options = {}) {
@@ -617,6 +693,9 @@ async function loadConfig() {
     el.themeColor.value = state.config.theme_color;
     el.colorPreset.value = presetColors[state.config.color_preset] ? state.config.color_preset : "default";
     el.databasePath.value = state.config.database_path || "";
+    el.showBestMarkers.checked = state.config.showcase.show_best_markers !== false;
+    el.showcaseFFmpegPath.value = state.config.showcase.ffmpeg_path || "";
+    syncAudioOffsetControls();
     setAccent(state.config.theme_color);
     renderShowcasePreview();
     if (config.warning) showError({ code: "config_read_failed", message: config.warning });
@@ -658,6 +737,9 @@ async function saveConfig() {
     el.themeColor.value = state.config.theme_color;
     el.colorPreset.value = state.config.color_preset;
     el.databasePath.value = state.config.database_path || "";
+    el.showBestMarkers.checked = state.config.showcase.show_best_markers !== false;
+    el.showcaseFFmpegPath.value = state.config.showcase.ffmpeg_path || "";
+    syncAudioOffsetControls();
     showError(error);
   }
 }
@@ -726,7 +808,10 @@ function renderHistoryArea() {
     <section class="history-card">
       <div class="history-header">
         <h2>玩家记录</h2>
-        <button id="refreshPlayersBtn" type="button">刷新</button>
+        <div class="history-header-actions">
+          <button id="refreshPlayersBtn" type="button">刷新</button>
+          <button id="clearAllPlayersBtn" class="danger-btn" type="button">清除所有数据</button>
+        </div>
       </div>
       <table class="records-table">
         <thead><tr><th>玩家名</th><th>SteamID</th><th>比赛数</th><th>最近记录时间</th><th></th></tr></thead>
@@ -734,8 +819,9 @@ function renderHistoryArea() {
       </table>
     </section>`;
   el.historyArea.querySelector("#refreshPlayersBtn").addEventListener("click", loadSavedPlayers);
+  el.historyArea.querySelector("#clearAllPlayersBtn").addEventListener("click", clearAllPlayerRecords);
   el.historyArea.querySelectorAll("tbody tr").forEach((row) => {
-    row.addEventListener("dblclick", () => loadPlayerDetail(row.dataset.steamId));
+    row.addEventListener("click", () => loadPlayerDetail(row.dataset.steamId));
   });
   el.historyArea.querySelectorAll(".delete-player-btn").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -743,6 +829,46 @@ function renderHistoryArea() {
       deletePlayerRecord(button.dataset.steamId);
     });
   });
+}
+
+async function clearAllPlayerRecords() {
+  clearError();
+  if (!state.savedPlayers.length) return;
+  if (!window.confirm("清除所有玩家记录、比赛记录、玩家图片和展示轮播数据？")) return;
+  try {
+    await api("/api/players", { method: "DELETE" });
+    state.savedPlayers = [];
+    state.savedPlayersLoaded = true;
+    state.selectedSavedPlayer = null;
+    state.playerMatches = [];
+    state.selectedMatchIds = new Set();
+    state.aggregateRadarData = null;
+    state.showcase = {
+      ...state.showcase,
+      playersLoaded: false,
+      players: [],
+      expandedSteamIds: new Set(),
+      selectedSteamIds: new Set(),
+      matchesBySteamId: new Map(),
+      matchErrorsBySteamId: new Map(),
+      selectedMatchIdsBySteamId: new Map(),
+      imagesBySteamId: new Map(),
+      mvpBackgroundsBySteamId: new Map(),
+      activeImageSteamId: "",
+      slides: [],
+      buildErrors: new Map(),
+      currentIndex: 0,
+      currentTimeMs: 0,
+      status: "empty",
+    };
+    renderMetricList(null);
+    renderHistoryArea();
+    renderShowcaseQueueList();
+    updateShowcaseControls();
+    renderPreview();
+  } catch (error) {
+    showError(error);
+  }
 }
 
 async function deletePlayerRecord(steamId) {
@@ -768,12 +894,15 @@ async function deletePlayerRecord(steamId) {
 
 function renderPlayerDetail() {
   const player = state.selectedSavedPlayer;
+  const selectedCount = state.selectedMatchIds.size;
+  const allSelected = state.playerMatches.length > 0 && selectedCount === state.playerMatches.length;
   const rows = state.playerMatches
     .map((match) => {
-      const checked = state.selectedMatchIds.has(match.demo_record_id) ? "checked" : "";
+      const selected = state.selectedMatchIds.has(match.demo_record_id);
+      const selectedClass = selected ? "selected-match" : "";
       return `
-        <tr>
-          <td><input class="match-check" type="checkbox" data-demo-id="${escapeHtml(match.demo_record_id)}" ${checked} /></td>
+        <tr class="match-row ${selectedClass}" data-demo-id="${escapeHtml(match.demo_record_id)}" aria-selected="${selected ? "true" : "false"}">
+          <td><span class="match-select-indicator" aria-hidden="true"></span></td>
           <td>${escapeHtml(formatDateTime(match.match_time))}</td>
           <td>${escapeHtml(match.map_name)}</td>
           <td>${escapeHtml(match.file_name)}</td>
@@ -801,7 +930,13 @@ function renderPlayerDetail() {
       <div class="detail-actions">
         <button id="generateAggregateBtn" type="button" ${state.selectedMatchIds.size ? "" : "disabled"}>生成综合雷达图</button>
         <button id="addToShowcaseBtn" type="button" ${state.selectedMatchIds.size ? "" : "disabled"}>加入展示轮播</button>
-        <button id="exportAggregateBtn" type="button" ${state.aggregateRadarData ? "" : "disabled"}>导出综合 PNG</button>
+        <button id="clearPlayerBtn" class="danger-btn" type="button">清除该玩家数据</button>
+      </div>
+      <div class="floating-selection-actions ${selectedCount ? "has-selection" : ""}">
+        <span>${selectedCount ? `已选 ${selectedCount} 场` : "点击或拖动选择比赛"}</span>
+        <button id="selectAllMatchesBtn" type="button" ${allSelected ? "disabled" : ""}>全选</button>
+        <button id="clearMatchSelectionBtn" type="button" ${selectedCount ? "" : "disabled"}>全不选</button>
+        <button id="deleteSelectedMatchesBtn" class="danger-btn" type="button" ${selectedCount ? "" : "disabled"}>删除</button>
       </div>
       <table class="records-table matches-table">
         <thead>
@@ -822,20 +957,91 @@ function renderPlayerDetail() {
   });
   el.historyArea.querySelector("#generateAggregateBtn").addEventListener("click", () => generateAggregateRadar());
   el.historyArea.querySelector("#addToShowcaseBtn").addEventListener("click", () => addSelectedMatchesToShowcase());
-  el.historyArea.querySelector("#exportAggregateBtn").addEventListener("click", exportAggregateRadar);
+  el.historyArea.querySelector("#clearPlayerBtn").addEventListener("click", () => deletePlayerRecord(player.steam_id));
+  el.historyArea.querySelector("#selectAllMatchesBtn").addEventListener("click", () => setAllMatchesSelected(true));
+  el.historyArea.querySelector("#clearMatchSelectionBtn").addEventListener("click", () => setAllMatchesSelected(false));
+  el.historyArea.querySelector("#deleteSelectedMatchesBtn").addEventListener("click", deleteSelectedMatchRecords);
   el.historyArea.querySelectorAll(".delete-match-btn").forEach((button) => {
+    button.addEventListener("mousedown", (event) => event.stopPropagation());
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       deleteMatchRecord(button.dataset.demoId);
     });
   });
-  el.historyArea.querySelectorAll(".match-check").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) state.selectedMatchIds.add(checkbox.dataset.demoId);
-      else state.selectedMatchIds.delete(checkbox.dataset.demoId);
-      renderPlayerDetail();
+  el.historyArea.querySelectorAll(".match-row").forEach((row) => {
+    row.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return;
+      state.matchSelectionDragging = true;
+      state.matchSelectionMode = state.selectedMatchIds.has(row.dataset.demoId) ? "deselect" : "select";
+      applyMatchSelection(row.dataset.demoId, state.matchSelectionMode, row);
+      event.preventDefault();
+    });
+    row.addEventListener("mouseenter", () => {
+      if (state.matchSelectionDragging) applyMatchSelection(row.dataset.demoId, state.matchSelectionMode, row);
     });
   });
+}
+
+function applyMatchSelection(demoRecordId, mode, row) {
+  const shouldSelect = mode === "select";
+  if (shouldSelect) state.selectedMatchIds.add(demoRecordId);
+  else state.selectedMatchIds.delete(demoRecordId);
+  row?.classList.toggle("selected-match", shouldSelect);
+  row?.setAttribute("aria-selected", shouldSelect ? "true" : "false");
+  const selectedCount = state.selectedMatchIds.size;
+  const actions = el.historyArea.querySelector(".floating-selection-actions");
+  actions?.classList.toggle("has-selection", selectedCount > 0);
+  const label = actions?.querySelector("span");
+  if (label) label.textContent = selectedCount ? `已选 ${selectedCount} 场` : "点击或拖动选择比赛";
+  const generate = el.historyArea.querySelector("#generateAggregateBtn");
+  const showcase = el.historyArea.querySelector("#addToShowcaseBtn");
+  const clear = el.historyArea.querySelector("#clearMatchSelectionBtn");
+  const remove = el.historyArea.querySelector("#deleteSelectedMatchesBtn");
+  const selectAll = el.historyArea.querySelector("#selectAllMatchesBtn");
+  if (generate) generate.disabled = selectedCount === 0;
+  if (showcase) showcase.disabled = selectedCount === 0;
+  if (clear) clear.disabled = selectedCount === 0;
+  if (remove) remove.disabled = selectedCount === 0;
+  if (selectAll) selectAll.disabled = state.playerMatches.length > 0 && selectedCount === state.playerMatches.length;
+}
+
+function setAllMatchesSelected(selected) {
+  state.selectedMatchIds = selected ? new Set(state.playerMatches.map((match) => match.demo_record_id)) : new Set();
+  renderPlayerDetail();
+}
+
+async function deleteSelectedMatchRecords() {
+  clearError();
+  if (!state.selectedSavedPlayer || !state.selectedMatchIds.size) return;
+  const ids = Array.from(state.selectedMatchIds);
+  if (!window.confirm(`删除已选 ${ids.length} 场比赛记录？`)) return;
+  try {
+    const steamId = state.selectedSavedPlayer.steam_id;
+    for (const demoRecordId of ids) {
+      await api(`/api/players/${encodeURIComponent(steamId)}/matches/${encodeURIComponent(demoRecordId)}`, { method: "DELETE" });
+      state.showcase.selectedMatchIdsBySteamId.get(steamId)?.delete(demoRecordId);
+    }
+    state.selectedMatchIds = new Set();
+    state.showcase.matchesBySteamId.delete(steamId);
+    state.showcase.slides = state.showcase.slides.filter((slide) => !(slide.player?.steam_id === steamId && slide.selectedDemoRecordIds.some((id) => ids.includes(id))));
+    if (!state.showcase.slides.length) state.showcase.status = "empty";
+    recomputeShowcaseBestMarkers();
+    updateShowcaseControls();
+    state.aggregateRadarData = null;
+    renderMetricList(null);
+    await loadPlayerDetail(steamId, { rethrow: true });
+  } catch (error) {
+    if (error.code === "player_record_not_found" || error.code === "match_record_not_found") {
+      state.selectedSavedPlayer = null;
+      state.playerMatches = [];
+      state.selectedMatchIds = new Set();
+      state.aggregateRadarData = null;
+      renderMetricList(null);
+      await loadSavedPlayers();
+      return;
+    }
+    showError(error);
+  }
 }
 
 async function deleteMatchRecord(demoRecordId) {
@@ -908,8 +1114,8 @@ async function generateAggregateRadar() {
     });
     state.aggregateRadarData = data;
     syncRadarTextControls(data);
-    el.metricTitle.textContent = "综合指标";
-    renderMetricList(data);
+    el.metricTitle.textContent = "玩家记录";
+    renderMetricList(null);
     renderHistoryArea();
     renderPreview();
   } catch (error) {
@@ -943,6 +1149,7 @@ function createShowcaseSlide(radarData, selectedDemoRecordIds, image, mvpBackgro
     selectedDemoRecordIds,
     displayTitle: radarData.player?.name || radarData.player?.steam_id || "",
     displaySubtitle: "",
+    themePreset: "random",
     themeColor: assignShowcaseThemeColor(index),
     image: image || null,
     mvpBackground: mvpBackground || null,
@@ -1022,8 +1229,6 @@ function renderShowcaseQueueList() {
               </span>
             </div>
             <div class="showcase-row-actions">
-              <button class="showcase-image-select" type="button" data-steam-id="${escapeHtml(steamId)}">资源</button>
-              <button class="showcase-preview-select" type="button" data-index="${index}">预览</button>
               <button class="showcase-remove" type="button" data-steam-id="${escapeHtml(steamId)}">删除</button>
             </div>
           </div>
@@ -1031,6 +1236,7 @@ function renderShowcaseQueueList() {
     })
     .join("");
   el.showcaseQueueList.querySelectorAll(".showcase-player-row").forEach((row) => {
+    row.addEventListener("click", () => selectShowcaseSlideBySteamId(row.dataset.steamId));
     row.addEventListener("dragstart", () => {
       state.showcase.draggedQueueSteamId = row.dataset.steamId;
       row.classList.add("drag-source");
@@ -1059,21 +1265,30 @@ function renderShowcaseQueueList() {
       beginShowcaseSlideTextEdit(button, Number(button.dataset.index), "subtitle");
     });
   });
-  el.showcaseQueueList.querySelectorAll(".showcase-image-select").forEach((button) => {
-    button.addEventListener("click", async () => {
-      state.showcase.activeImageSteamId = button.dataset.steamId;
-      await Promise.all([loadPlayerImage(button.dataset.steamId), loadPlayerMVPBackground(button.dataset.steamId)]);
-      renderShowcaseQueueList();
-      renderShowcaseImagePanel(currentShowcaseImagePlayer());
-      renderShowcasePreview();
+  el.showcaseQueueList.querySelectorAll(".showcase-remove").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      removeShowcaseSlide(button.dataset.steamId);
     });
   });
-  el.showcaseQueueList.querySelectorAll(".showcase-preview-select").forEach((button) => {
-    button.addEventListener("click", () => seekShowcase(slideStartTime(Number(button.dataset.index))));
-  });
-  el.showcaseQueueList.querySelectorAll(".showcase-remove").forEach((button) => {
-    button.addEventListener("click", () => removeShowcaseSlide(button.dataset.steamId));
-  });
+}
+
+async function selectShowcaseSlideBySteamId(steamId) {
+  const index = state.showcase.slides.findIndex((slide) => slide.player?.steam_id === steamId);
+  if (index < 0) return;
+  await selectShowcaseSlide(index);
+}
+
+async function selectShowcaseSlide(index) {
+  const slide = state.showcase.slides[index];
+  if (!slide) return;
+  const steamId = slide.player?.steam_id || "";
+  state.showcase.activeImageSteamId = steamId;
+  await Promise.all([loadPlayerImage(steamId), loadPlayerMVPBackground(steamId)]).catch(showError);
+  seekShowcase(slideStartTime(index));
+  renderShowcaseQueueList();
+  renderShowcaseImagePanel(currentShowcaseImagePlayer());
+  renderShowcasePreview();
 }
 
 function showcaseDisplayTitle(slide) {
@@ -1223,6 +1438,7 @@ async function clearPlayerMVPBackground(steamId) {
 async function loadShowcaseMusic() {
   const data = await api("/api/showcase/music");
   state.showcase.music = data.music || null;
+  state.config.showcase.music_path = state.showcase.music?.music_path || state.config.showcase.music_path || "";
   return state.showcase.music;
 }
 
@@ -1232,14 +1448,18 @@ async function uploadShowcaseMusic(file) {
   form.append("file", file);
   const data = await api("/api/showcase/music", { method: "POST", body: form });
   state.showcase.music = data.music || null;
+  state.config.showcase.music_path = state.showcase.music?.music_path || "";
   configureShowcaseAudio();
+  renderAudioWaveform();
 }
 
 async function clearShowcaseMusic() {
   clearError();
   await api("/api/showcase/music", { method: "DELETE" });
   state.showcase.music = null;
+  state.config.showcase.music_path = "";
   configureShowcaseAudio();
+  renderAudioWaveform();
 }
 
 function effectiveImageUrl(image) {
@@ -1322,6 +1542,8 @@ function renderShowcaseImagePanel(player) {
     el.showcaseImagePlayer.textContent = "选择一个玩家后配置图片。";
     el.showcaseDurationSeconds.value = defaultShowcaseDurationMs / 1000;
     el.showcaseDurationSeconds.disabled = true;
+    el.showcaseThemePreset.value = "random";
+    el.showcaseThemePreset.disabled = true;
     el.showcaseImageUrl.value = "";
     el.showcaseImageFile.value = "";
     el.showcaseImageFileName.textContent = "未选择文件";
@@ -1335,6 +1557,9 @@ function renderShowcaseImagePanel(player) {
     el.showcaseMusicFile.disabled = false;
     el.showcaseMusicFileName.textContent = "未选择文件";
     el.clearShowcaseMusicBtn.disabled = false;
+    el.showBestMarkers.checked = state.config.showcase.show_best_markers !== false;
+    el.showcaseFFmpegPath.value = state.config.showcase.ffmpeg_path || "";
+    updateShowcaseControls();
     return;
   }
   const image = state.showcase.imagesBySteamId.get(player.steam_id) || null;
@@ -1342,6 +1567,8 @@ function renderShowcaseImagePanel(player) {
   el.showcaseImagePlayer.textContent = `${player.name} / ${player.steam_id}`;
   el.showcaseDurationSeconds.value = ((slide?.durationMs || defaultShowcaseDurationMs) / 1000).toFixed(1).replace(/\.0$/, "");
   el.showcaseDurationSeconds.disabled = false;
+  el.showcaseThemePreset.value = slide?.themePreset || "random";
+  el.showcaseThemePreset.disabled = false;
   el.showcaseImageUrl.value = image?.image_source_type === "external_url" ? image.image_url : "";
   el.showcaseImageFile.value = "";
   el.showcaseImageFileName.textContent = "未选择文件";
@@ -1356,6 +1583,9 @@ function renderShowcaseImagePanel(player) {
   el.showcaseMusicFile.disabled = false;
   el.showcaseMusicFileName.textContent = "未选择文件";
   el.clearShowcaseMusicBtn.disabled = false;
+  el.showBestMarkers.checked = state.config.showcase.show_best_markers !== false;
+  el.showcaseFFmpegPath.value = state.config.showcase.ffmpeg_path || "";
+  updateShowcaseControls();
 }
 
 function renderShowcasePreview(timestamp = performance.now()) {
@@ -1397,6 +1627,7 @@ function drawShowcase(canvas, slide, layout, options = {}) {
   if (canvas.style.width !== cssWidth) canvas.style.width = cssWidth;
   if (canvas.style.height !== cssHeight) canvas.style.height = cssHeight;
   const ctx = canvas.getContext("2d");
+  state.showcase.renderingExport = Boolean(options.exportMode);
   const accent = slide?.themeColor || state.config.theme_color || "#00ffff";
   state.showcase.targetThemeColor = accent;
   state.showcase.currentThemeColor = lerpHexColor(state.showcase.currentThemeColor || accent, state.showcase.targetThemeColor, options.exportMode ? 1 : 0.08);
@@ -1425,12 +1656,14 @@ function drawShowcase(canvas, slide, layout, options = {}) {
     ctx.textBaseline = "middle";
     ctx.font = `700 ${Math.max(18, width / 48)}px Inter, sans-serif`;
     ctx.fillText("选择玩家和比赛后生成展示轮播", width / 2, height / 2);
+    state.showcase.renderingExport = false;
     return;
   }
   const rects = showcaseElementRectsForSize(width, height, layout, slide);
   drawShowcaseRadar(ctx, slide, rects.radar);
   drawShowcaseName(ctx, slide, rects.namePoint);
   drawShowcaseImage(ctx, slide, rects.image);
+  state.showcase.renderingExport = false;
 }
 
 function drawShowcaseMVPBackground(ctx, slide, width, height) {
@@ -1522,6 +1755,7 @@ function drawShowcaseParticles(ctx, width, height, color, frameDeltaMs = 16.67) 
 }
 
 function showcaseAnimationProgress(duration = showcaseAnimDuration) {
+  if (state.showcase.renderingExport) return 1;
   const started = state.showcase.animationStartTime || performance.now();
   const raw = Math.min(1, (performance.now() - started) / duration);
   return raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
@@ -1579,7 +1813,7 @@ function drawShowcaseRadar(ctx, slide, rect) {
     ctx.font = `750 ${Math.max(13, width / 34)}px Inter, sans-serif`;
     ctx.fillStyle = accent;
     ctx.fillText(formatMetric(values[index], displayTypes[index]), point.x, point.y + Math.max(11, height / 42));
-    if (isBest) {
+    if (isBest && state.config.showcase.show_best_markers !== false) {
       ctx.save();
       const bestY = point.y + Math.max(42, height / 14);
       const bestSize = Math.max(22, width / 22);
@@ -1715,7 +1949,7 @@ function startShowcase() {
   state.showcase.status = "playing";
   state.showcase.lastFrameTime = 0;
   configureShowcaseAudio();
-  if (effectiveMusicUrl()) showcaseAudio.play().catch(() => {});
+  syncShowcaseAudioToTimeline(true);
   updateShowcaseControls();
   requestAnimationFrame(updateShowcasePlayback);
 }
@@ -1755,6 +1989,7 @@ function seekShowcase(globalTimeMs) {
   state.showcase.currentIndex = segment.index;
   if (changed) state.showcase.animationStartTime = performance.now();
   if (state.showcase.status === "ended" && state.showcase.currentTimeMs < total) state.showcase.status = "paused";
+  syncShowcaseAudioToTimeline(state.showcase.status === "playing");
   renderShowcasePreview();
   updateShowcaseControls();
 }
@@ -1766,6 +2001,7 @@ function updateShowcasePlayback(timestamp) {
   state.showcase.lastFrameTime = timestamp;
   const total = totalShowcaseDuration();
   state.showcase.currentTimeMs += delta;
+  syncShowcaseAudioToTimeline(true);
   if (state.showcase.currentTimeMs >= total) {
     state.showcase.currentTimeMs = total;
     state.showcase.currentIndex = Math.max(0, state.showcase.slides.length - 1);
@@ -1786,15 +2022,113 @@ function renderShowcaseTimeline() {
   const total = totalShowcaseDuration();
   const progress = total ? Math.min(1, state.showcase.currentTimeMs / total) : 0;
   el.showcaseTimelineBar.style.width = `${progress * 100}%`;
+  renderAudioPlayhead();
+}
+
+async function loadAudioWaveform() {
+  const url = effectiveMusicUrl();
+  state.showcase.waveformPeaks = [];
+  if (!url || !el.showcaseWaveformCanvas) {
+    renderAudioWaveform();
+    return;
+  }
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!state.showcase.audioContext) state.showcase.audioContext = new AudioContextClass();
+    const response = await fetch(url);
+    const buffer = await response.arrayBuffer();
+    const audioBuffer = await state.showcase.audioContext.decodeAudioData(buffer.slice(0));
+    state.showcase.waveformPeaks = buildWaveformPeaks(audioBuffer, 420);
+    renderAudioWaveform();
+  } catch {
+    state.showcase.waveformPeaks = [];
+    renderAudioWaveform();
+  }
+}
+
+function buildWaveformPeaks(audioBuffer, count) {
+  const channel = audioBuffer.getChannelData(0);
+  const block = Math.max(1, Math.floor(channel.length / count));
+  return Array.from({ length: count }, (_, index) => {
+    const start = index * block;
+    const end = Math.min(channel.length, start + block);
+    let peak = 0;
+    for (let i = start; i < end; i += 1) peak = Math.max(peak, Math.abs(channel[i]));
+    return peak;
+  });
+}
+
+function renderAudioWaveform() {
+  const canvas = el.showcaseWaveformCanvas;
+  if (!canvas) return;
+  el.showcaseArea.classList.toggle("audio-collapsed", !state.showcase.waveformExpanded);
+  el.toggleAudioWaveformBtn.textContent = state.showcase.waveformExpanded ? "折叠波形" : "展开波形";
+  el.toggleAudioWaveformBtn.setAttribute("aria-expanded", state.showcase.waveformExpanded ? "true" : "false");
+  if (!state.showcase.waveformExpanded) return;
+  const rect = el.showcaseAudioTimeline.getBoundingClientRect();
+  const width = Math.max(320, Math.floor(rect.width || 960));
+  const height = 64;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(123, 159, 172, 0.12)";
+  ctx.fillRect(0, 0, width, height);
+  const total = Math.max(1, totalShowcaseDuration());
+  const offsetX = (audioOffsetMs() / total) * width;
+  const peaks = state.showcase.waveformPeaks;
+  ctx.save();
+  ctx.translate(offsetX, 0);
+  ctx.strokeStyle = state.config.showcase.ffmpeg_path ? "rgba(0, 255, 255, 0.82)" : "rgba(136, 160, 173, 0.7)";
+  ctx.lineWidth = Math.max(1, width / Math.max(1, peaks.length) - 1);
+  if (peaks.length) {
+    const step = width / peaks.length;
+    peaks.forEach((peak, index) => {
+      const x = index * step;
+      const barHeight = Math.max(2, peak * height * 0.88);
+      ctx.beginPath();
+      ctx.moveTo(x, height / 2 - barHeight / 2);
+      ctx.lineTo(x, height / 2 + barHeight / 2);
+      ctx.stroke();
+    });
+  } else {
+    ctx.fillStyle = "rgba(136, 160, 173, 0.72)";
+    ctx.font = "650 12px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(effectiveMusicUrl() ? "音频波形解析中或不可用" : "上传背景音乐后显示波形", width / 2, height / 2);
+  }
+  ctx.restore();
+  renderAudioPlayhead();
+}
+
+function renderAudioPlayhead() {
+  const total = totalShowcaseDuration();
+  const progress = total ? Math.min(1, state.showcase.currentTimeMs / total) : 0;
+  el.showcaseAudioPlayhead.style.left = `${progress * 100}%`;
+}
+
+function setAudioOffsetFromPointer(event) {
+  const rect = el.showcaseAudioTimeline.getBoundingClientRect();
+  const centerDelta = event.clientX - rect.left - rect.width / 2;
+  const total = Math.max(1, totalShowcaseDuration());
+  const nextMS = Math.max(-60000, Math.min(60000, Math.round((centerDelta / rect.width) * total)));
+  state.config.showcase.audio_offset_ms = nextMS;
+  syncAudioOffsetControls();
+  syncShowcaseAudioToTimeline(state.showcase.status === "playing");
+  renderAudioWaveform();
 }
 
 function updateShowcaseControls() {
   const hasSlides = state.showcase.slides.length > 0;
-  el.toggleShowcaseBtn.disabled = !hasSlides;
-  el.prevShowcaseBtn.disabled = !hasSlides;
-  el.nextShowcaseBtn.disabled = !hasSlides;
-  el.fullscreenShowcaseBtn.disabled = !hasSlides;
-  el.toggleShowcaseBtn.textContent = state.showcase.status === "playing" ? "暂停" : "播放";
+  const hasFFmpeg = Boolean((state.config.showcase?.ffmpeg_path || "").trim());
+  el.exportShowcaseVideoBtn.disabled = !hasSlides || !hasFFmpeg || state.showcase.exportingVideo;
+  if (!hasFFmpeg) el.showcaseVideoStatus.textContent = "配置 ffmpeg 路径后可导出 MP4。";
+  else if (!hasSlides) el.showcaseVideoStatus.textContent = "加入展示轮播后可导出 MP4。";
+  else if (!state.showcase.exportingVideo) el.showcaseVideoStatus.textContent = "按当前导出宽高生成 60fps MP4。";
 }
 
 function enterShowcaseFullscreen() {
@@ -1817,6 +2151,15 @@ function enterShowcaseFullscreen() {
     el.showcaseArea.classList.add("showcase-fullscreen-fallback");
     renderShowcasePreview();
   }
+  if (state.showcase.slides.length) {
+    seekShowcase(0);
+    state.showcase.animationStartTime = performance.now();
+  }
+}
+
+function toggleAudioWaveform() {
+  state.showcase.waveformExpanded = !state.showcase.waveformExpanded;
+  renderAudioWaveform();
 }
 
 function normalizePoint(clientX, clientY, rect) {
@@ -1903,6 +2246,35 @@ async function saveShowcaseLayout(layout) {
   }
 }
 
+async function saveShowcaseSettings(partialShowcase = {}) {
+  const nextConfig = {
+    ...state.config,
+    showcase: {
+      ...state.config.showcase,
+      ...partialShowcase,
+      layout: cloneShowcaseLayout(state.config.showcase.layout),
+    },
+  };
+  try {
+    await api("/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nextConfig),
+    });
+    state.config = nextConfig;
+    updateShowcaseControls();
+    renderShowcasePreview();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function syncAudioOffsetControls() {
+  const seconds = (audioOffsetMs() / 1000).toFixed(1).replace(/\.0$/, "");
+  el.showcaseAudioOffset.value = seconds;
+  el.showcaseAudioOffsetSeconds.value = seconds;
+}
+
 async function resetShowcaseLayout() {
   state.config.showcase.layout = cloneShowcaseLayout(defaultShowcaseLayout);
   renderShowcasePreview();
@@ -1978,8 +2350,9 @@ function uploadStatusText(data) {
 
 el.exportBtn.addEventListener("click", () => {
   clearError();
-  if (!state.radarData) return showError({ code: "metric_unavailable", message: "没有可导出的雷达数据。" });
-  exportRadarImage(state.radarData, "radar");
+  const radarData = activeRadarData();
+  if (!radarData) return showError({ code: "metric_unavailable", message: "没有可导出的雷达数据。" });
+  exportRadarImage(radarData, state.view === "records" ? "aggregate-radar" : "radar");
 });
 
 function exportRadarImage(radarData, suffix) {
@@ -1995,6 +2368,133 @@ function exportRadarImage(radarData, suffix) {
   link.download = `${safeName}-${suffix}.png`;
   link.href = exportCanvas.toDataURL("image/png");
   link.click();
+}
+
+async function exportShowcaseMp4() {
+  clearError();
+  if (!state.showcase.slides.length) return showError({ code: "invalid_showcase_video", message: "请先加入展示轮播。" });
+  if (!(state.config.showcase?.ffmpeg_path || "").trim()) return showError({ code: "showcase_video_unavailable", message: "请先配置 ffmpeg 路径。" });
+  const width = Number(el.exportWidth.value);
+  const height = Number(el.exportHeight.value);
+  const fps = 60;
+  const duration = totalShowcaseDuration();
+  const frameCount = Math.ceil((duration / 1000) * fps);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    return showError({ code: "invalid_export_size", message: "导出宽高必须是正整数。" });
+  }
+  if (frameCount <= 0 || frameCount > 7200) {
+    return showError({ code: "invalid_showcase_video", message: "轮播过长，第一版最多导出 7200 帧。" });
+  }
+  const snapshot = {
+    currentTimeMs: state.showcase.currentTimeMs,
+    currentIndex: state.showcase.currentIndex,
+    status: state.showcase.status,
+    animationStartTime: state.showcase.animationStartTime,
+  };
+  const wasPlaying = state.showcase.status === "playing";
+  pauseShowcase();
+  state.showcase.exportingVideo = true;
+  updateShowcaseControls();
+  const exportCanvas = document.createElement("canvas");
+  const frames = [];
+  try {
+    el.showcaseVideoStatus.textContent = "正在预加载展示资源...";
+    await preloadShowcaseAssets();
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const timeMs = Math.min(duration - 1, Math.round((frame / fps) * 1000));
+      const segment = currentShowcaseSegment(timeMs);
+      state.showcase.currentTimeMs = timeMs;
+      state.showcase.currentIndex = segment.index;
+      drawShowcase(exportCanvas, state.showcase.slides[segment.index], state.config.showcase.layout, { width, height, frameDeltaMs: 1000 / fps, exportMode: true });
+      frames.push(exportCanvas.toDataURL("image/png"));
+      if (frame % 30 === 0) {
+        el.showcaseVideoStatus.textContent = `正在渲染帧 ${frame + 1} / ${frameCount}...`;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    el.showcaseVideoStatus.textContent = "正在调用 ffmpeg 合成 MP4...";
+    const response = await fetch("/api/showcase/video", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        width,
+        height,
+        fps,
+        duration_ms: duration,
+        audio_offset_ms: audioOffsetMs(),
+        frames,
+      }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw data.error || { code: "showcase_video_failed", message: "MP4 导出失败。" };
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.download = `cs2-showcase-${downloadTimestamp()}.mp4`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+    el.showcaseVideoStatus.textContent = "MP4 已生成。";
+  } catch (error) {
+    showError(error);
+    el.showcaseVideoStatus.textContent = "MP4 导出失败。";
+  } finally {
+    state.showcase.currentTimeMs = snapshot.currentTimeMs;
+    state.showcase.currentIndex = snapshot.currentIndex;
+    state.showcase.status = snapshot.status;
+    state.showcase.animationStartTime = snapshot.animationStartTime;
+    state.showcase.exportingVideo = false;
+    if (wasPlaying) startShowcase();
+    else {
+      syncShowcaseAudioToTimeline(false);
+      renderShowcasePreview();
+      updateShowcaseControls();
+    }
+  }
+}
+
+async function preloadShowcaseAssets() {
+  const urls = new Set();
+  state.showcase.slides.forEach((slide) => {
+    const imageUrl = effectiveImageUrl(slide.image);
+    const backgroundUrl = effectiveMVPBackgroundUrl(slide.mvpBackground);
+    if (imageUrl) urls.add(imageUrl);
+    if (backgroundUrl) urls.add(backgroundUrl);
+  });
+  await Promise.all(Array.from(urls).map(preloadShowcaseImage));
+}
+
+function preloadShowcaseImage(url) {
+  const cached = showcaseImageCache.get(url);
+  if (cached?.status === "loaded" || cached?.status === "error") return Promise.resolve();
+  return new Promise((resolve) => {
+    const image = cached?.image || new Image();
+    showcaseImageCache.set(url, { status: "loading", image });
+    image.onload = () => {
+      showcaseImageCache.set(url, { status: "loaded", image });
+      resolve();
+    };
+    image.onerror = () => {
+      showcaseImageCache.set(url, { status: "error", image });
+      resolve();
+    };
+    if (!cached) image.src = url;
+  });
+}
+
+function downloadTimestamp() {
+  const date = new Date();
+  const parts = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+    "-",
+    String(date.getHours()).padStart(2, "0"),
+    String(date.getMinutes()).padStart(2, "0"),
+  ];
+  return parts.join("");
 }
 
 el.themeColor.addEventListener("input", saveConfig);
@@ -2023,11 +2523,8 @@ el.radarSubtitle.addEventListener("input", () => {
 el.databasePath.addEventListener("change", saveConfig);
 el.saveConfigBtn.addEventListener("click", saveConfig);
 
-el.toggleShowcaseBtn.addEventListener("click", toggleShowcasePlayback);
-el.prevShowcaseBtn.addEventListener("click", previousShowcaseSlide);
-el.nextShowcaseBtn.addEventListener("click", nextShowcaseSlide);
-el.fullscreenShowcaseBtn.addEventListener("click", enterShowcaseFullscreen);
 el.resetShowcaseLayoutBtn.addEventListener("click", resetShowcaseLayout);
+el.toggleAudioWaveformBtn.addEventListener("click", toggleAudioWaveform);
 el.showcaseDurationSeconds.addEventListener("change", () => {
   const slide = currentShowcaseResourceSlide();
   if (!slide) return;
@@ -2042,6 +2539,46 @@ el.showcaseDurationSeconds.addEventListener("change", () => {
   renderShowcaseTimeline();
   renderShowcasePreview();
 });
+el.showcaseThemePreset.addEventListener("change", () => {
+  const slide = currentShowcaseResourceSlide();
+  if (!slide) return;
+  const preset = el.showcaseThemePreset.value;
+  slide.themePreset = preset;
+  slide.themeColor = preset === "random" ? assignShowcaseThemeColor(state.showcase.slides.indexOf(slide)) : showcaseThemeOptions[preset] || presetColors.default;
+  state.showcase.animationStartTime = performance.now();
+  renderShowcaseQueueList();
+  renderShowcasePreview();
+});
+el.showBestMarkers.addEventListener("change", () => {
+  saveShowcaseSettings({ show_best_markers: el.showBestMarkers.checked });
+});
+el.saveShowcaseSettingsBtn.addEventListener("click", () => {
+  const offsetMS = Math.round(Number(el.showcaseAudioOffsetSeconds.value || 0) * 1000);
+  saveShowcaseSettings({
+    show_best_markers: el.showBestMarkers.checked,
+    ffmpeg_path: el.showcaseFFmpegPath.value.trim(),
+    audio_offset_ms: offsetMS,
+  });
+});
+el.showcaseAudioOffset.addEventListener("input", () => {
+  el.showcaseAudioOffsetSeconds.value = el.showcaseAudioOffset.value;
+  const offsetMS = Math.round(Number(el.showcaseAudioOffset.value) * 1000);
+  state.config.showcase.audio_offset_ms = offsetMS;
+  syncShowcaseAudioToTimeline(state.showcase.status === "playing");
+  renderAudioWaveform();
+});
+el.showcaseAudioOffset.addEventListener("change", () => saveShowcaseSettings({ audio_offset_ms: Math.round(Number(el.showcaseAudioOffset.value) * 1000) }));
+el.showcaseAudioOffsetSeconds.addEventListener("change", () => {
+  const value = Math.max(-60, Math.min(60, Number(el.showcaseAudioOffsetSeconds.value || 0)));
+  el.showcaseAudioOffsetSeconds.value = value.toFixed(1).replace(/\.0$/, "");
+  el.showcaseAudioOffset.value = el.showcaseAudioOffsetSeconds.value;
+  const offsetMS = Math.round(value * 1000);
+  state.config.showcase.audio_offset_ms = offsetMS;
+  syncShowcaseAudioToTimeline(state.showcase.status === "playing");
+  renderAudioWaveform();
+  saveShowcaseSettings({ audio_offset_ms: offsetMS });
+});
+el.exportShowcaseVideoBtn.addEventListener("click", exportShowcaseMp4);
 el.showcaseImageFile.addEventListener("change", async () => {
   const player = currentShowcaseImagePlayer();
   const file = el.showcaseImageFile.files[0];
@@ -2114,14 +2651,28 @@ el.showcaseTimeline.addEventListener("mousedown", (event) => {
   const rect = el.showcaseTimeline.getBoundingClientRect();
   seekShowcase(((event.clientX - rect.left) / rect.width) * totalShowcaseDuration());
 });
+el.showcaseAudioTimeline.addEventListener("mousedown", (event) => {
+  if (!effectiveMusicUrl()) return;
+  state.showcase.waveformDragging = true;
+  setAudioOffsetFromPointer(event);
+});
 window.addEventListener("mousemove", (event) => {
   if (state.showcase.timelineDragging) {
     const rect = el.showcaseTimeline.getBoundingClientRect();
     seekShowcase(((event.clientX - rect.left) / rect.width) * totalShowcaseDuration());
   }
+  if (state.showcase.waveformDragging) setAudioOffsetFromPointer(event);
   if (state.showcase.activeDragTarget) updateShowcaseDrag(event);
 });
 window.addEventListener("mouseup", () => {
+  if (state.matchSelectionDragging) {
+    state.matchSelectionDragging = false;
+    renderPlayerDetail();
+  }
+  if (state.showcase.waveformDragging) {
+    state.showcase.waveformDragging = false;
+    saveShowcaseSettings({ audio_offset_ms: state.config.showcase.audio_offset_ms });
+  }
   state.showcase.timelineDragging = false;
   endShowcaseDrag();
 });
@@ -2158,6 +2709,10 @@ document.addEventListener("keydown", (event) => {
 });
 document.addEventListener("fullscreenchange", () => {
   el.showcaseArea.classList.remove("showcase-fullscreen-fallback");
+  if (document.fullscreenElement === el.showcaseArea && state.showcase.slides.length) {
+    seekShowcase(0);
+    state.showcase.animationStartTime = performance.now();
+  }
   renderShowcasePreview();
 });
 
@@ -2167,6 +2722,7 @@ window.addEventListener("resize", () => {
   resizeTimer = setTimeout(() => {
     renderPreview();
     renderShowcasePreview();
+    renderAudioWaveform();
   }, 80);
 });
 
