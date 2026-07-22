@@ -402,8 +402,8 @@ function renderCandidates(players) {
     button.addEventListener("click", () => selectPlayer(player));
     const whitelistButton = document.createElement("button");
     whitelistButton.type = "button";
-    whitelistButton.className = "whitelist-btn";
     const isWhitelisted = state.whitelistedSteamIds.has(player.steam_id);
+    whitelistButton.className = `whitelist-btn ${isWhitelisted ? "remove" : "add"}`;
     whitelistButton.textContent = isWhitelisted ? "移出白名单" : "添加白名单";
     whitelistButton.addEventListener("click", () => toggleWhitelistPlayer(player));
     row.appendChild(button);

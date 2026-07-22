@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
 func fixturePath(t *testing.T) string {
@@ -137,6 +140,31 @@ func TestMetricUnavailableAndMissingDamage(t *testing.T) {
 	}
 }
 
+func TestDemoinfocsBuilderIgnoresWarmupCombatEvents(t *testing.T) {
+	killer := &common.Player{Name: "Alpha", SteamID64: 76561190000000001}
+	victim := &common.Player{Name: "Bravo", SteamID64: 76561190000000002}
+	builder := &demoinfocsDataBuilder{players: map[string]Player{}}
+
+	builder.addKill(events.Kill{Killer: killer, Victim: victim}, true)
+	builder.addDamage(events.PlayerHurt{Attacker: killer, Player: victim, HealthDamageTaken: 35}, true)
+	builder.addKill(events.Kill{Killer: killer, Victim: victim}, false)
+	builder.addDamage(events.PlayerHurt{Attacker: killer, Player: victim, HealthDamageTaken: 35}, false)
+	if len(builder.kills) != 0 || len(builder.damages) != 0 || len(builder.rounds) != 0 {
+		t.Fatalf("warmup or pre-round combat events should not be recorded: %+v", builder.data())
+	}
+
+	builder.currentRound = 1
+	builder.rounds = []RoundData{{RoundNumber: 1}}
+	builder.addKill(events.Kill{Killer: killer, Victim: victim}, false)
+	builder.addDamage(events.PlayerHurt{Attacker: killer, Player: victim, HealthDamageTaken: 35}, false)
+	if len(builder.kills) != 1 || len(builder.damages) != 1 {
+		t.Fatalf("live round combat events should be recorded, kills=%d damages=%d", len(builder.kills), len(builder.damages))
+	}
+	if builder.kills[0].RoundNumber != 1 || builder.damages[0].RoundNumber != 1 {
+		t.Fatalf("combat events should keep current round number: %+v %+v", builder.kills[0], builder.damages[0])
+	}
+}
+
 func TestBrokenBinaryDemoReturnsParseFailed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "broken.dem")
 	if err := os.WriteFile(path, []byte{0, 1, 2, 3}, 0o644); err != nil {
@@ -144,5 +172,21 @@ func TestBrokenBinaryDemoReturnsParseFailed(t *testing.T) {
 	}
 	if _, appErr := (JSONFixtureParser{}).Parse(path); appErr == nil || appErr.Code != "demo_parse_failed" {
 		t.Fatalf("expected parse failed, got %v", appErr)
+	}
+}
+
+func TestDemoinfocsParserRecoversProvided5EDemo(t *testing.T) {
+	path := filepath.Join("..", "..", "doc", "g163-20260710230853627924450_de_dust2.dem")
+	data, appErr := DemoinfocsParser{}.Parse(path)
+	if appErr != nil {
+		t.Fatalf("parse 5e demo: %v", appErr)
+	}
+	if len(data.Rounds) != 7 {
+		t.Fatalf("expected 7 completed rounds, got %d", len(data.Rounds))
+	}
+	for _, round := range data.Rounds {
+		if round.RoundNumber > 7 {
+			t.Fatalf("incomplete round should be discarded: %+v", data.Rounds)
+		}
 	}
 }

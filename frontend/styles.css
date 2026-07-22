@@ -919,7 +919,20 @@ canvas {
   min-height: 100%;
   padding: 7px 8px;
   font-size: 12px;
-  color: var(--accent);
+}
+
+.whitelist-btn.add {
+  color: #b9ffd0;
+  border-color: rgba(76, 220, 124, 0.68);
+  background: linear-gradient(180deg, rgba(76, 220, 124, 0.24), rgba(20, 104, 54, 0.68));
+  box-shadow: 0 0 16px rgba(76, 220, 124, 0.14);
+}
+
+.whitelist-btn.remove {
+  color: #fff3f4;
+  border-color: rgba(255, 95, 109, 0.72);
+  background: linear-gradient(180deg, rgba(255, 95, 109, 0.28), rgba(130, 18, 32, 0.72));
+  box-shadow: 0 0 16px rgba(255, 95, 109, 0.16);
 }
 
 .metric-row {

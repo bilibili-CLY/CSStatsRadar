@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
@@ -89,8 +90,18 @@ func (p DemoinfocsParser) Parse(filePath string) (data DemoData, appErr *AppErro
 	}
 	defer file.Close()
 
+	var builder *demoinfocsDataBuilder
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			if builder != nil && isRecoverableDemoinfocsPanic(recovered) {
+				builder.discardOpenRound()
+				partial := builder.data()
+				if len(partial.Players) > 0 && len(partial.Rounds) > 0 {
+					data = partial
+					appErr = nil
+					return
+				}
+			}
 			data = DemoData{}
 			appErr = NewAppError("demo_parse_failed", httpStatusBadRequest, fmt.Sprintf("Demo 解析失败：%v", recovered), nil)
 		}
@@ -99,7 +110,7 @@ func (p DemoinfocsParser) Parse(filePath string) (data DemoData, appErr *AppErro
 	parser := demoinfocs.NewParser(file)
 	defer parser.Close()
 
-	builder := newDemoinfocsDataBuilder(parser)
+	builder = newDemoinfocsDataBuilder(parser)
 	builder.meta.FileSHA256 = hashBytesFromFile(filePath)
 	parser.RegisterNetMessageHandler(func(serverInfo *msg.CSVCMsg_ServerInfo) {
 		if serverInfo.GetMapName() != "" {
@@ -113,13 +124,16 @@ func (p DemoinfocsParser) Parse(filePath string) (data DemoData, appErr *AppErro
 		builder.startRound()
 	})
 	parser.RegisterEventHandler(func(e events.RoundFreezetimeEnd) {
+		if parser.GameState().IsWarmupPeriod() {
+			return
+		}
 		builder.collectPlayers(parser.GameState().Participants().Playing())
 	})
 	parser.RegisterEventHandler(func(e events.Kill) {
-		builder.addKill(e)
+		builder.addKill(e, parser.GameState().IsWarmupPeriod())
 	})
 	parser.RegisterEventHandler(func(e events.PlayerHurt) {
-		builder.addDamage(e)
+		builder.addDamage(e, parser.GameState().IsWarmupPeriod())
 	})
 	parser.RegisterEventHandler(func(e events.RoundEnd) {
 		if parser.GameState().IsWarmupPeriod() {
@@ -143,9 +157,14 @@ func (p DemoinfocsParser) Parse(filePath string) (data DemoData, appErr *AppErro
 	return result, nil
 }
 
+func isRecoverableDemoinfocsPanic(recovered any) bool {
+	return strings.Contains(fmt.Sprint(recovered), "cannot parse invalid wire-format data")
+}
+
 type demoinfocsDataBuilder struct {
 	parser       demoinfocs.Parser
 	currentRound int
+	roundOpen    bool
 	players      map[string]Player
 	rounds       []RoundData
 	kills        []KillEvent
@@ -163,6 +182,7 @@ func newDemoinfocsDataBuilder(parser demoinfocs.Parser) *demoinfocsDataBuilder {
 
 func (b *demoinfocsDataBuilder) startRound() {
 	b.currentRound++
+	b.roundOpen = true
 	b.rounds = append(b.rounds, RoundData{RoundNumber: b.currentRound})
 	b.collectPlayers(b.parser.GameState().Participants().Playing())
 }
@@ -174,8 +194,11 @@ func (b *demoinfocsDataBuilder) ensureRound() int {
 	return b.currentRound
 }
 
-func (b *demoinfocsDataBuilder) addKill(event events.Kill) {
-	roundNumber := b.ensureRound()
+func (b *demoinfocsDataBuilder) addKill(event events.Kill, isWarmup bool) {
+	if isWarmup || b.currentRound == 0 {
+		return
+	}
+	roundNumber := b.currentRound
 	killer := playerID(event.Killer)
 	victim := playerID(event.Victim)
 	assister := playerID(event.Assister)
@@ -190,8 +213,11 @@ func (b *demoinfocsDataBuilder) addKill(event events.Kill) {
 	})
 }
 
-func (b *demoinfocsDataBuilder) addDamage(event events.PlayerHurt) {
-	roundNumber := b.ensureRound()
+func (b *demoinfocsDataBuilder) addDamage(event events.PlayerHurt, isWarmup bool) {
+	if isWarmup || b.currentRound == 0 {
+		return
+	}
+	roundNumber := b.currentRound
 	attacker := playerID(event.Attacker)
 	victim := playerID(event.Player)
 	if attacker == "" || victim == "" || event.HealthDamageTaken <= 0 {
@@ -222,6 +248,52 @@ func (b *demoinfocsDataBuilder) endRound() {
 			Survived:    player.IsAlive(),
 		})
 	}
+	b.roundOpen = false
+}
+
+func (b *demoinfocsDataBuilder) discardOpenRound() {
+	if !b.roundOpen || b.currentRound == 0 {
+		return
+	}
+
+	roundNumber := b.currentRound
+	if len(b.rounds) > 0 && b.rounds[len(b.rounds)-1].RoundNumber == roundNumber {
+		b.rounds = b.rounds[:len(b.rounds)-1]
+	}
+	b.kills = discardRoundKills(b.kills, roundNumber)
+	b.damages = discardRoundDamages(b.damages, roundNumber)
+	b.survivals = discardRoundSurvivals(b.survivals, roundNumber)
+	b.roundOpen = false
+}
+
+func discardRoundKills(events []KillEvent, roundNumber int) []KillEvent {
+	result := events[:0]
+	for _, event := range events {
+		if event.RoundNumber != roundNumber {
+			result = append(result, event)
+		}
+	}
+	return result
+}
+
+func discardRoundDamages(events []DamageEvent, roundNumber int) []DamageEvent {
+	result := events[:0]
+	for _, event := range events {
+		if event.RoundNumber != roundNumber {
+			result = append(result, event)
+		}
+	}
+	return result
+}
+
+func discardRoundSurvivals(states []SurvivalState, roundNumber int) []SurvivalState {
+	result := states[:0]
+	for _, state := range states {
+		if state.RoundNumber != roundNumber {
+			result = append(result, state)
+		}
+	}
+	return result
 }
 
 func (b *demoinfocsDataBuilder) collectPlayers(players []*common.Player) {
