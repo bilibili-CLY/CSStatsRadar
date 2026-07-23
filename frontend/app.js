@@ -74,17 +74,38 @@ const state = {
     exportingVideo: false,
     renderingExport: false,
   },
+  overlay: {
+    players: [],
+    visibleSteamIds: new Set(),
+    playerColors: new Map(),
+    hoverSteamId: "",
+    hoverMetricIndex: -1,
+    averageRadar: null,
+    draggedSteamId: "",
+    hitRegions: [],
+    title: "CS2 玩家叠图雷达",
+    subtitle: "队列平均与玩家数据对比",
+  },
 };
 
 const el = {
   currentDemoTab: document.querySelector("#currentDemoTab"),
   playerRecordsTab: document.querySelector("#playerRecordsTab"),
   showcaseTab: document.querySelector("#showcaseTab"),
+  overlayTab: document.querySelector("#overlayTab"),
   workspace: document.querySelector("#workspace"),
   demoPanel: document.querySelector("#demoPanel"),
   playerPanel: document.querySelector("#playerPanel"),
   showcasePanel: document.querySelector("#showcasePanel"),
   showcaseImagePanel: document.querySelector("#showcaseImagePanel"),
+  overlayPanel: document.querySelector("#overlayPanel"),
+  overlaySettingsPanel: document.querySelector("#overlaySettingsPanel"),
+  overlayQueueList: document.querySelector("#overlayQueueList"),
+  overlayQueueSummary: document.querySelector("#overlayQueueSummary"),
+  clearOverlayQueueBtn: document.querySelector("#clearOverlayQueueBtn"),
+  overlayTitle: document.querySelector("#overlayTitle"),
+  overlaySubtitle: document.querySelector("#overlaySubtitle"),
+  exportOverlayBtn: document.querySelector("#exportOverlayBtn"),
   showcaseQueueList: document.querySelector("#showcaseQueueList"),
   showcaseImagePlayer: document.querySelector("#showcaseImagePlayer"),
   showcaseDurationSeconds: document.querySelector("#showcaseDurationSeconds"),
@@ -126,6 +147,9 @@ const el = {
   canvas: document.querySelector("#radarCanvas"),
   historyArea: document.querySelector("#historyArea"),
   showcaseArea: document.querySelector("#showcaseArea"),
+  overlayArea: document.querySelector("#overlayArea"),
+  overlayCanvas: document.querySelector("#overlayCanvas"),
+  overlayLegend: document.querySelector("#overlayLegend"),
   showcaseCanvas: document.querySelector("#showcaseCanvas"),
   showcaseTimeline: document.querySelector("#showcaseTimeline"),
   showcaseTimelineBar: document.querySelector("#showcaseTimelineBar"),
@@ -258,24 +282,35 @@ function clearError() {
 }
 
 function setView(view) {
+  if (view !== "overlay") {
+    state.overlay.hoverSteamId = "";
+    state.overlay.hoverMetricIndex = -1;
+    hideTooltip();
+  }
   state.view = view;
   const isCurrent = view === "current";
   const isRecords = view === "records";
   const isShowcase = view === "showcase";
+  const isOverlay = view === "overlay";
   el.currentDemoTab.classList.toggle("active", isCurrent);
   el.playerRecordsTab.classList.toggle("active", isRecords);
   el.showcaseTab.classList.toggle("active", isShowcase);
+  el.overlayTab.classList.toggle("active", isOverlay);
   el.workspace.classList.toggle("showcase-view", isShowcase);
   el.workspace.classList.toggle("records-view", isRecords);
+  el.workspace.classList.toggle("overlay-view", isOverlay);
   el.demoPanel.hidden = !isCurrent;
   el.playerPanel.hidden = !isCurrent;
   el.showcasePanel.hidden = !isShowcase;
   el.showcaseImagePanel.hidden = !isShowcase;
-  el.exportSettingsPanel.hidden = isShowcase;
+  el.overlayPanel.hidden = !isOverlay;
+  el.overlaySettingsPanel.hidden = !isOverlay;
+  el.exportSettingsPanel.hidden = isShowcase || isOverlay;
   el.historyArea.hidden = !isRecords;
   el.showcaseArea.hidden = !isShowcase;
-  el.canvas.hidden = isShowcase || (!isCurrent && !state.aggregateRadarData);
-  el.metricTitle.textContent = isCurrent ? "数据指标" : isShowcase ? "展示轮播" : "玩家记录";
+  el.overlayArea.hidden = !isOverlay;
+  el.canvas.hidden = isShowcase || isOverlay || (!isCurrent && !state.aggregateRadarData);
+  el.metricTitle.textContent = isCurrent ? "数据指标" : isShowcase ? "展示轮播" : isOverlay ? "叠图雷达" : "玩家记录";
   if (isCurrent) {
     syncRadarTextControls(state.radarData, false);
     renderMetricList(state.radarData);
@@ -294,12 +329,18 @@ function setView(view) {
     updateShowcaseControls();
     renderAudioWaveform();
     renderShowcasePreview();
+  } else if (isOverlay) {
+    renderMetricList(null);
+    syncOverlayState();
+    el.overlayArea.parentElement.scrollTop = 0;
+    renderOverlayPage();
   }
 }
 
 function activeRadarData() {
   if (state.view === "records") return state.aggregateRadarData;
   if (state.view === "showcase") return null;
+  if (state.view === "overlay") return null;
   return state.radarData;
 }
 
@@ -484,6 +525,10 @@ function renderMetricList(radarData) {
 function renderPreview() {
   if (state.view === "showcase") {
     renderShowcasePreview();
+    return;
+  }
+  if (state.view === "overlay") {
+    renderOverlayPage();
     return;
   }
   const radarData = activeRadarData();
@@ -834,7 +879,7 @@ function renderHistoryArea() {
 async function clearAllPlayerRecords() {
   clearError();
   if (!state.savedPlayers.length) return;
-  if (!window.confirm("清除所有玩家记录、比赛记录、玩家图片和展示轮播数据？")) return;
+  if (!window.confirm("清除所有玩家记录、比赛记录、玩家图片、展示轮播和叠图队列数据？")) return;
   try {
     await api("/api/players", { method: "DELETE" });
     state.savedPlayers = [];
@@ -861,9 +906,21 @@ async function clearAllPlayerRecords() {
       currentTimeMs: 0,
       status: "empty",
     };
+    state.overlay = {
+      ...state.overlay,
+      players: [],
+      visibleSteamIds: new Set(),
+      playerColors: new Map(),
+      hoverSteamId: "",
+      hoverMetricIndex: -1,
+      averageRadar: null,
+      draggedSteamId: "",
+      hitRegions: [],
+    };
     renderMetricList(null);
     renderHistoryArea();
     renderShowcaseQueueList();
+    renderOverlayPage();
     updateShowcaseControls();
     renderPreview();
   } catch (error) {
@@ -930,6 +987,7 @@ function renderPlayerDetail() {
       <div class="detail-actions">
         <button id="generateAggregateBtn" type="button" ${state.selectedMatchIds.size ? "" : "disabled"}>生成综合雷达图</button>
         <button id="addToShowcaseBtn" type="button" ${state.selectedMatchIds.size ? "" : "disabled"}>加入展示轮播</button>
+        <button id="addToOverlayBtn" type="button" ${state.selectedMatchIds.size ? "" : "disabled"}>加入叠图队列</button>
         <button id="clearPlayerBtn" class="danger-btn" type="button">清除该玩家数据</button>
       </div>
       <div class="floating-selection-actions ${selectedCount ? "has-selection" : ""}">
@@ -957,6 +1015,7 @@ function renderPlayerDetail() {
   });
   el.historyArea.querySelector("#generateAggregateBtn").addEventListener("click", () => generateAggregateRadar());
   el.historyArea.querySelector("#addToShowcaseBtn").addEventListener("click", () => addSelectedMatchesToShowcase());
+  el.historyArea.querySelector("#addToOverlayBtn").addEventListener("click", () => addSelectedMatchesToOverlay());
   el.historyArea.querySelector("#clearPlayerBtn").addEventListener("click", () => deletePlayerRecord(player.steam_id));
   el.historyArea.querySelector("#selectAllMatchesBtn").addEventListener("click", () => setAllMatchesSelected(true));
   el.historyArea.querySelector("#clearMatchSelectionBtn").addEventListener("click", () => setAllMatchesSelected(false));
@@ -995,11 +1054,13 @@ function applyMatchSelection(demoRecordId, mode, row) {
   if (label) label.textContent = selectedCount ? `已选 ${selectedCount} 场` : "点击或拖动选择比赛";
   const generate = el.historyArea.querySelector("#generateAggregateBtn");
   const showcase = el.historyArea.querySelector("#addToShowcaseBtn");
+  const overlay = el.historyArea.querySelector("#addToOverlayBtn");
   const clear = el.historyArea.querySelector("#clearMatchSelectionBtn");
   const remove = el.historyArea.querySelector("#deleteSelectedMatchesBtn");
   const selectAll = el.historyArea.querySelector("#selectAllMatchesBtn");
   if (generate) generate.disabled = selectedCount === 0;
   if (showcase) showcase.disabled = selectedCount === 0;
+  if (overlay) overlay.disabled = selectedCount === 0;
   if (clear) clear.disabled = selectedCount === 0;
   if (remove) remove.disabled = selectedCount === 0;
   if (selectAll) selectAll.disabled = state.playerMatches.length > 0 && selectedCount === state.playerMatches.length;
@@ -1205,6 +1266,596 @@ async function addSelectedMatchesToShowcase() {
       button.textContent = "加入展示轮播";
     }
   }
+}
+
+async function addSelectedMatchesToOverlay() {
+  clearError();
+  if (!state.selectedSavedPlayer || !state.selectedMatchIds.size) {
+    return showError({ code: "invalid_aggregate_request", message: "请选择比赛记录。" });
+  }
+  const steamId = state.selectedSavedPlayer.steam_id;
+  const demoRecordIds = Array.from(state.selectedMatchIds);
+  const button = el.historyArea.querySelector("#addToOverlayBtn");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "加入中...";
+  }
+  try {
+    const radarData = await fetchAggregateRadarForShowcase(steamId, demoRecordIds);
+    const entry = {
+      player: radarData.player,
+      radar: radarData.radar,
+      matchCount: radarData.match_count || demoRecordIds.length,
+      selectedDemoRecordIds: demoRecordIds,
+    };
+    const existingIndex = state.overlay.players.findIndex((item) => item.player?.steam_id === steamId);
+    if (existingIndex >= 0) {
+      state.overlay.players = state.overlay.players.map((item, index) => (index === existingIndex ? entry : item));
+    } else {
+      state.overlay.players = [...state.overlay.players, entry];
+      state.overlay.visibleSteamIds = new Set(state.overlay.visibleSteamIds).add(steamId);
+    }
+    getOverlayPlayerColor(entry);
+    syncOverlayState();
+    renderOverlayPage();
+    if (button) button.textContent = existingIndex >= 0 ? "已更新叠图队列" : "已加入叠图队列";
+  } catch (error) {
+    showError(error);
+  } finally {
+    if (button) {
+      button.disabled = !state.selectedMatchIds.size;
+      window.setTimeout(() => {
+        if (button.isConnected) button.textContent = "加入叠图队列";
+      }, 1200);
+    }
+  }
+}
+
+function syncOverlayState() {
+  const steamIds = new Set(state.overlay.players.map((item) => item.player?.steam_id).filter(Boolean));
+  state.overlay.visibleSteamIds = new Set(Array.from(state.overlay.visibleSteamIds).filter((steamId) => steamIds.has(steamId)));
+  state.overlay.players.forEach((item) => getOverlayPlayerColor(item));
+  if (state.overlay.hoverSteamId && !steamIds.has(state.overlay.hoverSteamId)) {
+    state.overlay.hoverSteamId = "";
+    state.overlay.hoverMetricIndex = -1;
+  }
+  state.overlay.averageRadar = buildOverlayAverageRadar(state.overlay.players);
+}
+
+function getOverlayPlayerColor(entry) {
+  const steamId = entry?.player?.steam_id || "";
+  if (!steamId) return showcaseColorPresets[0];
+  const existing = state.overlay.playerColors.get(steamId);
+  if (existing) return existing;
+  const colorIndex = state.overlay.playerColors.size;
+  const color =
+    colorIndex < showcaseColorPresets.length
+      ? showcaseColorPresets[colorIndex]
+      : hslToHex((colorIndex * 137.508 + 18) % 360, 82, 60);
+  state.overlay.playerColors = new Map(state.overlay.playerColors).set(steamId, color);
+  return color;
+}
+
+function hslToHex(h, s, l) {
+  const saturation = s / 100;
+  const lightness = l / 100;
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const section = h / 60;
+  const x = chroma * (1 - Math.abs((section % 2) - 1));
+  const [red, green, blue] =
+    section < 1 ? [chroma, x, 0] : section < 2 ? [x, chroma, 0] : section < 3 ? [0, chroma, x] : section < 4 ? [0, x, chroma] : section < 5 ? [x, 0, chroma] : [chroma, 0, x];
+  const offset = lightness - chroma / 2;
+  return `#${[red, green, blue]
+    .map((channel) => Math.round((channel + offset) * 255).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function buildOverlayAverageRadar(players) {
+  if (!players.length) return null;
+  const dimensions = [];
+  players.forEach((entry) => {
+    (entry.radar?.dimensions || []).forEach((dimension) => {
+      if (!dimensions.includes(dimension)) dimensions.push(dimension);
+    });
+  });
+  if (!dimensions.length) return null;
+  const values = [];
+  const maxValues = [];
+  const minValues = [];
+  const displayTypes = [];
+  const metrics = [];
+  dimensions.forEach((dimension) => {
+    let sum = 0;
+    let count = 0;
+    let displayType = "number";
+    let maxValue = 1;
+    let minValue = 0;
+    players.forEach((entry) => {
+      const sourceDimensions = entry.radar?.dimensions || [];
+      const index = sourceDimensions.indexOf(dimension);
+      if (index < 0) return;
+      const sourceValue = entry.radar?.values?.[index];
+      const numericValue = Number(sourceValue);
+      if (sourceValue !== null && sourceValue !== undefined && Number.isFinite(numericValue)) {
+        sum += numericValue;
+        count += 1;
+      }
+      if (entry.radar?.display_types?.[index]) displayType = entry.radar.display_types[index];
+      if (Number.isFinite(Number(entry.radar?.max_values?.[index]))) maxValue = Number(entry.radar.max_values[index]);
+      if (Number.isFinite(Number(entry.radar?.min_values?.[index]))) minValue = Number(entry.radar.min_values[index]);
+    });
+    const value = count ? sum / count : null;
+    values.push(value);
+    maxValues.push(maxValue);
+    minValues.push(minValue);
+    displayTypes.push(displayType);
+    metrics.push({
+      name: dimension,
+      value,
+      display_type: displayType,
+      max_value: maxValue,
+      min_value: minValue,
+      status: count ? "ok" : "unavailable",
+      reason: count ? "" : "队列中没有玩家提供该指标。",
+    });
+  });
+  return {
+    player: { name: "队列平均", steam_id: "__overlay_average__" },
+    match_count: players.length,
+    radar: {
+      dimensions,
+      values,
+      max_values: maxValues,
+      min_values: minValues,
+      display_types: displayTypes,
+      metrics,
+    },
+  };
+}
+
+function renderOverlayPage() {
+  renderOverlayQueue();
+  renderOverlayLegend();
+  if (state.view !== "overlay") return;
+  const rect = el.overlayArea.getBoundingClientRect();
+  const width = Math.max(640, Math.floor(rect.width || 640));
+  const height = Math.max(620, Math.min(900, Math.floor(window.innerHeight - 135)));
+  drawOverlayRadar(el.overlayCanvas, state.overlay.players, { width, height });
+  el.exportOverlayBtn.disabled = !state.overlay.players.length;
+}
+
+function renderOverlayQueue() {
+  el.overlayQueueSummary.textContent = `${state.overlay.players.length} 名玩家`;
+  el.clearOverlayQueueBtn.disabled = !state.overlay.players.length;
+  if (!state.overlay.players.length) {
+    el.overlayQueueList.innerHTML = `<div class="empty-state">暂无叠图玩家。请在“玩家记录”中选择比赛并加入叠图队列。</div>`;
+    return;
+  }
+  el.overlayQueueList.innerHTML = state.overlay.players
+    .map((entry, index) => {
+      const steamId = entry.player?.steam_id || "";
+      const color = getOverlayPlayerColor(entry);
+      return `
+        <div class="overlay-queue-row" draggable="true" data-steam-id="${escapeHtml(steamId)}">
+          <span class="overlay-drag-handle" aria-hidden="true">⠿</span>
+          <span class="overlay-queue-color" style="--player-color:${color}"></span>
+          <span class="overlay-queue-player">
+            <strong>${escapeHtml(entry.player?.name || steamId || "未知玩家")}</strong>
+            <small>${entry.matchCount || 0} 场已选比赛</small>
+          </span>
+          <button class="overlay-remove" type="button" data-steam-id="${escapeHtml(steamId)}">删除</button>
+        </div>`;
+    })
+    .join("");
+  el.overlayQueueList.querySelectorAll(".overlay-queue-row").forEach((row) => {
+    row.addEventListener("dragstart", () => {
+      state.overlay.draggedSteamId = row.dataset.steamId;
+      row.classList.add("drag-source");
+    });
+    row.addEventListener("dragend", () => {
+      state.overlay.draggedSteamId = "";
+      row.classList.remove("drag-source");
+    });
+    row.addEventListener("dragover", (event) => event.preventDefault());
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      reorderOverlayQueue(state.overlay.draggedSteamId, row.dataset.steamId);
+    });
+  });
+  el.overlayQueueList.querySelectorAll(".overlay-remove").forEach((button) => {
+    button.addEventListener("click", () => removeOverlayPlayer(button.dataset.steamId));
+  });
+}
+
+function renderOverlayLegend() {
+  if (!state.overlay.players.length) {
+    el.overlayLegend.innerHTML = `<div class="overlay-legend-empty">加入玩家后可在这里控制各雷达的显示状态。</div>`;
+    return;
+  }
+  const playerItems = state.overlay.players
+    .map((entry) => {
+      const steamId = entry.player?.steam_id || "";
+      const visible = state.overlay.visibleSteamIds.has(steamId);
+      const hovered = state.overlay.hoverSteamId === steamId;
+      return `
+        <button class="overlay-legend-item ${visible ? "" : "is-hidden"} ${hovered ? "is-hovered" : ""}" type="button"
+          data-steam-id="${escapeHtml(steamId)}" aria-pressed="${visible}">
+          <span class="overlay-legend-swatch" style="--player-color:${getOverlayPlayerColor(entry)}"></span>
+          <span>${escapeHtml(entry.player?.name || steamId)}</span>
+          <small>${visible ? "显示" : "隐藏"}</small>
+        </button>`;
+    })
+    .join("");
+  el.overlayLegend.innerHTML = `${playerItems}
+    <div class="overlay-legend-item overlay-average-item">
+      <span class="overlay-legend-swatch average"></span><span>队列平均</span><small>全部玩家</small>
+    </div>`;
+  el.overlayLegend.querySelectorAll("button[data-steam-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleOverlayPlayerVisibility(button.dataset.steamId);
+    });
+    button.addEventListener("mouseenter", () => {
+      if (!state.overlay.visibleSteamIds.has(button.dataset.steamId)) return;
+      state.overlay.hoverSteamId = button.dataset.steamId;
+      state.overlay.hoverMetricIndex = -1;
+      renderOverlayLegend();
+      drawOverlayRadar(el.overlayCanvas, state.overlay.players, { width: el.overlayCanvas.width, height: el.overlayCanvas.height });
+    });
+    button.addEventListener("mouseleave", () => {
+      state.overlay.hoverSteamId = "";
+      state.overlay.hoverMetricIndex = -1;
+      renderOverlayLegend();
+      drawOverlayRadar(el.overlayCanvas, state.overlay.players, { width: el.overlayCanvas.width, height: el.overlayCanvas.height });
+    });
+  });
+}
+
+function toggleOverlayPlayerVisibility(steamId) {
+  const nextVisible = new Set(state.overlay.visibleSteamIds);
+  if (nextVisible.has(steamId)) nextVisible.delete(steamId);
+  else nextVisible.add(steamId);
+  state.overlay.visibleSteamIds = nextVisible;
+  if (!nextVisible.has(state.overlay.hoverSteamId)) {
+    state.overlay.hoverSteamId = "";
+    state.overlay.hoverMetricIndex = -1;
+    hideTooltip();
+  }
+  renderOverlayLegend();
+  drawOverlayRadar(el.overlayCanvas, state.overlay.players, { width: el.overlayCanvas.width, height: el.overlayCanvas.height });
+}
+
+function reorderOverlayQueue(sourceSteamId, targetSteamId) {
+  if (!sourceSteamId || !targetSteamId || sourceSteamId === targetSteamId) return;
+  const from = state.overlay.players.findIndex((entry) => entry.player?.steam_id === sourceSteamId);
+  const to = state.overlay.players.findIndex((entry) => entry.player?.steam_id === targetSteamId);
+  if (from < 0 || to < 0) return;
+  const nextPlayers = [...state.overlay.players];
+  const [entry] = nextPlayers.splice(from, 1);
+  nextPlayers.splice(to, 0, entry);
+  state.overlay.players = nextPlayers;
+  syncOverlayState();
+  renderOverlayPage();
+}
+
+function removeOverlayPlayer(steamId) {
+  state.overlay.players = state.overlay.players.filter((entry) => entry.player?.steam_id !== steamId);
+  state.overlay.visibleSteamIds = new Set(Array.from(state.overlay.visibleSteamIds).filter((id) => id !== steamId));
+  syncOverlayState();
+  hideTooltip();
+  renderOverlayPage();
+}
+
+function clearOverlayQueue() {
+  if (!state.overlay.players.length || !window.confirm("清空独立叠图队列？这不会影响展示轮播或玩家记录。")) return;
+  state.overlay.players = [];
+  state.overlay.visibleSteamIds = new Set();
+  state.overlay.hoverSteamId = "";
+  state.overlay.hoverMetricIndex = -1;
+  syncOverlayState();
+  hideTooltip();
+  renderOverlayPage();
+}
+
+function drawOverlayRadar(targetCanvas, players, options = {}) {
+  const width = Math.floor(options.width || targetCanvas.clientWidth || targetCanvas.width);
+  const height = Math.floor(options.height || targetCanvas.clientHeight || targetCanvas.height);
+  targetCanvas.width = width;
+  targetCanvas.height = height;
+  targetCanvas.style.width = `${width}px`;
+  targetCanvas.style.height = `${height}px`;
+  const ctx = targetCanvas.getContext("2d");
+  const hoverSteamId = options.suppressHover ? "" : state.overlay.hoverSteamId;
+  const background = ctx.createLinearGradient(0, 0, width, height);
+  background.addColorStop(0, "#05080d");
+  background.addColorStop(0.52, "#0a1820");
+  background.addColorStop(1, "#020407");
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, width, height);
+  drawParticles(ctx, width, height, "#00ffff");
+
+  const title = options.title ?? state.overlay.title;
+  const subtitle = options.subtitle ?? state.overlay.subtitle;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#f0fbff";
+  ctx.font = `800 ${Math.max(24, width / 35)}px Inter, sans-serif`;
+  ctx.fillText(title, width * 0.055, height * 0.075);
+  ctx.fillStyle = "#88a0ad";
+  ctx.font = `520 ${Math.max(12, width / 100)}px Inter, sans-serif`;
+  if (subtitle) ctx.fillText(subtitle, width * 0.055, height * 0.12);
+
+  if (!players.length || !state.overlay.averageRadar) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#d6f9ff";
+    ctx.font = `750 ${Math.max(20, width / 48)}px Inter, sans-serif`;
+    ctx.fillText("叠图队列为空", width / 2, height * 0.46);
+    ctx.fillStyle = "#88a0ad";
+    ctx.font = `520 ${Math.max(13, width / 92)}px Inter, sans-serif`;
+    ctx.fillText("请从“玩家记录”选择比赛并加入叠图队列", width / 2, height * 0.52);
+    if (targetCanvas === el.overlayCanvas) state.overlay.hitRegions = [];
+    return;
+  }
+
+  const averageRadar = state.overlay.averageRadar.radar;
+  const dimensions = averageRadar.dimensions;
+  const maxValues = averageRadar.max_values;
+  const displayTypes = averageRadar.display_types;
+  const legendRows = Math.ceil((players.length + 1) / Math.max(1, Math.floor(width / 210)));
+  const legendHeight = Math.max(68, legendRows * 31 + 24);
+  const chartTop = height * 0.17;
+  const chartBottom = height - legendHeight - 22;
+  const cx = width * 0.49;
+  const cy = chartTop + (chartBottom - chartTop) * 0.52;
+  const radius = Math.min(width * 0.29, (chartBottom - chartTop) * 0.34);
+  const hitRegions = [];
+
+  ctx.strokeStyle = "rgba(145, 205, 217, 0.22)";
+  ctx.lineWidth = Math.max(1, width / 1200);
+  for (let level = 1; level <= 5; level += 1) {
+    drawPolygon(ctx, cx, cy, radius * (level / 5), dimensions.length);
+    ctx.stroke();
+  }
+  dimensions.forEach((_, index) => {
+    const point = axisPoint(cx, cy, radius, index, dimensions.length);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+  });
+
+  const averagePoints = overlayPointsForRadar(averageRadar, dimensions, maxValues, cx, cy, radius);
+  ctx.save();
+  ctx.setLineDash([Math.max(7, width / 120), Math.max(5, width / 180)]);
+  ctx.fillStyle = "rgba(232, 244, 248, 0.035)";
+  ctx.strokeStyle = hoverSteamId ? "rgba(235, 246, 250, 0.62)" : "rgba(235, 246, 250, 0.9)";
+  ctx.lineWidth = Math.max(2, width / 520);
+  pathPoints(ctx, averagePoints);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  players.forEach((entry, drawIndex) => {
+    const steamId = entry.player?.steam_id || "";
+    if (!state.overlay.visibleSteamIds.has(steamId)) return;
+    const color = getOverlayPlayerColor(entry);
+    const points = overlayPointsForRadar(entry.radar, dimensions, maxValues, cx, cy, radius);
+    const isHovered = !hoverSteamId || hoverSteamId === steamId;
+    const fillAlpha = isHovered ? 0.13 : 0.032;
+    const strokeAlpha = isHovered ? 0.9 : 0.25;
+    ctx.save();
+    ctx.shadowColor = color;
+    ctx.shadowBlur = isHovered ? Math.max(8, width / 100) : 0;
+    ctx.fillStyle = hexToRgba(color, fillAlpha);
+    ctx.strokeStyle = hexToRgba(color, strokeAlpha);
+    ctx.lineWidth = Math.max(isHovered ? 2.2 : 1.4, width / (isHovered ? 560 : 820));
+    pathPoints(ctx, points);
+    ctx.fill();
+    ctx.stroke();
+    points.forEach((point, index) => {
+      const sourceIndex = entry.radar?.dimensions?.indexOf(dimensions[index]) ?? -1;
+      const value = sourceIndex >= 0 ? entry.radar?.values?.[sourceIndex] : null;
+      if (value === null || value === undefined || !Number.isFinite(Number(value))) return;
+      ctx.beginPath();
+      ctx.fillStyle = hexToRgba(color, isHovered ? 0.96 : 0.28);
+      ctx.arc(point.x, point.y, Math.max(3, width / 330), 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+    hitRegions.push({ steamId, entry, points, drawIndex, color });
+  });
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  dimensions.forEach((dimension, index) => {
+    const point = axisPoint(cx, cy, radius * 1.22, index, dimensions.length);
+    const labelY = point.y - Math.max(9, height / 100);
+    ctx.fillStyle = "#e7f8ff";
+    ctx.font = `700 ${Math.max(14, width / 78)}px Inter, sans-serif`;
+    ctx.fillText(dimension, point.x, labelY);
+    const caption = metricCaptions[dimension] ? `(${metricCaptions[dimension]})` : "";
+    if (caption) {
+      ctx.fillStyle = "#88a0ad";
+      ctx.font = `600 ${Math.max(10, width / 125)}px Inter, sans-serif`;
+      ctx.fillText(caption, point.x, labelY + Math.max(15, height / 64));
+    }
+    ctx.fillStyle = "#dbe7eb";
+    ctx.font = `650 ${Math.max(11, width / 106)}px Inter, sans-serif`;
+    ctx.fillText(formatMetric(averageRadar.values[index], displayTypes[index]), point.x, point.y + Math.max(caption ? 30 : 12, height / 78));
+  });
+
+  const nameX = width * 0.79;
+  let nameY = height * 0.19;
+  players.forEach((entry) => {
+    const steamId = entry.player?.steam_id || "";
+    if (!state.overlay.visibleSteamIds.has(steamId)) return;
+    const color = getOverlayPlayerColor(entry);
+    const muted = hoverSteamId && hoverSteamId !== steamId;
+    ctx.textAlign = "left";
+    ctx.fillStyle = hexToRgba(color, muted ? 0.3 : 0.95);
+    ctx.font = `720 ${Math.max(11, width / 108)}px Inter, sans-serif`;
+    const label = entry.player?.name || steamId;
+    ctx.fillText(label, nameX, nameY);
+    const textWidth = ctx.measureText(label).width;
+    const region = hitRegions.find((item) => item.steamId === steamId);
+    if (region) region.labelBox = { x: nameX - 8, y: nameY - 13, width: textWidth + 16, height: 26 };
+    nameY += Math.max(22, height / 32);
+  });
+
+  const allHidden = players.every((entry) => !state.overlay.visibleSteamIds.has(entry.player?.steam_id || ""));
+  if (allHidden) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(231, 248, 255, 0.78)";
+    ctx.font = `650 ${Math.max(13, width / 92)}px Inter, sans-serif`;
+    ctx.fillText("已隐藏所有玩家雷达，仅显示队列平均", width / 2, chartBottom + 4);
+  }
+
+  drawOverlayCanvasLegend(ctx, players, width, height, legendHeight);
+  if (targetCanvas === el.overlayCanvas) state.overlay.hitRegions = hitRegions;
+}
+
+function overlayPointsForRadar(radar, dimensions, fallbackMaxValues, cx, cy, radius) {
+  const sourceDimensions = radar?.dimensions || [];
+  return dimensions.map((dimension, index) => {
+    const sourceIndex = sourceDimensions.indexOf(dimension);
+    const value = sourceIndex >= 0 ? radar?.values?.[sourceIndex] : null;
+    const ownMax = sourceIndex >= 0 ? Number(radar?.max_values?.[sourceIndex]) : NaN;
+    const maxValue = Number.isFinite(ownMax) && ownMax > 0 ? ownMax : Number(fallbackMaxValues[index]) || 1;
+    const numericValue = Number(value);
+    const normalized = value === null || value === undefined || !Number.isFinite(numericValue) ? 0 : Math.max(0, Math.min(1.25, numericValue / maxValue));
+    return axisPoint(cx, cy, radius * normalized, index, dimensions.length);
+  });
+}
+
+function drawOverlayCanvasLegend(ctx, players, width, height, legendHeight) {
+  const itemWidth = Math.max(170, Math.min(230, width / Math.max(1, Math.floor(width / 210))));
+  const columns = Math.max(1, Math.floor(width / itemWidth));
+  const startX = Math.max(24, (width - Math.min(columns, players.length + 1) * itemWidth) / 2);
+  const startY = height - legendHeight + 22;
+  const items = players.map((entry) => ({
+    name: entry.player?.name || entry.player?.steam_id || "未知玩家",
+    color: getOverlayPlayerColor(entry),
+    visible: state.overlay.visibleSteamIds.has(entry.player?.steam_id || ""),
+  }));
+  items.push({ name: "队列平均", color: "#e8f4f8", visible: true, average: true });
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  items.forEach((item, index) => {
+    const x = startX + (index % columns) * itemWidth;
+    const y = startY + Math.floor(index / columns) * 31;
+    ctx.save();
+    ctx.globalAlpha = item.visible ? 1 : 0.34;
+    ctx.strokeStyle = item.color;
+    ctx.fillStyle = item.average ? "rgba(232,244,248,0.05)" : hexToRgba(item.color, 0.22);
+    ctx.lineWidth = 2;
+    if (item.average) ctx.setLineDash([5, 4]);
+    ctx.fillRect(x, y - 6, 20, 12);
+    ctx.strokeRect(x, y - 6, 20, 12);
+    ctx.setLineDash([]);
+    ctx.fillStyle = item.average ? "#e8f4f8" : item.color;
+    ctx.font = `650 ${Math.max(11, width / 112)}px Inter, sans-serif`;
+    ctx.fillText(item.name, x + 29, y);
+    if (!item.visible) {
+      const textWidth = ctx.measureText(item.name).width;
+      ctx.beginPath();
+      ctx.moveTo(x + 27, y);
+      ctx.lineTo(x + 31 + textWidth, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
+
+function hitTestOverlayRadar(event) {
+  const rect = el.overlayCanvas.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * (el.overlayCanvas.width / rect.width);
+  const y = (event.clientY - rect.top) * (el.overlayCanvas.height / rect.height);
+  let best = null;
+  state.overlay.hitRegions.forEach((region) => {
+    if (!state.overlay.visibleSteamIds.has(region.steamId)) return;
+    const labelHit =
+      region.labelBox &&
+      x >= region.labelBox.x &&
+      x <= region.labelBox.x + region.labelBox.width &&
+      y >= region.labelBox.y &&
+      y <= region.labelBox.y + region.labelBox.height;
+    let edgeDistance = Infinity;
+    region.points.forEach((point, index) => {
+      const next = region.points[(index + 1) % region.points.length];
+      edgeDistance = Math.min(edgeDistance, pointToSegmentDistance(x, y, point.x, point.y, next.x, next.y));
+    });
+    const inside = pointInPolygon(x, y, region.points);
+    if (!labelHit && !inside && edgeDistance > 14) return;
+    const score = labelHit ? -2 : edgeDistance <= 14 ? edgeDistance : 15;
+    if (!best || score < best.score || (score === best.score && region.drawIndex > best.region.drawIndex)) {
+      best = { region, score };
+    }
+  });
+  if (!best) return null;
+  let metricIndex = -1;
+  let nearestVertex = Infinity;
+  best.region.points.forEach((point, index) => {
+    const distance = Math.hypot(x - point.x, y - point.y);
+    if (distance < nearestVertex) {
+      nearestVertex = distance;
+      metricIndex = index;
+    }
+  });
+  return { ...best.region, metricIndex };
+}
+
+function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (!dx && !dy) return Math.hypot(px - x1, py - y1);
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function pointInPolygon(x, y, points) {
+  let inside = false;
+  for (let index = 0, previous = points.length - 1; index < points.length; previous = index, index += 1) {
+    const a = points[index];
+    const b = points[previous];
+    const intersects = a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y || Number.EPSILON) + a.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function overlayTooltipText(hit) {
+  const average = state.overlay.averageRadar?.radar;
+  const dimensions = average?.dimensions || [];
+  const lines = [`${hit.entry.player?.name || hit.steamId}`, `颜色 ${hit.color}`];
+  dimensions.forEach((dimension, index) => {
+    const sourceIndex = hit.entry.radar?.dimensions?.indexOf(dimension) ?? -1;
+    const value = sourceIndex >= 0 ? hit.entry.radar?.values?.[sourceIndex] : null;
+    const type = sourceIndex >= 0 ? hit.entry.radar?.display_types?.[sourceIndex] : average?.display_types?.[index];
+    lines.push(`${dimension}: ${formatMetric(value, type)}`);
+  });
+  return lines.join("\n");
+}
+
+function exportOverlayPng() {
+  clearError();
+  if (!state.overlay.players.length) return showError({ code: "metric_unavailable", message: "叠图队列为空，无法导出。" });
+  const width = Number(el.exportWidth.value);
+  const height = Number(el.exportHeight.value);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    return showError({ code: "invalid_export_size", message: "导出宽高必须是正整数。" });
+  }
+  const exportCanvas = document.createElement("canvas");
+  drawOverlayRadar(exportCanvas, state.overlay.players, {
+    width,
+    height,
+    title: state.overlay.title,
+    subtitle: state.overlay.subtitle,
+    suppressHover: true,
+  });
+  const link = document.createElement("a");
+  link.download = `cs2-overlay-radar-${downloadTimestamp()}.png`;
+  link.href = exportCanvas.toDataURL("image/png");
+  link.click();
 }
 
 function renderShowcaseQueueList() {
@@ -2289,6 +2940,7 @@ el.demoFile.addEventListener("change", () => {
 el.currentDemoTab.addEventListener("click", () => setView("current"));
 el.playerRecordsTab.addEventListener("click", () => setView("records"));
 el.showcaseTab.addEventListener("click", () => setView("showcase"));
+el.overlayTab.addEventListener("click", () => setView("overlay"));
 
 el.uploadBtn.addEventListener("click", async () => {
   clearError();
@@ -2523,6 +3175,17 @@ el.radarSubtitle.addEventListener("input", () => {
 el.databasePath.addEventListener("change", saveConfig);
 el.saveConfigBtn.addEventListener("click", saveConfig);
 
+el.clearOverlayQueueBtn.addEventListener("click", clearOverlayQueue);
+el.exportOverlayBtn.addEventListener("click", exportOverlayPng);
+el.overlayTitle.addEventListener("input", () => {
+  state.overlay.title = el.overlayTitle.value;
+  if (state.view === "overlay") renderOverlayPage();
+});
+el.overlaySubtitle.addEventListener("input", () => {
+  state.overlay.subtitle = el.overlaySubtitle.value;
+  if (state.view === "overlay") renderOverlayPage();
+});
+
 el.resetShowcaseLayoutBtn.addEventListener("click", resetShowcaseLayout);
 el.toggleAudioWaveformBtn.addEventListener("click", toggleAudioWaveform);
 el.showcaseDurationSeconds.addEventListener("change", () => {
@@ -2723,6 +3386,7 @@ window.addEventListener("resize", () => {
     renderPreview();
     renderShowcasePreview();
     renderAudioWaveform();
+    if (state.view === "overlay") renderOverlayPage();
   }, 80);
 });
 
@@ -2737,6 +3401,33 @@ el.canvas.addEventListener("mousemove", (event) => {
   else hideTooltip();
 });
 el.canvas.addEventListener("mouseleave", hideTooltip);
+
+el.overlayCanvas.addEventListener("mousemove", (event) => {
+  if (state.view !== "overlay") return;
+  const hit = hitTestOverlayRadar(event);
+  const nextSteamId = hit?.steamId || "";
+  const nextMetricIndex = hit?.metricIndex ?? -1;
+  const changed = nextSteamId !== state.overlay.hoverSteamId || nextMetricIndex !== state.overlay.hoverMetricIndex;
+  state.overlay.hoverSteamId = nextSteamId;
+  state.overlay.hoverMetricIndex = nextMetricIndex;
+  el.overlayCanvas.style.cursor = hit ? "crosshair" : "";
+  if (hit) showTooltip(event.clientX, event.clientY, overlayTooltipText(hit));
+  else hideTooltip();
+  if (changed) {
+    renderOverlayLegend();
+    drawOverlayRadar(el.overlayCanvas, state.overlay.players, { width: el.overlayCanvas.width, height: el.overlayCanvas.height });
+  }
+});
+el.overlayCanvas.addEventListener("mouseleave", () => {
+  state.overlay.hoverSteamId = "";
+  state.overlay.hoverMetricIndex = -1;
+  el.overlayCanvas.style.cursor = "";
+  hideTooltip();
+  renderOverlayLegend();
+  if (state.view === "overlay") {
+    drawOverlayRadar(el.overlayCanvas, state.overlay.players, { width: el.overlayCanvas.width, height: el.overlayCanvas.height });
+  }
+});
 
 loadConfig().then(async () => {
   configureShowcaseAudio();

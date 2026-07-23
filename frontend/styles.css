@@ -57,45 +57,10 @@ select {
 }
 
 .brand-logo {
-  position: relative;
   width: 42px;
   height: 42px;
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(0, 255, 255, 0.42);
-  border-radius: 8px;
-  background: radial-gradient(circle, rgba(0, 255, 255, 0.18), rgba(8, 14, 21, 0.9) 62%);
-  box-shadow: inset 0 0 18px rgba(0, 255, 255, 0.12), 0 0 24px rgba(0, 255, 255, 0.14);
-}
-
-.brand-logo::before,
-.brand-logo::after,
-.brand-logo span {
-  content: "";
-  position: absolute;
-  border: 1px solid rgba(215, 252, 255, 0.68);
-  border-radius: 50%;
-}
-
-.brand-logo::before {
-  width: 27px;
-  height: 27px;
-}
-
-.brand-logo::after {
-  width: 4px;
-  height: 4px;
-  background: var(--accent);
-  box-shadow: 0 0 12px var(--accent);
-}
-
-.brand-logo span {
-  width: 36px;
-  height: 18px;
-  border-top-color: transparent;
-  border-bottom-color: transparent;
-  transform: rotate(-34deg);
+  filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.2));
 }
 
 h1,
@@ -170,8 +135,13 @@ h2 {
   grid-template-columns: 300px minmax(520px, 1fr);
 }
 
+.workspace.overlay-view {
+  grid-template-columns: 300px minmax(560px, 1fr);
+}
+
 .workspace.showcase-view .metric-rail,
-.workspace.records-view .metric-rail {
+.workspace.records-view .metric-rail,
+.workspace.overlay-view .metric-rail {
   display: none;
 }
 
@@ -242,6 +212,13 @@ button:disabled {
   box-shadow: 0 0 18px color-mix(in srgb, var(--accent), transparent 70%);
 }
 
+#exportOverlayBtn:disabled {
+  color: #52616b;
+  border-color: rgba(123, 159, 172, 0.12);
+  background: #080e15;
+  box-shadow: none;
+}
+
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -299,12 +276,107 @@ label {
 }
 
 .showcase-player-list,
-.showcase-queue-list {
+.showcase-queue-list,
+.overlay-queue-list {
   display: grid;
   gap: 10px;
   max-height: 360px;
   overflow: auto;
   padding-right: 2px;
+}
+
+.overlay-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.overlay-panel-header h2 {
+  margin-bottom: 3px;
+}
+
+.compact-btn {
+  width: auto;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.overlay-help,
+.overlay-average-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.overlay-help {
+  margin-top: 10px;
+}
+
+.overlay-queue-row {
+  display: grid;
+  grid-template-columns: 18px 14px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid rgba(123, 159, 172, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  cursor: grab;
+}
+
+.overlay-queue-row:hover {
+  border-color: color-mix(in srgb, var(--accent), transparent 42%);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.overlay-queue-row.drag-source {
+  opacity: 0.48;
+  cursor: grabbing;
+}
+
+.overlay-drag-handle {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.overlay-queue-color {
+  width: 12px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--player-color);
+  box-shadow: 0 0 13px color-mix(in srgb, var(--player-color), transparent 38%);
+}
+
+.overlay-queue-player {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.overlay-queue-player strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overlay-queue-player small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.overlay-remove {
+  width: auto;
+  min-height: 30px;
+  padding: 5px 8px;
+  color: #ffd6da;
+  border-color: rgba(255, 95, 109, 0.38);
+  font-size: 11px;
 }
 
 .showcase-player-row {
@@ -580,6 +652,92 @@ label {
   width: 100%;
   min-width: 0;
   outline: none;
+}
+
+.overlay-area {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.overlay-canvas {
+  border-color: rgba(0, 255, 255, 0.3);
+  box-shadow: inset 0 0 76px rgba(0, 255, 255, 0.07), 0 22px 90px rgba(0, 0, 0, 0.48);
+}
+
+.overlay-legend {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  flex-wrap: wrap;
+  padding: 10px;
+  border: 1px solid rgba(96, 135, 149, 0.24);
+  border-radius: 8px;
+  background: rgba(8, 14, 21, 0.88);
+}
+
+.overlay-legend-item {
+  width: auto;
+  min-height: 36px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  color: var(--text);
+  border-color: rgba(123, 159, 172, 0.22);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 12px;
+}
+
+button.overlay-legend-item:hover,
+.overlay-legend-item.is-hovered {
+  border-color: color-mix(in srgb, var(--player-color, var(--accent)), transparent 32%);
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.overlay-legend-item small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.overlay-legend-swatch {
+  width: 20px;
+  height: 12px;
+  flex: 0 0 auto;
+  border: 2px solid var(--player-color);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--player-color), transparent 76%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--player-color), transparent 48%);
+}
+
+.overlay-legend-swatch.average {
+  border-color: #e8f4f8;
+  border-style: dashed;
+  background: rgba(232, 244, 248, 0.05);
+  box-shadow: none;
+}
+
+.overlay-legend-item.is-hidden {
+  opacity: 0.38;
+}
+
+.overlay-legend-item.is-hidden > span:nth-child(2) {
+  text-decoration: line-through;
+}
+
+.overlay-average-item {
+  cursor: default;
+}
+
+.overlay-legend-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.overlay-average-note {
+  padding: 0 4px;
 }
 
 .showcase-canvas {
@@ -975,6 +1133,7 @@ canvas {
   line-height: 1.45;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.44), 0 0 18px color-mix(in srgb, var(--accent), transparent 82%);
   pointer-events: none;
+  white-space: pre-line;
 }
 
 .error {
@@ -1015,15 +1174,26 @@ canvas {
     order: 3;
     width: 100%;
     margin-left: 0;
+    flex-wrap: wrap;
   }
 
   .tab {
     flex: 1;
+    min-width: 120px;
   }
 
   .control-rail,
   .metric-rail,
   .preview-area {
     overflow: visible;
+  }
+
+  .overlay-legend {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .overlay-legend-item {
+    flex: 0 0 auto;
   }
 }
