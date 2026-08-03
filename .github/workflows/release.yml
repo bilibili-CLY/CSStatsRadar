@@ -59,7 +59,15 @@ jobs:
           # 避免在 runner 上创建/触碰 ~/.csplayerstatsradar。
           CS_RADAR_DB_PATH: ${{ runner.temp }}/cs-radar-build.db
           CS_RADAR_CONFIG_PATH: ${{ runner.temp }}/cs-radar-build-config.json
-        run: wails build -clean -platform ${{ matrix.wails_platform }}
+        shell: bash
+        run: |
+          # macOS 使用 -platform darwin/universal 生成通用二进制；
+          # Windows 不指定 -platform，让 Wails 自动生成 NSIS 安装包。
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            wails build -clean -platform darwin/universal
+          else
+            wails build -clean
+          fi
 
       - name: Package macOS app (.zip)
         if: runner.os == 'macOS'
@@ -74,9 +82,11 @@ jobs:
         working-directory: cmd/cs-radar-studio/build/bin
         shell: bash
         run: |
-          set -e
           ls -la
+          # 关闭 pipefail，ls 在无匹配文件时返回非零但不影响后续逻辑
+          set +e
           installer=$(ls *-installer.exe 2>/dev/null | head -1)
+          set -e
           if [ -n "$installer" ]; then
             mv "$installer" "CSPlayerStatsRadar-${GITHUB_REF_NAME}-windows-amd64.exe"
           else
