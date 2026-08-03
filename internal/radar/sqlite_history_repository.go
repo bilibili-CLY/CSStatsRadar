@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,6 +39,7 @@ func (r *SQLiteHistoryRepository) Init() *AppError {
 	if err := os.MkdirAll(filepath.Dir(r.path), 0o755); err != nil {
 		return NewAppError("database_open_failed", httpStatusBadRequest, "数据库目录创建失败："+err.Error(), nil)
 	}
+	_, statErr := os.Stat(r.path)
 	db, err := sql.Open("sqlite", r.path)
 	if err != nil {
 		return NewAppError("database_open_failed", httpStatusBadRequest, "数据库打开失败："+err.Error(), nil)
@@ -46,9 +48,29 @@ func (r *SQLiteHistoryRepository) Init() *AppError {
 		db.Close()
 		return NewAppError("database_open_failed", httpStatusInternal, "数据库初始化失败："+err.Error(), nil)
 	}
+	var schemaVersion int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&schemaVersion); err != nil {
+		db.Close()
+		return NewAppError("database_open_failed", httpStatusInternal, "数据库版本读取失败："+err.Error(), nil)
+	}
+	if schemaVersion < 2 && statErr == nil {
+		_ = db.Close()
+		if err := backupDatabaseFile(r.path); err != nil {
+			return NewAppError("database_open_failed", httpStatusInternal, "数据库备份失败："+err.Error(), nil)
+		}
+		db, err = sql.Open("sqlite", r.path)
+		if err != nil {
+			return NewAppError("database_open_failed", httpStatusBadRequest, "数据库重新打开失败："+err.Error(), nil)
+		}
+		_, _ = db.Exec("PRAGMA foreign_keys = ON")
+	}
 	if _, err := db.Exec(sqliteSchema); err != nil {
 		db.Close()
 		return NewAppError("database_open_failed", httpStatusInternal, "数据库 schema 初始化失败："+err.Error(), nil)
+	}
+	if err := migrateStudioSchema(db); err != nil {
+		db.Close()
+		return NewAppError("database_open_failed", httpStatusInternal, "数据库迁移失败："+err.Error(), nil)
 	}
 	r.mu.Lock()
 	old := r.db
@@ -58,6 +80,72 @@ func (r *SQLiteHistoryRepository) Init() *AppError {
 		_ = old.Close()
 	}
 	return nil
+}
+
+func backupDatabaseFile(path string) error {
+	source, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	target, err := os.OpenFile(path+".bak-"+time.Now().UTC().Format("20060102-150405"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(target, source); err != nil {
+		_ = target.Close()
+		return err
+	}
+	return target.Close()
+}
+
+func migrateStudioSchema(db *sql.DB) error {
+	columns := []struct{ name, definition string }{
+		{"file_sha256", "TEXT NOT NULL DEFAULT ''"},
+		{"source_path", "TEXT NOT NULL DEFAULT ''"},
+		{"match_time_source", "TEXT NOT NULL DEFAULT 'unknown'"},
+	}
+	for _, column := range columns {
+		exists, err := sqliteColumnExists(db, "demos", column.name)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := db.Exec("ALTER TABLE demos ADD COLUMN " + column.name + " " + column.definition); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := db.Exec(`
+		UPDATE demos SET match_time_source = CASE WHEN match_time = imported_at THEN 'unknown' ELSE 'demo' END
+		WHERE match_time_source = '' OR match_time_source = 'unknown';
+		INSERT OR IGNORE INTO followed_players (steam_id, display_name, followed_at)
+		SELECT steam_id, latest_name, CURRENT_TIMESTAMP FROM players;
+		PRAGMA user_version = 2;`); err != nil {
+		return err
+	}
+	return nil
+}
+
+func sqliteColumnExists(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func (r *SQLiteHistoryRepository) Close() error {
@@ -75,12 +163,131 @@ func (r *SQLiteHistoryRepository) Path() string {
 	return r.path
 }
 
+func (r *SQLiteHistoryRepository) ListFollowedPlayers() ([]Player, *AppError) {
+	db, appErr := r.currentDB()
+	if appErr != nil {
+		return nil, appErr
+	}
+	rows, err := db.Query(`SELECT display_name, steam_id FROM followed_players ORDER BY display_name COLLATE NOCASE`)
+	if err != nil {
+		return nil, NewAppError("database_open_failed", httpStatusInternal, "关注玩家读取失败："+err.Error(), nil)
+	}
+	defer rows.Close()
+	players := []Player{}
+	for rows.Next() {
+		var player Player
+		if err := rows.Scan(&player.Name, &player.SteamID); err != nil {
+			return nil, NewAppError("database_open_failed", httpStatusInternal, "关注玩家解析失败："+err.Error(), nil)
+		}
+		players = append(players, player)
+	}
+	return players, nil
+}
+
+func (r *SQLiteHistoryRepository) SetPlayerFollowed(player Player, followed bool) *AppError {
+	db, appErr := r.currentDB()
+	if appErr != nil {
+		return appErr
+	}
+	player.SteamID = strings.TrimSpace(player.SteamID)
+	if player.SteamID == "" {
+		return NewAppError("player_not_found", httpStatusBadRequest, "SteamID 不能为空。", nil)
+	}
+	if followed {
+		_, err := db.Exec(`INSERT INTO followed_players (steam_id, display_name, followed_at) VALUES (?, ?, ?)
+			ON CONFLICT(steam_id) DO UPDATE SET display_name = excluded.display_name`, player.SteamID, strings.TrimSpace(player.Name), formatDBTime(time.Now().UTC()))
+		if err != nil {
+			return NewAppError("database_open_failed", httpStatusInternal, "关注玩家保存失败："+err.Error(), nil)
+		}
+		return nil
+	}
+	if _, err := db.Exec(`DELETE FROM followed_players WHERE steam_id = ?`, player.SteamID); err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "取消关注失败："+err.Error(), nil)
+	}
+	return nil
+}
+
+func (r *SQLiteHistoryRepository) SaveEditorDraft(draft EditorDraft) *AppError {
+	db, appErr := r.currentDB()
+	if appErr != nil {
+		return appErr
+	}
+	if draft.Kind != "radar" && draft.Kind != "overlay" && draft.Kind != "showcase" {
+		return NewAppError("config_write_failed", httpStatusBadRequest, "草稿类型无效。", nil)
+	}
+	if !json.Valid([]byte(draft.Payload)) {
+		return NewAppError("config_write_failed", httpStatusBadRequest, "草稿内容必须是有效 JSON。", nil)
+	}
+	_, err := db.Exec(`INSERT INTO editor_drafts (kind, payload_json, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(kind) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at`, draft.Kind, draft.Payload, formatDBTime(time.Now().UTC()))
+	if err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "草稿保存失败："+err.Error(), nil)
+	}
+	return nil
+}
+
+func (r *SQLiteHistoryRepository) GetEditorDraft(kind string) (*EditorDraft, *AppError) {
+	db, appErr := r.currentDB()
+	if appErr != nil {
+		return nil, appErr
+	}
+	var draft EditorDraft
+	if err := db.QueryRow(`SELECT kind, payload_json, updated_at FROM editor_drafts WHERE kind = ?`, kind).Scan(&draft.Kind, &draft.Payload, &draft.UpdatedAt); errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	} else if err != nil {
+		return nil, NewAppError("database_open_failed", httpStatusInternal, "草稿读取失败："+err.Error(), nil)
+	}
+	return &draft, nil
+}
+
+func (r *SQLiteHistoryRepository) UpdateMatchMetadata(demoID, matchTime string, tags []string) *AppError {
+	db, appErr := r.currentDB()
+	if appErr != nil {
+		return appErr
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "元数据事务启动失败："+err.Error(), nil)
+	}
+	defer tx.Rollback()
+	if strings.TrimSpace(matchTime) != "" {
+		parsed, err := time.Parse(time.RFC3339, matchTime)
+		if err != nil {
+			return NewAppError("config_write_failed", httpStatusBadRequest, "比赛时间格式无效。", nil)
+		}
+		if _, err := tx.Exec(`UPDATE demos SET match_time = ?, match_time_source = 'manual' WHERE id = ?`, formatDBTime(parsed), demoID); err != nil {
+			return NewAppError("database_open_failed", httpStatusInternal, "比赛时间保存失败："+err.Error(), nil)
+		}
+	}
+	if tags != nil {
+		if _, err := tx.Exec(`DELETE FROM demo_tags WHERE demo_id = ?`, demoID); err != nil {
+			return NewAppError("database_open_failed", httpStatusInternal, "标签清理失败："+err.Error(), nil)
+		}
+		for _, tag := range uniqueStrings(tags) {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, tag); err != nil {
+				return NewAppError("database_open_failed", httpStatusInternal, "标签保存失败："+err.Error(), nil)
+			}
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO demo_tags (demo_id, tag_name) VALUES (?, ?)`, demoID, tag); err != nil {
+				return NewAppError("database_open_failed", httpStatusInternal, "标签关联失败："+err.Error(), nil)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "元数据提交失败："+err.Error(), nil)
+	}
+	return nil
+}
+
 func (r *SQLiteHistoryRepository) FindDemoByDedupeKey(dedupeKey string) (*SavedDemo, *AppError) {
 	db, appErr := r.currentDB()
 	if appErr != nil {
 		return nil, appErr
 	}
-	row := db.QueryRow(`SELECT id, file_name, match_time, map_name, player_set_hash, dedupe_key, imported_at FROM demos WHERE dedupe_key = ?`, dedupeKey)
+	row := db.QueryRow(`SELECT id, file_name, match_time, map_name, player_set_hash, dedupe_key, imported_at, file_sha256, source_path, match_time_source FROM demos WHERE dedupe_key = ?`, dedupeKey)
 	return scanSavedDemo(row)
 }
 
@@ -96,7 +303,7 @@ func (r *SQLiteHistoryRepository) SaveParsedDemo(input SaveParsedDemoInput) (*Sa
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(
-		`INSERT OR IGNORE INTO demos (id, file_name, match_time, map_name, player_set_hash, dedupe_key, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT OR IGNORE INTO demos (id, file_name, match_time, map_name, player_set_hash, dedupe_key, imported_at, file_sha256, source_path, match_time_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		input.Demo.DemoRecordID,
 		input.Demo.FileName,
 		formatDBTime(input.Demo.MatchTime),
@@ -104,6 +311,9 @@ func (r *SQLiteHistoryRepository) SaveParsedDemo(input SaveParsedDemoInput) (*Sa
 		input.Demo.PlayerSetHash,
 		input.Demo.DedupeKey,
 		formatDBTime(input.Demo.ImportedAt),
+		input.Demo.FileSHA256,
+		input.Demo.SourcePath,
+		input.Demo.MatchTimeSource,
 	); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			if existing, findErr := r.FindDemoByDedupeKey(input.Demo.DedupeKey); findErr == nil && existing != nil {
@@ -112,7 +322,18 @@ func (r *SQLiteHistoryRepository) SaveParsedDemo(input SaveParsedDemoInput) (*Sa
 		}
 		return nil, NewAppError("database_open_failed", httpStatusInternal, "Demo 保存失败："+err.Error(), nil)
 	}
+	for _, participant := range input.Participants {
+		participant.DemoRecordID = input.Demo.DemoRecordID
+		if _, err := tx.Exec(`INSERT INTO discovered_players (steam_id, latest_name, last_seen_at) VALUES (?, ?, ?)
+			ON CONFLICT(steam_id) DO UPDATE SET latest_name = excluded.latest_name, last_seen_at = excluded.last_seen_at`, participant.SteamID, participant.NameSnapshot, formatDBTime(input.Demo.ImportedAt)); err != nil {
+			return nil, NewAppError("database_open_failed", httpStatusInternal, "参赛玩家保存失败："+err.Error(), nil)
+		}
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO demo_participants (demo_id, steam_id, name_snapshot) VALUES (?, ?, ?)`, participant.DemoRecordID, participant.SteamID, participant.NameSnapshot); err != nil {
+			return nil, NewAppError("database_open_failed", httpStatusInternal, "参赛关系保存失败："+err.Error(), nil)
+		}
+	}
 	for _, player := range input.Players {
+		player.DemoRecordID = input.Demo.DemoRecordID
 		if _, err := tx.Exec(
 			`INSERT INTO players (steam_id, latest_name, first_seen_at, last_seen_at)
 			 VALUES (?, ?, ?, ?)
@@ -136,6 +357,7 @@ func (r *SQLiteHistoryRepository) SaveParsedDemo(input SaveParsedDemoInput) (*Sa
 		}
 	}
 	for _, stat := range input.MatchStats {
+		stat.DemoRecordID = input.Demo.DemoRecordID
 		metricsJSON, err := json.Marshal(stat.Metrics)
 		if err != nil {
 			return nil, NewAppError("database_open_failed", httpStatusInternal, "指标序列化失败："+err.Error(), nil)
@@ -397,6 +619,38 @@ func (r *SQLiteHistoryRepository) DeletePlayer(steamID string) *AppError {
 	return nil
 }
 
+// DeletePlayerStats removes only the player's detailed statistics. Follow state,
+// lightweight Demo catalog entries, participant identities and media are retained.
+func (r *SQLiteHistoryRepository) DeletePlayerStats(steamID string) *AppError {
+	db, appErr := r.currentDB()
+	if appErr != nil {
+		return appErr
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "数据库事务启动失败："+err.Error(), nil)
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`DELETE FROM player_match_stats WHERE steam_id = ?`, steamID)
+	if err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "玩家比赛统计删除失败："+err.Error(), nil)
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return NewAppError("player_record_not_found", httpStatusNotFound, "", nil)
+	}
+	if _, err := tx.Exec(`DELETE FROM demo_players WHERE steam_id = ?`, steamID); err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "Demo 玩家关联删除失败："+err.Error(), nil)
+	}
+	if _, err := tx.Exec(`DELETE FROM players WHERE steam_id = ?`, steamID); err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "玩家记录删除失败："+err.Error(), nil)
+	}
+	if err := tx.Commit(); err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "数据库提交失败："+err.Error(), nil)
+	}
+	return nil
+}
+
 func (r *SQLiteHistoryRepository) DeleteAllPlayers() *AppError {
 	db, appErr := r.currentDB()
 	if appErr != nil {
@@ -412,12 +666,18 @@ func (r *SQLiteHistoryRepository) DeleteAllPlayers() *AppError {
 		sql   string
 		label string
 	}{
+		{`DELETE FROM editor_drafts`, "编辑草稿清空失败："},
 		{`DELETE FROM player_match_stats`, "玩家比赛统计清空失败："},
 		{`DELETE FROM player_images`, "玩家图片清空失败："},
 		{`DELETE FROM player_mvp_backgrounds`, "MVP 背景清空失败："},
 		{`DELETE FROM demo_players`, "Demo 玩家关联清空失败："},
+		{`DELETE FROM demo_participants`, "Demo 参赛者清空失败："},
+		{`DELETE FROM demo_tags`, "Demo 标签清空失败："},
 		{`DELETE FROM players`, "玩家记录清空失败："},
 		{`DELETE FROM demos`, "Demo 记录清空失败："},
+		{`DELETE FROM discovered_players`, "发现玩家清空失败："},
+		{`DELETE FROM followed_players`, "关注玩家清空失败："},
+		{`DELETE FROM tags`, "标签清空失败："},
 	}
 	for _, statement := range statements {
 		if _, err := tx.Exec(statement.sql); err != nil {
@@ -470,13 +730,46 @@ func (r *SQLiteHistoryRepository) DeletePlayerMatch(steamID string, demoRecordID
 	return nil
 }
 
+// DeletePlayerMatchStats removes one detailed player-match record while keeping
+// the imported Demo's catalog and participants available for future backfill.
+func (r *SQLiteHistoryRepository) DeletePlayerMatchStats(steamID string, demoRecordID string) *AppError {
+	db, appErr := r.currentDB()
+	if appErr != nil {
+		return appErr
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "数据库事务启动失败："+err.Error(), nil)
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`DELETE FROM player_match_stats WHERE steam_id = ? AND demo_id = ?`, steamID, demoRecordID)
+	if err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "比赛统计删除失败："+err.Error(), nil)
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return NewAppError("match_record_not_found", httpStatusNotFound, "", nil)
+	}
+	if _, err := tx.Exec(`DELETE FROM demo_players WHERE steam_id = ? AND demo_id = ?`, steamID, demoRecordID); err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "Demo 玩家关联删除失败："+err.Error(), nil)
+	}
+	if _, err := tx.Exec(`DELETE FROM players WHERE steam_id = ? AND NOT EXISTS (SELECT 1 FROM demo_players dp WHERE dp.steam_id = players.steam_id)`, steamID); err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "空玩家记录清理失败："+err.Error(), nil)
+	}
+	if err := tx.Commit(); err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "数据库提交失败："+err.Error(), nil)
+	}
+	return nil
+}
+
 func (r *SQLiteHistoryRepository) ListPlayers() ([]SavedPlayer, *AppError) {
 	db, appErr := r.currentDB()
 	if appErr != nil {
 		return nil, appErr
 	}
 	rows, err := db.Query(`
-		SELECT p.steam_id, p.latest_name, COUNT(DISTINCT d.id) AS match_count, MAX(d.match_time) AS latest_match_time
+		SELECT p.steam_id, p.latest_name, COUNT(DISTINCT d.id) AS match_count, MAX(d.match_time) AS latest_match_time,
+		       EXISTS(SELECT 1 FROM followed_players fp WHERE fp.steam_id = p.steam_id)
 		FROM players p
 		JOIN demo_players dp ON dp.steam_id = p.steam_id
 		JOIN demos d ON d.id = dp.demo_id
@@ -495,7 +788,8 @@ func (r *SQLiteHistoryRepository) GetPlayer(steamID string) (*SavedPlayer, *AppE
 		return nil, appErr
 	}
 	row := db.QueryRow(`
-		SELECT p.steam_id, p.latest_name, COUNT(DISTINCT d.id), MAX(d.match_time)
+		SELECT p.steam_id, p.latest_name, COUNT(DISTINCT d.id), MAX(d.match_time),
+		       EXISTS(SELECT 1 FROM followed_players fp WHERE fp.steam_id = p.steam_id)
 		FROM players p
 		JOIN demo_players dp ON dp.steam_id = p.steam_id
 		JOIN demos d ON d.id = dp.demo_id
@@ -574,6 +868,38 @@ CREATE TABLE IF NOT EXISTS demos (
   dedupe_key TEXT NOT NULL UNIQUE,
   imported_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS followed_players (
+  steam_id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  followed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS discovered_players (
+  steam_id TEXT PRIMARY KEY,
+  latest_name TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS demo_participants (
+  demo_id TEXT NOT NULL,
+  steam_id TEXT NOT NULL,
+  name_snapshot TEXT NOT NULL,
+  PRIMARY KEY (demo_id, steam_id),
+  FOREIGN KEY (demo_id) REFERENCES demos(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS tags (
+  name TEXT PRIMARY KEY COLLATE NOCASE
+);
+CREATE TABLE IF NOT EXISTS demo_tags (
+  demo_id TEXT NOT NULL,
+  tag_name TEXT NOT NULL COLLATE NOCASE,
+  PRIMARY KEY (demo_id, tag_name),
+  FOREIGN KEY (demo_id) REFERENCES demos(id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_name) REFERENCES tags(name) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS editor_drafts (
+  kind TEXT PRIMARY KEY CHECK(kind IN ('radar', 'overlay', 'showcase')),
+  payload_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS players (
   steam_id TEXT PRIMARY KEY,
   latest_name TEXT NOT NULL,
@@ -625,16 +951,17 @@ CREATE INDEX IF NOT EXISTS idx_player_match_stats_steam_id ON player_match_stats
 `
 
 const playerMatchSelectSQL = `
-SELECT d.id, d.match_time, d.map_name, d.file_name,
+SELECT d.id, d.match_time, d.match_time_source, d.imported_at, d.map_name, d.file_name, d.source_path,
        s.rounds, s.kills, s.deaths, s.assists, s.total_damage,
-       s.adr, s.kast, s.impact, s.rating, s.metrics_json
+       s.adr, s.kast, s.impact, s.rating, s.metrics_json,
+       COALESCE((SELECT GROUP_CONCAT(dt.tag_name, ',') FROM demo_tags dt WHERE dt.demo_id = d.id), '')
 FROM player_match_stats s
 JOIN demos d ON d.id = s.demo_id`
 
 func scanSavedDemo(row interface{ Scan(dest ...any) error }) (*SavedDemo, *AppError) {
 	var demo SavedDemo
 	var matchTime, importedAt string
-	err := row.Scan(&demo.DemoRecordID, &demo.FileName, &matchTime, &demo.MapName, &demo.PlayerSetHash, &demo.DedupeKey, &importedAt)
+	err := row.Scan(&demo.DemoRecordID, &demo.FileName, &matchTime, &demo.MapName, &demo.PlayerSetHash, &demo.DedupeKey, &importedAt, &demo.FileSHA256, &demo.SourcePath, &demo.MatchTimeSource)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -672,7 +999,7 @@ func scanSavedPlayers(rows *sql.Rows) ([]SavedPlayer, *AppError) {
 func scanSavedPlayer(row interface{ Scan(dest ...any) error }) (*SavedPlayer, error) {
 	var player SavedPlayer
 	var latestMatchTime string
-	if err := row.Scan(&player.SteamID, &player.Name, &player.MatchCount, &latestMatchTime); err != nil {
+	if err := row.Scan(&player.SteamID, &player.Name, &player.MatchCount, &latestMatchTime, &player.Followed); err != nil {
 		return nil, err
 	}
 	parsed, err := parseDBTime(latestMatchTime)
@@ -723,14 +1050,14 @@ func scanPlayerMatchRecords(rows *sql.Rows) ([]PlayerMatchRecord, *AppError) {
 	var records []PlayerMatchRecord
 	for rows.Next() {
 		var record PlayerMatchRecord
-		var matchTime string
+		var matchTime, importedAt, tags string
 		var totalDamage sql.NullInt64
 		var adr, kast, impact, rating sql.NullFloat64
 		var metricsJSON string
 		if err := rows.Scan(
-			&record.DemoRecordID, &matchTime, &record.MapName, &record.FileName,
+			&record.DemoRecordID, &matchTime, &record.MatchTimeSource, &importedAt, &record.MapName, &record.FileName, &record.SourcePath,
 			&record.Rounds, &record.Kills, &record.Deaths, &record.Assists, &totalDamage,
-			&adr, &kast, &impact, &rating, &metricsJSON,
+			&adr, &kast, &impact, &rating, &metricsJSON, &tags,
 		); err != nil {
 			return nil, NewAppError("database_open_failed", httpStatusInternal, "比赛记录解析失败："+err.Error(), nil)
 		}
@@ -739,6 +1066,12 @@ func scanPlayerMatchRecords(rows *sql.Rows) ([]PlayerMatchRecord, *AppError) {
 			return nil, NewAppError("database_open_failed", httpStatusInternal, "记录时间解析失败："+err.Error(), nil)
 		}
 		record.MatchTime = parsed
+		if parsedImportedAt, err := parseDBTime(importedAt); err == nil {
+			record.ImportedAt = parsedImportedAt
+		}
+		if tags != "" {
+			record.Tags = strings.Split(tags, ",")
+		}
 		if totalDamage.Valid {
 			value := int(totalDamage.Int64)
 			record.TotalDamage = &value

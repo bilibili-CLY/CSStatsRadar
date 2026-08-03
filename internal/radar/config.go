@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 var themeColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -18,6 +19,7 @@ func DefaultConfig() AppConfig {
 		ColorPreset:              "default",
 		LastPlayerIdentifierType: IdentifierName,
 		DatabasePath:             DefaultDatabasePath(),
+		VideoFPS:                 60,
 		Showcase: ShowcaseConfig{
 			DefaultDurationMS: 4000,
 			ShowBestMarkers:   true,
@@ -85,6 +87,9 @@ func (m *ConfigManager) Read() (AppConfig, *AppError) {
 		"last_player_identifier_type": cfg.LastPlayerIdentifierType,
 		"database_path":               cfg.DatabasePath,
 		"showcase":                    cfg.Showcase,
+		"import_sources":              cfg.ImportSources,
+		"video_fps":                   cfg.VideoFPS,
+		"reduce_motion":               cfg.ReduceMotion,
 	}
 	for key, value := range raw {
 		if _, ok := merged[key]; ok {
@@ -141,6 +146,30 @@ func ValidateConfigMap(raw map[string]any, errorCode string) (AppConfig, *AppErr
 		cfg.DatabasePath = value
 	}
 	cfg.Showcase = parseShowcaseConfig(raw["showcase"], cfg.Showcase)
+	if value, ok := raw["video_fps"].(float64); ok {
+		cfg.VideoFPS = int(value)
+	} else if value, ok := raw["video_fps"].(int); ok {
+		cfg.VideoFPS = value
+	}
+	if value, ok := raw["reduce_motion"].(bool); ok {
+		cfg.ReduceMotion = value
+	}
+	if values, ok := raw["import_sources"].([]any); ok {
+		for _, item := range values {
+			value, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			path, _ := value["path"].(string)
+			if strings.TrimSpace(path) == "" {
+				continue
+			}
+			id, _ := value["id"].(string)
+			name, _ := value["name"].(string)
+			createdAt, _ := value["created_at"].(string)
+			cfg.ImportSources = append(cfg.ImportSources, ImportSource{ID: id, Name: name, Path: path, CreatedAt: createdAt})
+		}
+	}
 	return cfg, ValidateConfig(cfg, errorCode)
 }
 
@@ -162,6 +191,9 @@ func ValidateConfig(cfg AppConfig, errorCode string) *AppError {
 	}
 	if cfg.Showcase.DefaultDurationMS <= 0 {
 		return NewAppError(errorCode, httpStatusBadRequest, "展示默认时长必须为正整数。", nil)
+	}
+	if cfg.VideoFPS != 30 && cfg.VideoFPS != 60 {
+		return NewAppError(errorCode, httpStatusBadRequest, "视频帧率必须是 30 或 60。", nil)
 	}
 	if cfg.Showcase.AudioOffsetMS < -60000 || cfg.Showcase.AudioOffsetMS > 60000 {
 		return NewAppError(errorCode, httpStatusBadRequest, "音乐偏移必须在 -60 到 60 秒之间。", nil)

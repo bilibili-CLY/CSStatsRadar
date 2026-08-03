@@ -37,6 +37,10 @@ func (s *HistoryService) SaveParsedDemo(fileName string, data DemoData) (*Histor
 }
 
 func (s *HistoryService) SaveParsedDemoForPlayers(fileName string, data DemoData, allowedSteamIDs []string) (*HistorySaveResult, *AppError) {
+	return s.SaveParsedDemoForPlayersAtSource(fileName, "", data, allowedSteamIDs)
+}
+
+func (s *HistoryService) SaveParsedDemoForPlayersAtSource(fileName, sourcePath string, data DemoData, allowedSteamIDs []string) (*HistorySaveResult, *AppError) {
 	fileHash := strings.TrimSpace(data.Meta.FileSHA256)
 	if fileHash == "" {
 		return nil, NewAppError("demo_fingerprint_missing", httpStatusUnprocessable, "", nil)
@@ -47,7 +51,7 @@ func (s *HistoryService) SaveParsedDemoForPlayers(fileName string, data DemoData
 	}
 	allValidPlayers := uniquePlayersBySteamID(data.Players)
 	validPlayers := filterPlayersBySteamID(allValidPlayers, allowedSteamIDs)
-	if len(validPlayers) == 0 {
+	if len(allValidPlayers) == 0 {
 		return &HistorySaveResult{SaveStatus: DemoSaveStatusNotSaved}, nil
 	}
 	importedAt := s.now().UTC()
@@ -64,20 +68,35 @@ func (s *HistoryService) SaveParsedDemoForPlayers(fileName string, data DemoData
 
 	demoRecordID := fmt.Sprintf("demo_record_%s_%s", recordTime.Format("20060102_150405"), randomHex(4))
 	demo := SavedDemo{
-		DemoRecordID:  demoRecordID,
-		FileName:      fileName,
-		MatchTime:     recordTime,
-		MapName:       strings.TrimSpace(data.Meta.MapName),
-		PlayerSetHash: playerSetHash,
-		DedupeKey:     dedupeKey,
-		ImportedAt:    importedAt,
+		DemoRecordID:    demoRecordID,
+		FileName:        fileName,
+		MatchTime:       recordTime,
+		MapName:         strings.TrimSpace(data.Meta.MapName),
+		FileSHA256:      fileHash,
+		SourcePath:      strings.TrimSpace(sourcePath),
+		MatchTimeSource: "unknown",
+		PlayerSetHash:   playerSetHash,
+		DedupeKey:       dedupeKey,
+		ImportedAt:      importedAt,
+	}
+	if data.Meta.MatchTime != nil {
+		demo.MatchTimeSource = "demo"
 	}
 	saveStatus := DemoSaveStatusSaved
+	if len(validPlayers) == 0 {
+		saveStatus = DemoSaveStatusNotSaved
+	}
 	if existing != nil {
 		demo = *existing
-		saveStatus = DemoSaveStatusDuplicate
+		demoRecordID = demo.DemoRecordID
+		if len(validPlayers) > 0 {
+			saveStatus = DemoSaveStatusDuplicate
+		}
 	}
 	input := SaveParsedDemoInput{Demo: demo}
+	for _, player := range allValidPlayers {
+		input.Participants = append(input.Participants, DemoPlayerSnapshot{DemoRecordID: demoRecordID, SteamID: player.SteamID, NameSnapshot: player.Name})
+	}
 	for _, player := range validPlayers {
 		input.Players = append(input.Players, DemoPlayerSnapshot{
 			DemoRecordID: demoRecordID,

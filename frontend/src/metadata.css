@@ -1,0 +1,33 @@
+.metadata-editor {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(260px, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #3a424c;
+  border-radius: 8px;
+  background: #111418;
+}
+.metadata-editor .field {
+  margin: 0;
+}
+.danger-action {
+  color: #f0a5a5;
+  border-color: rgba(226, 102, 102, 0.4);
+}
+.text-danger-button {
+  align-self: flex-start;
+  min-height: 25px;
+  margin-top: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: #b97878;
+  font-size: 9px;
+}
+.text-danger-button:hover:not(:disabled) {
+  background: transparent;
+  border: 0;
+  color: #eda0a0;
+}

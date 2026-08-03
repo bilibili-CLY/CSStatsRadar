@@ -24,9 +24,10 @@ type HistoryRepository interface {
 }
 
 type SaveParsedDemoInput struct {
-	Demo       SavedDemo
-	Players    []DemoPlayerSnapshot
-	MatchStats []PlayerMatchRecord
+	Demo         SavedDemo
+	Participants []DemoPlayerSnapshot
+	Players      []DemoPlayerSnapshot
+	MatchStats   []PlayerMatchRecord
 }
 
 type DemoPlayerSnapshot struct {

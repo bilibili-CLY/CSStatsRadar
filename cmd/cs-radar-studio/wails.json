@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "CSPlayerStatsRadar",
+  "outputfilename": "CSPlayerStatsRadar",
+  "frontend:dir": "../../frontend",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "author": {
+    "name": "CSPlayerStatsRadar"
+  },
+  "info": {
+    "companyName": "CSPlayerStatsRadar",
+    "productName": "CSPlayerStatsRadar",
+    "productVersion": "1.3.0",
+    "copyright": "Copyright © 2026 CSPlayerStatsRadar",
+    "comments": "CS2 雷达内容工作台"
+  }
+}

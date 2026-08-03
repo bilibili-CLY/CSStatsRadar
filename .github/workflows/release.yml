@@ -1,0 +1,108 @@
+name: Release
+
+# 按 v* tag 触发：在 macOS / Windows runner 上分别构建安装包，
+# 汇总后发布为 GitHub Release。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+            wails_platform: darwin/universal
+          - name: windows
+            os: windows-latest
+            wails_platform: windows/amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI v2.12.0
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Build application
+        working-directory: cmd/cs-radar-studio
+        env:
+          # 绑定生成阶段会执行 NewDesktopApp() 打开数据库；指向临时可写路径，
+          # 避免在 runner 上创建/触碰 ~/.csplayerstatsradar。
+          CS_RADAR_DB_PATH: ${{ runner.temp }}/cs-radar-build.db
+          CS_RADAR_CONFIG_PATH: ${{ runner.temp }}/cs-radar-build-config.json
+        run: wails build -clean -platform ${{ matrix.wails_platform }}
+
+      - name: Package macOS app (.zip)
+        if: runner.os == 'macOS'
+        working-directory: cmd/cs-radar-studio/build/bin
+        run: |
+          set -e
+          ls -la
+          ditto -c -k --keepParent CSPlayerStatsRadar.app "CSPlayerStatsRadar-${GITHUB_REF_NAME}-macos-universal.zip"
+
+      - name: Rename Windows installer
+        if: runner.os == 'Windows'
+        working-directory: cmd/cs-radar-studio/build/bin
+        shell: bash
+        run: |
+          set -e
+          ls -la
+          installer=$(ls *-installer.exe 2>/dev/null | head -1)
+          if [ -z "$installer" ]; then
+            echo "ERROR: NSIS installer not found" >&2
+            exit 1
+          fi
+          mv "$installer" "CSPlayerStatsRadar-${GITHUB_REF_NAME}-windows-amd64.exe"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.name }}
+          path: cmd/cs-radar-studio/build/bin/CSPlayerStatsRadar-${{ github.ref_name }}-*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la artifacts
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/*

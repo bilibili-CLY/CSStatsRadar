@@ -1,6 +1,7 @@
 package radar
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -132,6 +133,10 @@ func decodePNGDataURL(raw string) ([]byte, error) {
 }
 
 func encodeShowcaseMP4(ffmpegPath string, tempDir string, outputPath string, musicPath string, payload ShowcaseVideoExportRequest) error {
+	return encodeShowcaseMP4Context(context.Background(), ffmpegPath, tempDir, outputPath, musicPath, payload)
+}
+
+func encodeShowcaseMP4Context(ctx context.Context, ffmpegPath string, tempDir string, outputPath string, musicPath string, payload ShowcaseVideoExportRequest) error {
 	durationSeconds := float64(payload.DurationMS) / 1000
 	args := []string{
 		"-y",
@@ -157,7 +162,7 @@ func encodeShowcaseMP4(ffmpegPath string, tempDir string, outputPath string, mus
 		"-movflags", "+faststart",
 		outputPath,
 	)
-	cmd := exec.Command(ffmpegPath, args...)
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))

@@ -35,6 +35,20 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/package.json.md5
+frontend/wailsjs/
+
+# The desktop binary embeds the production frontend and Wails packaging sources.
+!frontend/dist/
+!frontend/dist/**
+!cmd/cs-radar-studio/build/
+!cmd/cs-radar-studio/build/appicon.png
+!cmd/cs-radar-studio/build/darwin/
+!cmd/cs-radar-studio/build/darwin/Info.plist
+cmd/cs-radar-studio/build/bin/
 
 # Local runtime data
 tmp/

@@ -124,6 +124,9 @@ type AppConfig struct {
 	LastPlayerIdentifierType IdentifierType `json:"last_player_identifier_type"`
 	DatabasePath             string         `json:"database_path"`
 	Showcase                 ShowcaseConfig `json:"showcase"`
+	ImportSources            []ImportSource `json:"import_sources,omitempty"`
+	VideoFPS                 int            `json:"video_fps"`
+	ReduceMotion             bool           `json:"reduce_motion"`
 	Warning                  string         `json:"warning,omitempty"`
 }
 
@@ -182,13 +185,16 @@ const (
 )
 
 type SavedDemo struct {
-	DemoRecordID  string    `json:"demo_record_id"`
-	FileName      string    `json:"file_name"`
-	MatchTime     time.Time `json:"match_time"`
-	MapName       string    `json:"map_name"`
-	PlayerSetHash string    `json:"-"`
-	DedupeKey     string    `json:"-"`
-	ImportedAt    time.Time `json:"imported_at"`
+	DemoRecordID    string    `json:"demo_record_id"`
+	FileName        string    `json:"file_name"`
+	MatchTime       time.Time `json:"match_time"`
+	MatchTimeSource string    `json:"match_time_source,omitempty"`
+	MapName         string    `json:"map_name"`
+	FileSHA256      string    `json:"file_sha256,omitempty"`
+	SourcePath      string    `json:"source_path,omitempty"`
+	PlayerSetHash   string    `json:"-"`
+	DedupeKey       string    `json:"-"`
+	ImportedAt      time.Time `json:"imported_at"`
 }
 
 type SavedPlayer struct {
@@ -196,24 +202,71 @@ type SavedPlayer struct {
 	Name            string    `json:"name"`
 	MatchCount      int       `json:"match_count"`
 	LatestMatchTime time.Time `json:"latest_match_time"`
+	Followed        bool      `json:"followed"`
 }
 
 type PlayerMatchRecord struct {
-	DemoRecordID string        `json:"demo_record_id"`
-	SteamID      string        `json:"-"`
-	MatchTime    time.Time     `json:"match_time"`
-	MapName      string        `json:"map_name"`
-	FileName     string        `json:"file_name"`
-	Rounds       int           `json:"rounds"`
-	Kills        int           `json:"kills"`
-	Deaths       int           `json:"deaths"`
-	Assists      int           `json:"assists"`
-	TotalDamage  *int          `json:"total_damage,omitempty"`
-	ADR          *float64      `json:"adr"`
-	KAST         *float64      `json:"kast"`
-	Impact       *float64      `json:"impact"`
-	Rating       *float64      `json:"rating"`
-	Metrics      []RadarMetric `json:"metrics,omitempty"`
+	DemoRecordID    string        `json:"demo_record_id"`
+	SteamID         string        `json:"-"`
+	MatchTime       time.Time     `json:"match_time"`
+	MatchTimeSource string        `json:"match_time_source,omitempty"`
+	ImportedAt      time.Time     `json:"imported_at,omitempty"`
+	MapName         string        `json:"map_name"`
+	FileName        string        `json:"file_name"`
+	SourcePath      string        `json:"source_path,omitempty"`
+	Tags            []string      `json:"tags,omitempty"`
+	Rounds          int           `json:"rounds"`
+	Kills           int           `json:"kills"`
+	Deaths          int           `json:"deaths"`
+	Assists         int           `json:"assists"`
+	TotalDamage     *int          `json:"total_damage,omitempty"`
+	ADR             *float64      `json:"adr"`
+	KAST            *float64      `json:"kast"`
+	Impact          *float64      `json:"impact"`
+	Rating          *float64      `json:"rating"`
+	Metrics         []RadarMetric `json:"metrics,omitempty"`
+}
+
+type ImportSource struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	CreatedAt string `json:"created_at"`
+}
+
+type EditorDraft struct {
+	Kind      string `json:"kind"`
+	Payload   string `json:"payload"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type ImportItemResult struct {
+	Path       string   `json:"path"`
+	FileName   string   `json:"file_name"`
+	Status     string   `json:"status"`
+	Message    string   `json:"message,omitempty"`
+	DemoID     string   `json:"demo_id,omitempty"`
+	Players    []Player `json:"players,omitempty"`
+	SavedCount int      `json:"saved_count"`
+}
+
+type ImportSummary struct {
+	JobID       string             `json:"job_id"`
+	Status      string             `json:"status"`
+	Total       int                `json:"total"`
+	Processed   int                `json:"processed"`
+	Imported    int                `json:"imported"`
+	Duplicates  int                `json:"duplicates"`
+	Failed      int                `json:"failed"`
+	Items       []ImportItemResult `json:"items"`
+	Discovered  []Player           `json:"discovered_players"`
+	StartedAt   string             `json:"started_at"`
+	CompletedAt string             `json:"completed_at,omitempty"`
+}
+
+type DesktopPlayerMedia struct {
+	ImageURL      string `json:"image_url,omitempty"`
+	BackgroundURL string `json:"background_url,omitempty"`
 }
 
 type AggregateRadarRequest struct {
