@@ -119,6 +119,40 @@ func TestImportWithoutFollowedPlayersCatalogsDemoWithoutStats(t *testing.T) {
 	}
 }
 
+func TestImportPlayerDetailsGroupTeamsAndExposeKDA(t *testing.T) {
+	data := DemoData{
+		Players: []Player{
+			{Name: "Alpha", SteamID: "1"},
+			{Name: "Bravo", SteamID: "2"},
+			{Name: "Charlie", SteamID: "3"},
+			{Name: "Delta", SteamID: "4"},
+		},
+		Survivals: []SurvivalState{
+			{RoundNumber: 1, SteamID: "1", Side: "T"},
+			{RoundNumber: 1, SteamID: "2", Side: "T"},
+			{RoundNumber: 1, SteamID: "3", Side: "CT"},
+			{RoundNumber: 1, SteamID: "4", Side: "CT"},
+		},
+		Kills: []KillEvent{
+			{RoundNumber: 1, AttackerSteamID: "1", VictimSteamID: "3", AssisterSteamID: "2", AttackerSide: "T", VictimSide: "CT"},
+		},
+	}
+	details := buildImportPlayerDetails(data)
+	if len(details) != 4 {
+		t.Fatalf("expected four player details, got %+v", details)
+	}
+	byID := map[string]ImportPlayerDetail{}
+	for _, detail := range details {
+		byID[detail.SteamID] = detail
+	}
+	if byID["1"].Team != "A" || byID["2"].Team != "A" || byID["3"].Team != "B" || byID["4"].Team != "B" {
+		t.Fatalf("unexpected team grouping: %+v", byID)
+	}
+	if byID["1"].Kills != 1 || byID["2"].Assists != 1 || byID["3"].Deaths != 1 {
+		t.Fatalf("unexpected KDA summaries: %+v", byID)
+	}
+}
+
 func TestFollowDraftAndMatchMetadataPersistence(t *testing.T) {
 	repo := newTestSQLiteHistoryRepositoryWithDemo(t)
 	player, appErr := repo.ListPlayers()

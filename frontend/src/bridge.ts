@@ -8,7 +8,9 @@ import type {
   Player,
   PlayerMedia,
   RadarResponse,
+  RatingMethodology,
   SavedPlayer,
+  ShowcaseMusicInfo,
 } from "./types";
 
 type Method = (...args: unknown[]) => Promise<unknown>;
@@ -46,8 +48,8 @@ export const bridge = {
   importFiles: (paths: string[]) => call<string>("StartFileImport", paths),
   importSummary: (jobId: string) => call<ImportSummary>("ImportSummary", jobId),
   cancelImport: (jobId: string) => call<void>("CancelImport", jobId),
-  followAndBackfill: (jobId: string, players: Player[]) =>
-    call<ImportSummary>("FollowAndBackfill", jobId, players),
+  followAndBackfill: (jobId: string, path: string, players: Player[]) =>
+    call<ImportSummary>("FollowAndBackfill", jobId, path, players),
   listPlayers: () => call<SavedPlayer[]>("ListPlayers"),
   getMatches: (steamId: string) =>
     call<MatchRecord[]>("GetPlayerMatches", steamId),
@@ -63,6 +65,8 @@ export const bridge = {
   chooseDatabase: () => call<AppConfig>("ChooseDatabase"),
   buildRadar: (steamId: string, ids: string[]) =>
     call<RadarResponse>("BuildRadar", steamId, ids),
+  getRatingMethodology: () =>
+    call<RatingMethodology>("GetRatingMethodology"),
   loadDraft: (kind: string) => call<EditorDraft | null>("LoadDraft", kind),
   saveDraft: (kind: string, payload: string) =>
     call<void>("SaveDraft", kind, payload),
@@ -74,6 +78,9 @@ export const bridge = {
     reduced: boolean,
     showBestMarkers: boolean,
     audioOffsetMs: number,
+    radarScaleMode: string,
+    radarScale: number,
+    radarAxisScale: Record<string, number>,
   ) =>
     call<AppConfig>(
       "SavePreferences",
@@ -84,6 +91,9 @@ export const bridge = {
       reduced,
       showBestMarkers,
       audioOffsetMs,
+      radarScaleMode,
+      radarScale,
+      radarAxisScale,
     ),
   chooseFFmpeg: () => call<string>("ChooseFFmpeg"),
   exportPNG: (dataURL: string, name: string) =>
@@ -96,8 +106,10 @@ export const bridge = {
     call<PlayerMedia>("SetPlayerImageURL", steamId, url),
   clearPlayerMedia: (steamId: string, kind: "image" | "background") =>
     call<PlayerMedia>("ClearPlayerMedia", steamId, kind),
-  chooseShowcaseMusic: () => call<string>("ChooseShowcaseMusic"),
+  chooseShowcaseMusic: () => call<ShowcaseMusicInfo>("ChooseShowcaseMusic"),
   getShowcaseMusic: () => call<string>("GetShowcaseMusic"),
+  getShowcaseMusicInfo: () => call<ShowcaseMusicInfo>("GetShowcaseMusicInfo"),
+  clearShowcaseMusic: () => call<void>("ClearShowcaseMusic"),
   beginVideoExport: (
     width: number,
     height: number,

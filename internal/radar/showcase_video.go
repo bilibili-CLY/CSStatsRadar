@@ -101,8 +101,8 @@ func validateShowcaseVideoRequest(payload ShowcaseVideoExportRequest) *AppError 
 	if payload.DurationMS <= 0 {
 		return NewAppError("invalid_showcase_video", httpStatusBadRequest, "视频时长必须大于 0。", nil)
 	}
-	if payload.AudioOffsetMS < -60000 || payload.AudioOffsetMS > 60000 {
-		return NewAppError("invalid_showcase_video", httpStatusBadRequest, "音乐偏移必须在 -60 到 60 秒之间。", nil)
+	if payload.AudioOffsetMS < -maxShowcaseAudioOffsetMS || payload.AudioOffsetMS > maxShowcaseAudioOffsetMS {
+		return NewAppError("invalid_showcase_video", httpStatusBadRequest, "音乐偏移超出可用范围。", nil)
 	}
 	if len(payload.Frames) == 0 || len(payload.Frames) > maxShowcaseVideoFrames {
 		return NewAppError("invalid_showcase_video", httpStatusBadRequest, "视频帧数量无效。", nil)

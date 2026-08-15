@@ -259,7 +259,7 @@ func filterPlayersBySteamID(players []Player, allowedSteamIDs []string) []Player
 }
 
 func playerStatsToMatchRecord(demo SavedDemo, player Player, stats PlayerStatsResult) PlayerMatchRecord {
-	return PlayerMatchRecord{
+	record := PlayerMatchRecord{
 		DemoRecordID: demo.DemoRecordID,
 		SteamID:      player.SteamID,
 		MatchTime:    demo.MatchTime,
@@ -276,6 +276,14 @@ func playerStatsToMatchRecord(demo SavedDemo, player Player, stats PlayerStatsRe
 		Rating:       metricValue(stats.Metrics, "Rating"),
 		Metrics:      metricsInOrder(stats.Metrics),
 	}
+	if stats.Rating3Available {
+		record.Rating3 = metricValue(stats.Rating3Metrics, "Rating")
+		record.MultiKill = metricValue(stats.Rating3Metrics, "Multi-Kill")
+		record.RoundSwing = stats.RoundSwing
+		record.RatingAlgorithm = Rating3AlgorithmVersion
+		record.Rating3Metrics = metricsForOrder(stats.Rating3Metrics, Rating3MetricOrder)
+	}
+	return record
 }
 
 func metricValue(metrics map[string]RadarMetric, name string) *float64 {
@@ -284,8 +292,12 @@ func metricValue(metrics map[string]RadarMetric, name string) *float64 {
 }
 
 func metricsInOrder(metrics map[string]RadarMetric) []RadarMetric {
-	result := make([]RadarMetric, 0, len(MetricOrder))
-	for _, name := range MetricOrder {
+	return metricsForOrder(metrics, MetricOrder)
+}
+
+func metricsForOrder(metrics map[string]RadarMetric, order []string) []RadarMetric {
+	result := make([]RadarMetric, 0, len(order))
+	for _, name := range order {
 		result = append(result, metrics[name])
 	}
 	return result

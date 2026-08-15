@@ -1,8 +1,12 @@
 package radar
 
-import "strings"
+import (
+	"math"
+	"os"
+	"strings"
+)
 
-const AggregateRadarNote = "综合雷达为所选比赛等权平均结果。Rating 和 Impact 为本地自制近似算法，不等同于 HLTV 官方数据。"
+const AggregateRadarNote = "综合雷达为所选比赛等权平均结果。Rating 2.0 为公开逆向公式的本地计算。"
 
 type AggregateRadarService struct {
 	repo HistoryRepository
@@ -44,24 +48,66 @@ func (s AggregateRadarService) Build(steamID string, demoRecordIDs []string) (Ag
 	if unavailable == len(MetricOrder) {
 		return AggregateRadarResponse{}, NewAppError("aggregate_radar_unavailable", httpStatusUnprocessable, "", map[string]any{"metrics": metrics})
 	}
+	rating2 := RadarPayload{
+		Dimensions: MetricOrder, Values: values, DisplayTypes: DisplayTypes, MaxValues: MaxValues,
+		MinValues: MinValues, Note: AggregateRadarNote, Metrics: metrics,
+	}
+	var rating3 *RadarPayload
+	rating3Available := true
+	for _, record := range records {
+		if len(record.Rating3Metrics) == 0 || record.RoundSwing == nil {
+			rating3Available = false
+			break
+		}
+	}
+	if rating3Available {
+		r3Metrics := aggregateMetricsForOrder(records, Rating3MetricOrder, true)
+		r3Values := make([]*float64, 0, len(r3Metrics))
+		swingTotal := 0.0
+		for _, metric := range r3Metrics {
+			r3Values = append(r3Values, metric.Value)
+		}
+		for _, record := range records {
+			swingTotal += *record.RoundSwing
+		}
+		swing := math.Round(swingTotal/float64(len(records))*100) / 100
+		payload := RadarPayload{Dimensions: Rating3MetricOrder, Values: r3Values,
+			DisplayTypes: []string{"number", "percentage", "number", "percentage", "number", "number"},
+			MaxValues:    []float64{1, .6, 100, .7, 2, 1.5}, MinValues: MinValues,
+			Note: "综合雷达为所选比赛等权平均结果。" + Rating3RadarNote, Metrics: r3Metrics,
+			RoundSwing: &swing, AlgorithmVersion: Rating3AlgorithmVersion}
+		rating3 = &payload
+	}
+	status := Rating3Status{Available: rating3 != nil}
+	if !status.Available {
+		status.Reason = "部分比赛尚无完整 Rating 3.0 事件数据。"
+		for _, record := range records {
+			if strings.TrimSpace(record.SourcePath) == "" {
+				status.Reason = "源 DEM 路径缺失，无法补算 Rating 3.0。"
+				break
+			}
+			if _, err := os.Stat(record.SourcePath); err != nil {
+				status.Reason = "源 DEM 已移动或丢失，无法补算 Rating 3.0。"
+				break
+			}
+		}
+	}
 	return AggregateRadarResponse{
-		Player:     Player{Name: player.Name, SteamID: player.SteamID},
-		MatchCount: len(records),
-		Radar: RadarPayload{
-			Dimensions:   MetricOrder,
-			Values:       values,
-			DisplayTypes: DisplayTypes,
-			MaxValues:    MaxValues,
-			MinValues:    MinValues,
-			Note:         AggregateRadarNote,
-			Metrics:      metrics,
-		},
+		Player:        Player{Name: player.Name, SteamID: player.SteamID},
+		MatchCount:    len(records),
+		Radar:         rating2,
+		Profiles:      RatingProfiles{Rating2: rating2, Rating3: rating3},
+		Rating3Status: status,
 	}, nil
 }
 
 func aggregateMetrics(records []PlayerMatchRecord) []RadarMetric {
+	return aggregateMetricsForOrder(records, MetricOrder, false)
+}
+
+func aggregateMetricsForOrder(records []PlayerMatchRecord, order []string, rating3 bool) []RadarMetric {
 	result := make([]RadarMetric, 0, len(MetricOrder))
-	for _, name := range MetricOrder {
+	for _, name := range order {
 		var displayType string
 		var metricMaxValue float64
 		var minValue float64
@@ -70,7 +116,11 @@ func aggregateMetrics(records []PlayerMatchRecord) []RadarMetric {
 		hasUnavailable := false
 		hasApproximate := false
 		for _, record := range records {
-			metric := findMetric(record.Metrics, name)
+			source := record.Metrics
+			if rating3 {
+				source = record.Rating3Metrics
+			}
+			metric := findMetric(source, name)
 			if displayType == "" {
 				displayType = metric.DisplayType
 				metricMaxValue = metric.MaxValue

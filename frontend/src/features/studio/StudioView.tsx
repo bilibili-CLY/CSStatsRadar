@@ -22,14 +22,18 @@ import {
   SlidersHorizontal,
   SkipBack,
   SkipForward,
+  Trash2,
   Video,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { Spinner } from "../../components/Busy";
 import {
   RadarCanvas,
   renderRadarCanvas,
+  selectRatingProfile,
   type RadarCanvasHandle,
 } from "../../components/RadarCanvas";
 import type {
@@ -37,6 +41,7 @@ import type {
   OverlayEntry,
   PlayerMedia,
   RadarResponse,
+  RatingVersion,
   StudioKind,
   StudioSeed,
 } from "../../types";
@@ -46,6 +51,7 @@ interface Props {
   initialKind: StudioKind;
   config: AppConfig;
   onNeedMaterial: () => void;
+  onShowMethodology: () => void;
 }
 type SaveState = "idle" | "saving" | "saved" | "error";
 const colors = [
@@ -64,6 +70,7 @@ export function StudioView({
   initialKind,
   config,
   onNeedMaterial,
+  onShowMethodology,
 }: Props) {
   const [kind, setKind] = useState<StudioKind>(initialKind);
   useEffect(() => setKind(initialKind), [initialKind]);
@@ -100,6 +107,7 @@ export function StudioView({
           seed={seed}
           config={config}
           onNeedMaterial={onNeedMaterial}
+          onShowMethodology={onShowMethodology}
         />
       )}{" "}
       {kind === "overlay" && (
@@ -107,6 +115,7 @@ export function StudioView({
           seed={seed}
           config={config}
           onNeedMaterial={onNeedMaterial}
+          onShowMethodology={onShowMethodology}
         />
       )}{" "}
       {kind === "showcase" && (
@@ -114,6 +123,7 @@ export function StudioView({
           seed={seed}
           config={config}
           onNeedMaterial={onNeedMaterial}
+          onShowMethodology={onShowMethodology}
         />
       )}
     </div>
@@ -165,10 +175,12 @@ function RadarEditor({
   seed,
   config,
   onNeedMaterial,
+  onShowMethodology,
 }: {
   seed: StudioSeed | null;
   config: AppConfig;
   onNeedMaterial: () => void;
+  onShowMethodology: () => void;
 }) {
   const [draft, setDraft, saveState, retrySave, draftReady] = useDraft(
     "radar",
@@ -179,6 +191,8 @@ function RadarEditor({
       color: "#22d3ee",
       width: config.export_width,
       height: config.export_height,
+      ratingVersion: "rating_2" as RatingVersion,
+      showRatingWatermark: true,
     },
   );
   const canvas = useRef<RadarCanvasHandle>(null);
@@ -206,6 +220,7 @@ function RadarEditor({
   }
   return (
     <div className="editor-layout">
+      {(draft.ratingVersion ?? "rating_2") === "rating_3" && <RatingReplicaNotice onShow={onShowMethodology} />}
       <aside className="card editor-queue">
         <div className="section-heading">
           <div>
@@ -246,6 +261,11 @@ function RadarEditor({
             subtitle={draft.subtitle}
             previewWidth={draft.width}
             previewHeight={draft.height}
+            radarScaleMode={config.showcase.radar_scale_mode}
+            radarScale={config.showcase.radar_scale}
+            radarAxisScale={config.showcase.radar_axis_scale}
+            ratingVersion={draft.ratingVersion ?? "rating_2"}
+            showRatingWatermark={draft.showRatingWatermark ?? true}
           />
         </div>
       </main>
@@ -273,6 +293,15 @@ function RadarEditor({
             onChange={(e) => setDraft({ ...draft, color: e.target.value })}
           />
         </Field>
+        <RatingControls
+          version={draft.ratingVersion ?? "rating_2"}
+          watermark={draft.showRatingWatermark ?? true}
+          available={draft.radar ? rating3Available(draft.radar) : false}
+          reason={draft.radar?.rating_3_status?.reason}
+          onVersion={(ratingVersion) => setDraft({ ...draft, ratingVersion })}
+          onWatermark={(showRatingWatermark) => setDraft({ ...draft, showRatingWatermark })}
+          onShowMethodology={onShowMethodology}
+        />
         <SizePreset
           value={{ w: draft.width, h: draft.height }}
           onChange={(w, h) => setDraft({ ...draft, width: w, height: h })}
@@ -294,10 +323,12 @@ function OverlayEditor({
   seed,
   config,
   onNeedMaterial,
+  onShowMethodology,
 }: {
   seed: StudioSeed | null;
   config: AppConfig;
   onNeedMaterial: () => void;
+  onShowMethodology: () => void;
 }) {
   const [draft, setDraft, saveState, retrySave, draftReady] = useDraft(
     "overlay",
@@ -307,6 +338,8 @@ function OverlayEditor({
       subtitle: "队列平均（含隐藏玩家）",
       width: config.export_width,
       height: config.export_height,
+      ratingVersion: "rating_2" as RatingVersion,
+      showRatingWatermark: true,
     },
   );
   const canvas = useRef<RadarCanvasHandle>(null);
@@ -346,6 +379,7 @@ function OverlayEditor({
   }
   return (
     <div className="editor-layout">
+      {(draft.ratingVersion ?? "rating_2") === "rating_3" && <RatingReplicaNotice onShow={onShowMethodology} />}
       <aside className="card editor-queue">
         <div className="section-heading">
           <div>
@@ -443,6 +477,11 @@ function OverlayEditor({
             subtitle={draft.subtitle}
             previewWidth={draft.width}
             previewHeight={draft.height}
+            radarScaleMode={config.showcase.radar_scale_mode}
+            radarScale={config.showcase.radar_scale}
+            radarAxisScale={config.showcase.radar_axis_scale}
+            ratingVersion={draft.ratingVersion ?? "rating_2"}
+            showRatingWatermark={draft.showRatingWatermark ?? true}
           />
         </div>
       </main>
@@ -481,6 +520,15 @@ function OverlayEditor({
             />
           </Field>
         ))}
+        <RatingControls
+          version={draft.ratingVersion ?? "rating_2"}
+          watermark={draft.showRatingWatermark ?? true}
+          available={draft.entries.length > 0 && draft.entries.every((entry) => rating3Available(entry.radar))}
+          reason="队列中的部分比赛缺少源 DEM 或增强事件数据。"
+          onVersion={(ratingVersion) => setDraft({ ...draft, ratingVersion })}
+          onWatermark={(showRatingWatermark) => setDraft({ ...draft, showRatingWatermark })}
+          onShowMethodology={onShowMethodology}
+        />
         <SizePreset
           value={{ w: draft.width, h: draft.height }}
           onChange={(w, h) => setDraft({ ...draft, width: w, height: h })}
@@ -527,10 +575,12 @@ function ShowcaseEditor({
   seed,
   config,
   onNeedMaterial,
+  onShowMethodology,
 }: {
   seed: StudioSeed | null;
   config: AppConfig;
   onNeedMaterial: () => void;
+  onShowMethodology: () => void;
 }) {
   const [draft, setDraft, saveState, retrySave, draftReady] = useDraft(
     "showcase",
@@ -556,6 +606,8 @@ function ShowcaseEditor({
       width: config.export_width,
       height: config.export_height,
       audioOffsetMs: config.showcase.audio_offset_ms,
+      ratingVersion: "rating_2" as RatingVersion,
+      showRatingWatermark: true,
     },
   );
   const [exportState, setExportState] = useState<{
@@ -566,15 +618,58 @@ function ShowcaseEditor({
   const exportID = useRef("");
   const cancelRequested = useRef(false);
   const [musicURL, setMusicURL] = useState("");
+  const [musicDurationMs, setMusicDurationMs] = useState(0);
+  const [timelinePixelsPerSecond, setTimelinePixelsPerSecond] = useState(24);
   const [previewTime, setPreviewTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const playbackFrame = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const timelineTrackRef = useRef<HTMLDivElement>(null);
+  const slideResize = useRef<{
+    pointerId: number;
+    index: number;
+    edge: "start" | "end";
+    startX: number;
+    initialDuration: number;
+    timelineDuration: number;
+    trackWidth: number;
+  } | null>(null);
+  const audioDrag = useRef<{
+    pointerId: number;
+    startX: number;
+    initialOffsetMs: number;
+    trackWidth: number;
+  } | null>(null);
   const totalDuration = showcaseDuration(draft.slides);
   const previewIndex = showcaseSegment(draft.slides, previewTime).index;
   const audioOffsetMs =
     draft.audioOffsetMs ?? config.showcase.audio_offset_ms ?? 0;
-  const audioOffsetLimit = Math.min(60_000, Math.max(1_000, totalDuration / 2));
+  const audioOffsetMin = -Math.max(1_000, musicDurationMs - 100);
+  const audioOffsetMax = Math.max(0, totalDuration - 100);
+  const visibleAudioDurationMs = musicURL
+    ? Math.max(100, (musicDurationMs || totalDuration) + Math.min(0, audioOffsetMs))
+    : 0;
+  const audioTimelineStartMs = Math.max(0, audioOffsetMs);
+  const timelineSpanMs = Math.max(
+    totalDuration,
+    audioTimelineStartMs + visibleAudioDurationMs,
+  );
+  const timelineWidth = Math.max(
+    1,
+    Math.ceil((timelineSpanMs / 1000) * timelinePixelsPerSecond),
+  );
+  const timelineTickStepMs = timelineTickStep(
+    timelineSpanMs,
+    timelinePixelsPerSecond,
+  );
+  const timelineTicks = useMemo(
+    () =>
+      Array.from(
+        { length: Math.floor(timelineSpanMs / timelineTickStepMs) + 1 },
+        (_, index) => index * timelineTickStepMs,
+      ),
+    [timelineSpanMs, timelineTickStepMs],
+  );
   const renderTime = playing
     ? previewTime
     : settledShowcasePreviewTime(draft.slides, previewTime);
@@ -583,8 +678,11 @@ function ShowcaseEditor({
   }, [previewTime, totalDuration]);
   useEffect(() => {
     bridge
-      .getShowcaseMusic()
-      .then(setMusicURL)
+      .getShowcaseMusicInfo()
+      .then((music) => {
+        setMusicURL(music.url);
+        setMusicDurationMs(music.duration_ms);
+      })
       .catch(() => undefined);
   }, []);
   useEffect(() => {
@@ -626,10 +724,27 @@ function ShowcaseEditor({
       .getPlayerMedia(seed.player.steam_id)
       .catch(() => ({}) as PlayerMedia)
       .then((media) =>
-        setDraft((current) =>
-          current.slides.some((slide) => slide.id === seed.player.steam_id)
-            ? current
-            : {
+        setDraft((current) => {
+          const existingIndex = current.slides.findIndex(
+            (slide) => slide.id === seed.player.steam_id,
+          );
+          if (existingIndex >= 0) {
+            return {
+              ...current,
+              active: existingIndex,
+              slides: current.slides.map((item, index) =>
+                index === existingIndex
+                  ? {
+                      ...item,
+                      radar: seed.radar!,
+                      imageUrl: media.image_url || item.imageUrl,
+                      backgroundUrl: media.background_url || item.backgroundUrl,
+                    }
+                  : item,
+              ),
+            };
+          }
+          return {
                 ...current,
                 active: current.slides.length,
                 slides: [
@@ -645,8 +760,8 @@ function ShowcaseEditor({
                     backgroundUrl: media.background_url,
                   },
                 ],
-              },
-        ),
+              };
+        }),
       );
   }, [seed, draftReady]);
   const slide = draft.slides[draft.active];
@@ -685,6 +800,56 @@ function ShowcaseEditor({
         slides.findIndex((slide) => slide.id === activeID),
       ),
     });
+  }
+  function deleteSlide(index: number) {
+    const slides = draft.slides.filter((_, candidate) => candidate !== index);
+    const active = slides.length
+      ? Math.min(index < draft.active ? draft.active - 1 : draft.active, slides.length - 1)
+      : 0;
+    setPlaying(false);
+    setDraft({ ...draft, slides, active });
+    seekPreview(showcaseSlideStart(slides, active));
+  }
+  function startSlideResize(
+    event: ReactPointerEvent<HTMLSpanElement>,
+    index: number,
+    edge: "start" | "end",
+  ) {
+    const trackWidth = timelineTrackRef.current?.getBoundingClientRect().width ?? 1;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    slideResize.current = {
+      pointerId: event.pointerId,
+      index,
+      edge,
+      startX: event.clientX,
+      initialDuration: draft.slides[index].duration,
+      timelineDuration: timelineSpanMs,
+      trackWidth,
+    };
+  }
+  function continueSlideResize(event: ReactPointerEvent<HTMLSpanElement>) {
+    const resize = slideResize.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    const duration = resizedShowcaseDuration(
+      resize.initialDuration,
+      event.clientX - resize.startX,
+      resize.trackWidth,
+      resize.timelineDuration,
+      resize.edge,
+    );
+    setDraft((current) => ({
+      ...current,
+      slides: current.slides.map((item, index) =>
+        index === resize.index ? { ...item, duration } : item,
+      ),
+    }));
+  }
+  function finishSlideResize(event: ReactPointerEvent<HTMLSpanElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    slideResize.current = null;
   }
   function moveLayer(from: number, to: number) {
     if (from === to || to < 0 || to >= draft.layout.layers.length) return;
@@ -748,6 +913,11 @@ function ShowcaseEditor({
           timeMs,
           undefined,
           config.showcase.show_best_markers,
+          config.showcase.radar_scale_mode,
+          config.showcase.radar_scale,
+          config.showcase.radar_axis_scale,
+          draft.ratingVersion ?? "rating_2",
+          draft.showRatingWatermark ?? true,
         );
         if (!batch.length) batchStart = frame;
         batch.push(frameCanvas.toDataURL("image/png"));
@@ -797,28 +967,49 @@ function ShowcaseEditor({
     });
   }
   async function chooseMusic() {
-    const url = await bridge.chooseShowcaseMusic();
-    setMusicURL(url);
+    const music = await bridge.chooseShowcaseMusic();
+    setMusicURL(music.url);
+    setMusicDurationMs(music.duration_ms);
   }
-  function setAudioOffsetFromPointer(event: ReactPointerEvent<HTMLDivElement>) {
-    const track = event.currentTarget;
-    if (event.type === "pointerdown") track.setPointerCapture(event.pointerId);
-    if (
-      event.type === "pointermove" &&
-      !track.hasPointerCapture(event.pointerId)
-    )
-      return;
-    const rect = track.getBoundingClientRect();
-    const next = audioOffsetFromTrackPosition(
-      event.clientX,
-      rect.left,
-      rect.width,
-      audioOffsetLimit,
+  async function clearMusic() {
+    audioRef.current?.pause();
+    await bridge.clearShowcaseMusic();
+    setMusicURL("");
+    setMusicDurationMs(0);
+    setDraft((current) => ({ ...current, audioOffsetMs: 0 }));
+  }
+  function startAudioDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const track = event.currentTarget.parentElement;
+    if (!track) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    audioDrag.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      initialOffsetMs: audioOffsetMs,
+      trackWidth: track.getBoundingClientRect().width,
+    };
+  }
+  function continueAudioDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = audioDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const next = audioOffsetFromDrag(
+      drag.initialOffsetMs,
+      event.clientX - drag.startX,
+      drag.trackWidth,
+      timelineSpanMs,
+      audioOffsetMin,
+      audioOffsetMax,
     );
     setDraft((current) => ({ ...current, audioOffsetMs: next }));
   }
+  function finishAudioDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    audioDrag.current = null;
+  }
   return (
     <div className="editor-layout showcase-editor">
+      {(draft.ratingVersion ?? "rating_2") === "rating_3" && <RatingReplicaNotice onShow={onShowMethodology} />}
       <aside className="card editor-queue">
         <div className="section-heading">
           <div>
@@ -841,14 +1032,13 @@ function ShowcaseEditor({
         </div>
         <div className="slide-list">
           {draft.slides.map((item, index) => (
-            <button
+            <div
               key={item.id}
-              className={
+              className={`slide-list-item ${
                 (playing ? previewIndex : draft.active) === index
                   ? "active"
                   : ""
-              }
-              onClick={() => selectSlide(index)}
+              }`}
               draggable
               title="拖动排序；Alt + 方向键也可调整"
               onDragStart={(event) =>
@@ -862,18 +1052,31 @@ function ShowcaseEditor({
                   index,
                 );
               }}
-              onKeyDown={(event) => {
-                if (!event.altKey) return;
-                if (event.key === "ArrowUp") moveSlide(index, index - 1);
-                if (event.key === "ArrowDown") moveSlide(index, index + 1);
-              }}
             >
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <div>
-                <strong>{item.title}</strong>
-                <small>{item.duration.toFixed(1)}s</small>
-              </div>
-            </button>
+              <button
+                className="slide-select"
+                onClick={() => selectSlide(index)}
+                onKeyDown={(event) => {
+                  if (!event.altKey) return;
+                  if (event.key === "ArrowUp") moveSlide(index, index - 1);
+                  if (event.key === "ArrowDown") moveSlide(index, index + 1);
+                }}
+              >
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <span className="slide-copy">
+                  <strong>{item.title}</strong>
+                  <small>{item.duration.toFixed(1)}s</small>
+                </span>
+              </button>
+              <button
+                className="icon-button slide-delete"
+                aria-label={`删除 ${item.title}`}
+                title={`删除 ${item.title}`}
+                onClick={() => deleteSlide(index)}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
           ))}
         </div>
         <button className="quiet full" onClick={onNeedMaterial}>
@@ -884,30 +1087,23 @@ function ShowcaseEditor({
       <main className="canvas-stage">
         <div className="stage-toolbar">
           <SaveStatus state={saveState} onRetry={retrySave} />
-          <span>{draft.fps} FPS · 统一布局</span>
+          <span>{draft.fps} FPS · 画布内可拖动布局</span>
         </div>
         <ShowcasePreview
           slides={draft.slides}
           layout={draft.layout}
           timeMs={renderTime}
           showBestMarkers={config.showcase.show_best_markers}
+          radarScaleMode={config.showcase.radar_scale_mode}
+          radarScale={config.showcase.radar_scale}
+          radarAxisScale={config.showcase.radar_axis_scale}
+          ratingVersion={draft.ratingVersion ?? "rating_2"}
+          showRatingWatermark={draft.showRatingWatermark ?? true}
           onLayoutChange={(layout) =>
             setDraft((current) => ({ ...current, layout }))
           }
         />
         <div className="timeline">
-          <div className="timeline-ruler">
-            {draft.slides.map((item, index) => (
-              <button
-                style={{ flex: item.duration }}
-                className={index === previewIndex ? "active" : ""}
-                onClick={() => selectSlide(index)}
-                key={item.id}
-              >
-                {item.title}
-              </button>
-            ))}
-          </div>
           <div className="playback-controls">
             <button
               className="icon-button"
@@ -951,58 +1147,163 @@ function ShowcaseEditor({
             <output>
               {formatDuration(previewTime)} / {formatDuration(totalDuration)}
             </output>
-          </div>
-          {musicURL ? (
-            <div className="audio-guide-wrap">
-              <div
-                className="audio-guide"
-                role="slider"
-                tabIndex={0}
-                aria-label="背景音乐起始位置"
-                aria-valuemin={-audioOffsetLimit}
-                aria-valuemax={audioOffsetLimit}
-                aria-valuenow={audioOffsetMs}
-                onPointerDown={setAudioOffsetFromPointer}
-                onPointerMove={setAudioOffsetFromPointer}
-                onPointerUp={(event) =>
-                  event.currentTarget.releasePointerCapture(event.pointerId)
+            <div className="timeline-zoom" aria-label="时间轴缩放">
+              <button
+                className="icon-button"
+                aria-label="缩小时间轴"
+                disabled={timelinePixelsPerSecond <= 8}
+                onClick={() =>
+                  setTimelinePixelsPerSecond((current) => Math.max(8, current / 2))
                 }
-                onKeyDown={(event) => {
-                  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
-                    return;
-                  event.preventDefault();
-                  const delta = event.key === "ArrowLeft" ? -100 : 100;
-                  setDraft((current) => ({
-                    ...current,
-                    audioOffsetMs: Math.max(
-                      -audioOffsetLimit,
-                      Math.min(audioOffsetLimit, audioOffsetMs + delta),
-                    ),
-                  }));
-                }}
               >
-                <span className="audio-zero" />
-                <span
-                  className="audio-clip"
-                  style={{
-                    left: `${50 + (audioOffsetMs / audioOffsetLimit) * 50}%`,
-                  }}
-                >
-                  背景音乐 {audioOffsetMs >= 0 ? "+" : ""}
-                  {(audioOffsetMs / 1000).toFixed(1)}s
-                </span>
-                <span
-                  className="audio-playhead"
-                  style={{
-                    left: `${totalDuration ? (previewTime / totalDuration) * 100 : 0}%`,
-                  }}
-                />
-              </div>
-              <span>拖动音轨调整音乐起点；方向键每次微调 0.1 秒</span>
+                <ZoomOut size={13} />
+              </button>
+              <span>{timelinePixelsPerSecond}px/s</span>
+              <button
+                className="icon-button"
+                aria-label="放大时间轴"
+                disabled={timelinePixelsPerSecond >= 96}
+                onClick={() =>
+                  setTimelinePixelsPerSecond((current) => Math.min(96, current * 2))
+                }
+              >
+                <ZoomIn size={13} />
+              </button>
             </div>
-          ) : (
-            <div className="audio-track">尚未选择背景音乐</div>
-          )}
+          </div>
+          <div className="timeline-track-shell">
+            <div className="timeline-track-labels" aria-hidden="true">
+              <span>时间</span>
+              <span>画面</span>
+              <span>音频</span>
+            </div>
+            <div className="timeline-scroll-viewport">
+              <div
+                className="timeline-scroll-content"
+                style={{ width: `max(100%, ${timelineWidth}px)` }}
+              >
+                <div className="timeline-time-ruler" aria-hidden="true">
+                  {timelineTicks.map((tick) => (
+                    <span
+                      key={tick}
+                      style={{ left: `${(tick / 1000) * timelinePixelsPerSecond}px` }}
+                    >
+                      {formatDuration(tick)}
+                    </span>
+                  ))}
+                </div>
+                <div className="showcase-clip-track" ref={timelineTrackRef}>
+                  {draft.slides.map((item, index) => (
+                    <div
+                      style={{ flex: `0 0 ${item.duration * timelinePixelsPerSecond}px` }}
+                      className={`showcase-clip ${index === previewIndex ? "active" : ""}`}
+                      onClick={() => selectSlide(index)}
+                      key={item.id}
+                      draggable
+                      onDragStart={(event) =>
+                        event.dataTransfer.setData("text/slide-index", String(index))
+                      }
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        moveSlide(Number(event.dataTransfer.getData("text/slide-index")), index);
+                      }}
+                    >
+                      <span
+                        className="clip-resize-handle start"
+                        role="separator"
+                        aria-label={`调整 ${item.title} 起点`}
+                        onPointerDown={(event) => startSlideResize(event, index, "start")}
+                        onPointerMove={continueSlideResize}
+                        onPointerUp={finishSlideResize}
+                        onPointerCancel={finishSlideResize}
+                      />
+                      <span className="clip-title">{item.title}</span>
+                      <small>{item.duration.toFixed(1)}s</small>
+                      <span
+                        className="clip-resize-handle end"
+                        role="separator"
+                        aria-label={`调整 ${item.title} 终点`}
+                        onPointerDown={(event) => startSlideResize(event, index, "end")}
+                        onPointerMove={continueSlideResize}
+                        onPointerUp={finishSlideResize}
+                        onPointerCancel={finishSlideResize}
+                      />
+                    </div>
+                  ))}
+                  <span
+                    className="timeline-playhead"
+                    style={{ left: `${(previewTime / 1000) * timelinePixelsPerSecond}px` }}
+                  />
+                </div>
+                {musicURL ? (
+                  <div className="audio-guide">
+                    <div
+                      className="audio-clip"
+                      role="slider"
+                      tabIndex={0}
+                      aria-label="背景音乐起始位置"
+                      aria-valuemin={audioOffsetMin}
+                      aria-valuemax={audioOffsetMax}
+                      aria-valuenow={audioOffsetMs}
+                      aria-valuetext={audioOffsetLabel(audioOffsetMs)}
+                      style={{
+                        left: `${(audioTimelineStartMs / 1000) * timelinePixelsPerSecond}px`,
+                        width: `${(visibleAudioDurationMs / 1000) * timelinePixelsPerSecond}px`,
+                        backgroundPositionX: `${Math.round(audioOffsetMs / 80)}px`,
+                      }}
+                      onPointerDown={startAudioDrag}
+                      onPointerMove={continueAudioDrag}
+                      onPointerUp={finishAudioDrag}
+                      onPointerCancel={finishAudioDrag}
+                      onKeyDown={(event) => {
+                        if (event.key === "Home") {
+                          event.preventDefault();
+                          setDraft((current) => ({ ...current, audioOffsetMs: 0 }));
+                          return;
+                        }
+                        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                        event.preventDefault();
+                        const step = event.shiftKey ? 1_000 : 100;
+                        const delta = event.key === "ArrowLeft" ? -step : step;
+                        setDraft((current) => ({
+                          ...current,
+                          audioOffsetMs: Math.max(
+                            audioOffsetMin,
+                            Math.min(audioOffsetMax, audioOffsetMs + delta),
+                          ),
+                        }));
+                      }}
+                    >
+                      <span className="audio-trim-handle" aria-hidden="true" />
+                      <span className="audio-clip-label">
+                        <strong>背景音乐</strong>
+                        {formatDuration(musicDurationMs)} · {audioOffsetLabel(audioOffsetMs)}
+                      </span>
+                    </div>
+                    <span
+                      className="audio-playhead"
+                      style={{ left: `${(previewTime / 1000) * timelinePixelsPerSecond}px` }}
+                    />
+                  </div>
+                ) : (
+                  <button className="audio-track audio-import-track" onClick={chooseMusic}>
+                    点击音频导轨导入背景音乐
+                  </button>
+                )}
+              </div>
+            </div>
+            {musicURL ? (
+              <button
+                className="icon-button audio-delete"
+                aria-label="删除背景音乐"
+                title="删除背景音乐"
+                onClick={clearMusic}
+              >
+                <Trash2 size={14} />
+              </button>
+            ) : <span />}
+          </div>
           {exportState.message && (
             <div className="audio-track export-status">
               {exportState.running
@@ -1016,6 +1317,10 @@ function ShowcaseEditor({
               src={musicURL}
               loop
               className="music-preview"
+              onLoadedMetadata={(event) => {
+                const duration = event.currentTarget.duration * 1000;
+                if (Number.isFinite(duration)) setMusicDurationMs(duration);
+              }}
             />
           )}
         </div>
@@ -1059,10 +1364,18 @@ function ShowcaseEditor({
                 />
               </Field>
             </div>
+            <RatingControls
+              version={draft.ratingVersion ?? "rating_2"}
+              watermark={draft.showRatingWatermark ?? true}
+              available={rating3Available(slide.radar)}
+              reason="当前玩家页缺少源 DEM 或增强事件数据。"
+              onVersion={(ratingVersion) => setDraft({ ...draft, ratingVersion })}
+              onWatermark={(showRatingWatermark) => setDraft({ ...draft, showRatingWatermark })}
+              onShowMethodology={onShowMethodology}
+            />
             <div className="media-actions">
               <button onClick={() => chooseMedia("image")}>人物图</button>
               <button onClick={() => chooseMedia("background")}>背景图</button>
-              <button onClick={chooseMusic}>背景音乐</button>
             </div>
             <div className="two-fields">
               <Field label="文字对齐">
@@ -1102,113 +1415,6 @@ function ShowcaseEditor({
                 </select>
               </Field>
             </div>
-            <h3>统一布局</h3>
-            <Range
-              label="雷达 X"
-              value={draft.layout.radarX}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, radarX: value },
-                })
-              }
-            />
-            <Range
-              label="雷达 Y"
-              value={draft.layout.radarY}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, radarY: value },
-                })
-              }
-            />
-            <Range
-              label="雷达尺寸"
-              value={draft.layout.radarScale}
-              min={50}
-              max={150}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, radarScale: value },
-                })
-              }
-            />
-            <Range
-              label="姓名 X"
-              value={draft.layout.nameX}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, nameX: value },
-                })
-              }
-            />
-            <Range
-              label="姓名 Y"
-              value={draft.layout.nameY}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, nameY: value },
-                })
-              }
-            />
-            <Range
-              label="姓名字号"
-              value={draft.layout.nameScale}
-              min={50}
-              max={180}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, nameScale: value },
-                })
-              }
-            />
-            <Range
-              label="人物 X"
-              value={draft.layout.imageX}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, imageX: value },
-                })
-              }
-            />
-            <Range
-              label="人物 Y"
-              value={draft.layout.imageY}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, imageY: value },
-                })
-              }
-            />
-            <Range
-              label="人物尺寸"
-              value={draft.layout.imageScale}
-              min={50}
-              max={180}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, imageScale: value },
-                })
-              }
-            />
-            <Range
-              label="整体透明度"
-              value={draft.layout.opacity}
-              onChange={(value) =>
-                setDraft({
-                  ...draft,
-                  layout: { ...draft.layout, opacity: value },
-                })
-              }
-            />
             <h3>图层顺序（上方优先）</h3>
             <div className="layer-order">
               {draft.layout.layers.map((layer, index) => (
@@ -1310,12 +1516,22 @@ function ShowcasePreview({
   layout,
   timeMs,
   showBestMarkers,
+  radarScaleMode,
+  radarScale,
+  radarAxisScale,
+  ratingVersion,
+  showRatingWatermark,
   onLayoutChange,
 }: {
   slides: ShowcaseSlide[];
   layout: ShowcaseLayoutDraft;
   timeMs: number;
   showBestMarkers: boolean;
+  radarScaleMode: string;
+  radarScale: number;
+  radarAxisScale?: Record<string, number>;
+  ratingVersion: RatingVersion;
+  showRatingWatermark: boolean;
   onLayoutChange: (layout: ShowcaseLayoutDraft) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1355,13 +1571,18 @@ function ShowcasePreview({
         timeMs,
         canvas,
         showBestMarkers,
+        radarScaleMode,
+        radarScale,
+        radarAxisScale,
+        ratingVersion,
+        showRatingWatermark,
       );
     };
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [slides, layout, timeMs, assetRevision, showBestMarkers]);
+  }, [slides, layout, timeMs, assetRevision, showBestMarkers, radarScaleMode, radarScale, radarAxisScale, ratingVersion, showRatingWatermark]);
   function pointerPercent(event: ReactPointerEvent<HTMLCanvasElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     return {
@@ -1443,14 +1664,42 @@ function ShowcasePreview({
 export function showcaseDuration(slides: ShowcaseSlide[]) {
   return slides.reduce((sum, slide) => sum + slide.duration * 1000, 0);
 }
-export function audioOffsetFromTrackPosition(
-  clientX: number,
-  trackLeft: number,
+export function resizedShowcaseDuration(
+  initialDuration: number,
+  deltaX: number,
   trackWidth: number,
-  limit: number,
+  timelineDurationMs: number,
+  edge: "start" | "end",
 ) {
-  const ratio = (clientX - trackLeft) / Math.max(1, trackWidth) - 0.5;
-  return Math.round(Math.max(-limit, Math.min(limit, ratio * 2 * limit)));
+  const secondsPerPixel = timelineDurationMs / 1000 / Math.max(1, trackWidth);
+  const signedDelta = deltaX * secondsPerPixel * (edge === "end" ? 1 : -1);
+  return Math.round(Math.max(0.5, Math.min(60, initialDuration + signedDelta)) * 10) / 10;
+}
+export function rating3Available(radar: RadarResponse) {
+  return Boolean(radar.profiles?.rating_3 || radar.rating_3_status?.available);
+}
+export function audioOffsetFromDrag(
+  initialOffsetMs: number,
+  deltaX: number,
+  trackWidth: number,
+  timelineDurationMs: number,
+  minimumMs: number,
+  maximumMs: number,
+) {
+  const millisecondsPerPixel = timelineDurationMs / Math.max(1, trackWidth);
+  const next = initialOffsetMs + deltaX * millisecondsPerPixel;
+  return Math.round(Math.max(minimumMs, Math.min(maximumMs, next)));
+}
+export function timelineTickStep(durationMs: number, pixelsPerSecond: number) {
+  const candidates = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600];
+  const minimumSeconds = Math.max(1, 72 / Math.max(1, pixelsPerSecond));
+  const densitySeconds = Math.max(minimumSeconds, durationMs / 1000 / 800);
+  return (candidates.find((value) => value >= densitySeconds) ?? 3600) * 1000;
+}
+export function audioOffsetLabel(offsetMs: number) {
+  if (Math.abs(offsetMs) < 50) return "从素材 0.0s 播放";
+  if (offsetMs < 0) return `从素材 ${(-offsetMs / 1000).toFixed(1)}s 播放`;
+  return `延后 ${(offsetMs / 1000).toFixed(1)}s 播放`;
 }
 export function showcaseSlideStart(slides: ShowcaseSlide[], index: number) {
   return slides
@@ -1475,6 +1724,17 @@ export function settledShowcasePreviewTime(
   const segment = showcaseSegment(slides, timeMs);
   const start = showcaseSlideStart(slides, segment.index);
   return Math.min(showcaseDuration(slides), Math.max(timeMs, start + 1000));
+}
+export const SHOWCASE_TRANSITION_MS = 1000;
+export function showcaseTransitionProgress(
+  slides: ShowcaseSlide[],
+  timeMs: number,
+) {
+  const segment = showcaseSegment(slides, timeMs);
+  if (segment.index === 0) return 1;
+  return easeInOut(
+    Math.min(1, segment.offsetMs / SHOWCASE_TRANSITION_MS),
+  );
 }
 export function interpolateRadarResponse(
   previous: RadarResponse,
@@ -1545,26 +1805,27 @@ function formatDuration(timeMs: number) {
 export function averageRadar(entries: OverlayEntry[]): RadarResponse | null {
   if (entries.length < 2) return null;
   const first = entries[0].radar;
-  const values = first.radar.values.map((_, i) => {
-    const usable = entries
-      .map((entry) => entry.radar.radar.values[i])
+  const averagePayload = (payloads: RadarResponse["radar"][]) => {
+    const source = payloads[0];
+    const values = source.values.map((_, i) => {
+      const usable = payloads
+      .map((payload) => payload.values[i])
       .filter((value): value is number => value != null);
-    return usable.length
-      ? usable.reduce((a, b) => a + b, 0) / usable.length
-      : null;
-  });
+      return usable.length ? usable.reduce((a, b) => a + b, 0) / usable.length : null;
+    });
+    const swings = payloads.map((payload) => payload.round_swing).filter((value): value is number => value != null);
+    return { ...source, values, round_swing: swings.length ? swings.reduce((a, b) => a + b, 0) / swings.length : undefined, metrics: source.metrics.map((metric, i) => ({ ...metric, value: values[i] })) };
+  };
+  const rating2 = averagePayload(entries.map((entry) => entry.radar.profiles?.rating_2 ?? entry.radar.radar));
+  const rating3Payloads = entries.map((entry) => entry.radar.profiles?.rating_3).filter((payload): payload is RadarResponse["radar"] => Boolean(payload));
+  const rating3 = rating3Payloads.length === entries.length ? averagePayload(rating3Payloads) : undefined;
   return {
     ...first,
     player: { name: "队列平均", steam_id: "average" },
     match_count: entries.length,
-    radar: {
-      ...first.radar,
-      values,
-      metrics: first.radar.metrics.map((metric, i) => ({
-        ...metric,
-        value: values[i],
-      })),
-    },
+    radar: rating2,
+    profiles: { rating_2: rating2, ...(rating3 ? { rating_3: rating3 } : {}) },
+    rating_3_status: { available: Boolean(rating3), reason: rating3 ? undefined : "队列中的部分数据不支持 Rating 3.0。" },
   };
 }
 export function appendOverlayEntry(
@@ -1695,17 +1956,22 @@ function renderShowcaseFrame(
   timeMs: number,
   targetCanvas?: HTMLCanvasElement,
   showBestMarkers = false,
+  radarScaleMode = "global",
+  radarScale = 1,
+  radarAxisScale?: Record<string, number>,
+  ratingVersion: RatingVersion = "rating_2",
+  showRatingWatermark = true,
 ) {
-  const segment = showcaseSegment(slides, timeMs);
-  const slide = slides[segment.index];
-  const local = segment.offsetMs;
+  const ratedSlides = slides.map((item) => ({ ...item, radar: selectRatingProfile(item.radar, ratingVersion) }));
+  const segment = showcaseSegment(ratedSlides, timeMs);
+  const slide = ratedSlides[segment.index];
   const canvas = targetCanvas ?? document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d")!;
-  const previousSlide = segment.index > 0 ? slides[segment.index - 1] : null;
+  const previousSlide = segment.index > 0 ? ratedSlides[segment.index - 1] : null;
   const morphProgress = previousSlide
-    ? easeInOut(Math.min(1, local / 1000))
+    ? showcaseTransitionProgress(ratedSlides, timeMs)
     : 1;
   const accent = slide
     ? previousSlide
@@ -1769,9 +2035,14 @@ function renderShowcaseFrame(
       transparent: true,
       bestMetricIndexes:
         morphProgress > 0.65
-          ? bestMetricIndexesForSlide(slides, segment.index)
+          ? bestMetricIndexesForSlide(ratedSlides, segment.index)
           : [],
       showBestMarkers,
+      radarScaleMode,
+      radarScale,
+      radarAxisScale,
+      ratingVersion,
+      showRatingWatermark: false,
     },
     Math.round(radarSize),
     Math.round(radarSize),
@@ -1843,8 +2114,55 @@ function renderShowcaseFrame(
     layout.layers ?? ["radar", "image", "name"],
   ))
     renderers[layer]?.();
+  if (ratingVersion === "rating_3" && showRatingWatermark) {
+    ctx.save();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(245,158,11,.78)";
+    ctx.font = `650 ${Math.max(11, width * 0.009)}px Inter,system-ui`;
+    ctx.fillText(
+      "Rating 3.0 本地近似 · 非 HLTV 官方",
+      width * 0.022,
+      height * 0.965,
+    );
+    ctx.restore();
+  }
   return canvas;
 }
+let ratingNoticeDismissedForSession = false;
+
+function RatingReplicaNotice({ onShow }: { onShow: () => void }) {
+  const [dismissed, setDismissed] = useState(ratingNoticeDismissedForSession);
+  if (dismissed) return null;
+  return <div className="rating-replica-notice" role="status">
+    <AlertTriangle size={18} />
+    <p><strong>Rating 3.0 本地近似</strong>Rating 3.0 与 Round Swing 为基于 DEM 事件的本地近似复刻，并非 HLTV 官方公式；不同比赛平台和算法版本可能产生差异。</p>
+    <button className="quiet" onClick={onShow}>查看计算方式</button>
+    <button className="icon-button" aria-label="关闭 Rating 3.0 提示" onClick={() => { ratingNoticeDismissedForSession = true; setDismissed(true); }}><X size={16} /></button>
+  </div>;
+}
+
+function RatingControls({ version, watermark, available, reason, onVersion, onWatermark, onShowMethodology }: {
+  version: RatingVersion;
+  watermark: boolean;
+  available: boolean;
+  reason?: string;
+  onVersion: (version: RatingVersion) => void;
+  onWatermark: (value: boolean) => void;
+  onShowMethodology: () => void;
+}) {
+  return <section className="rating-controls" aria-label="评分版本">
+    <span>评分公式</span>
+    <div className="rating-segmented">
+      <button className={version === "rating_2" ? "active" : ""} aria-pressed={version === "rating_2"} onClick={() => onVersion("rating_2")}>Rating 2.0</button>
+      <button className={version === "rating_3" ? "active" : ""} aria-pressed={version === "rating_3"} disabled={!available} title={!available ? reason : undefined} onClick={() => onVersion("rating_3")}>Rating 3.0</button>
+    </div>
+    {!available && <small>{reason ?? "此素材缺少 Rating 3.0 增强事件数据。"}</small>}
+    {version === "rating_3" && <label className="rating-watermark-toggle"><input type="checkbox" checked={watermark} onChange={(event) => onWatermark(event.target.checked)} />显示 3.0 近似水印</label>}
+    <button className="formula-link" onClick={onShowMethodology}>查看公式与枪械权重</button>
+  </section>;
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="field">

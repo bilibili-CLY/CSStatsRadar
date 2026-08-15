@@ -190,6 +190,9 @@ func (s *ImportService) processPath(ctx context.Context, path string, allowedOve
 		return result
 	}
 	result.Players = data.Players
+	result.PlayerDetails = buildImportPlayerDetails(data)
+	result.MapName = data.Meta.MapName
+	result.Rounds = len(data.Rounds)
 	allowed := allowedOverride
 	if allowed == nil {
 		allowed = []string{}
@@ -306,12 +309,22 @@ func (s *ImportService) Cancel(jobID string) *AppError {
 	return nil
 }
 
-func (s *ImportService) Backfill(jobID string, players []Player) (*ImportSummary, *AppError) {
+func (s *ImportService) Backfill(jobID, path string, players []Player) (*ImportSummary, *AppError) {
 	s.mu.RLock()
 	job := s.jobs[jobID]
 	s.mu.RUnlock()
 	if job == nil {
 		return nil, NewAppError("demo_not_found", httpStatusNotFound, "导入任务不存在。", nil)
+	}
+	found := false
+	for _, candidate := range job.paths {
+		if candidate == path {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, NewAppError("demo_not_found", httpStatusNotFound, "当前导入任务中没有这个 Demo。", nil)
 	}
 	ids := []string{}
 	for _, player := range players {
@@ -320,9 +333,32 @@ func (s *ImportService) Backfill(jobID string, players []Player) (*ImportSummary
 		}
 		ids = append(ids, player.SteamID)
 	}
-	for _, path := range job.paths {
-		_ = s.processPath(context.Background(), path, ids)
+	_ = s.processPath(context.Background(), path, ids)
+	followedPlayers, appErr := s.repo.ListFollowedPlayers()
+	if appErr != nil {
+		return nil, appErr
 	}
+	followedIDs := map[string]bool{}
+	for _, player := range followedPlayers {
+		followedIDs[player.SteamID] = true
+	}
+	job.mu.Lock()
+	for index := range job.summary.Items {
+		if job.summary.Items[index].Path != path {
+			continue
+		}
+		savedCount := 0
+		for _, player := range job.summary.Items[index].Players {
+			if followedIDs[player.SteamID] {
+				savedCount++
+			}
+		}
+		job.summary.Items[index].SavedCount = savedCount
+		break
+	}
+	snapshot := job.summary
+	job.mu.Unlock()
+	s.emit(snapshot)
 	return s.Summary(jobID)
 }
 
@@ -339,4 +375,80 @@ func mapPlayers(values map[string]Player) []Player {
 	}
 	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
 	return result
+}
+
+func buildImportPlayerDetails(data DemoData) []ImportPlayerDetail {
+	type sideObservation struct {
+		round int
+		side  string
+	}
+	observed := map[string]sideObservation{}
+	observe := func(steamID, side string, round int) {
+		if steamID == "" || (side != "T" && side != "CT") {
+			return
+		}
+		current, ok := observed[steamID]
+		if !ok || round < current.round {
+			observed[steamID] = sideObservation{round: round, side: side}
+		}
+	}
+	for _, state := range data.Survivals {
+		observe(state.SteamID, state.Side, state.RoundNumber)
+	}
+	for _, event := range data.Kills {
+		observe(event.AttackerSteamID, event.AttackerSide, event.RoundNumber)
+		observe(event.VictimSteamID, event.VictimSide, event.RoundNumber)
+	}
+
+	details := make([]ImportPlayerDetail, 0, len(data.Players))
+	teamCounts := map[string]int{"A": 0, "B": 0}
+	for _, player := range data.Players {
+		team := ""
+		if observation, ok := observed[player.SteamID]; ok {
+			if observation.side == "T" {
+				team = "A"
+			} else {
+				team = "B"
+			}
+			teamCounts[team]++
+		}
+		detail := ImportPlayerDetail{Name: player.Name, SteamID: player.SteamID, Team: team}
+		for _, event := range data.Kills {
+			if event.AttackerSteamID == player.SteamID && event.VictimSteamID != player.SteamID {
+				detail.Kills++
+			}
+			if event.VictimSteamID == player.SteamID {
+				detail.Deaths++
+			}
+			if event.AssisterSteamID == player.SteamID {
+				detail.Assists++
+			}
+		}
+		details = append(details, detail)
+	}
+
+	sort.SliceStable(details, func(i, j int) bool {
+		if details[i].Team != details[j].Team {
+			return details[i].Team < details[j].Team
+		}
+		return strings.ToLower(details[i].Name) < strings.ToLower(details[j].Name)
+	})
+	for index := range details {
+		if details[index].Team != "" {
+			continue
+		}
+		team := "A"
+		if teamCounts["A"] > teamCounts["B"] {
+			team = "B"
+		}
+		details[index].Team = team
+		teamCounts[team]++
+	}
+	sort.SliceStable(details, func(i, j int) bool {
+		if details[i].Team != details[j].Team {
+			return details[i].Team < details[j].Team
+		}
+		return strings.ToLower(details[i].Name) < strings.ToLower(details[j].Name)
+	})
+	return details
 }

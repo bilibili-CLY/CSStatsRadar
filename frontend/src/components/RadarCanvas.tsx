@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { OverlayEntry, RadarResponse } from "../types";
+import type { OverlayEntry, RadarResponse, RatingVersion } from "../types";
 
 export interface RadarCanvasHandle {
   toDataURL: (width: number, height: number) => string;
@@ -23,11 +23,22 @@ export interface RadarCanvasProps {
   highlightedOverlayId?: string | null;
   bestMetricIndexes?: number[];
   showBestMarkers?: boolean;
+  radarScaleMode?: string;
+  radarScale?: number;
+  radarAxisScale?: Record<string, number>;
+  ratingVersion?: RatingVersion;
+  showRatingWatermark?: boolean;
 }
 
 interface Point {
   x: number;
   y: number;
+}
+interface Bounds {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
 }
 interface RadarDataset {
   id: string;
@@ -44,12 +55,25 @@ function polygon(ctx: CanvasRenderingContext2D, points: Point[]) {
 }
 
 function geometry(props: RadarCanvasProps, width: number, height: number) {
+  const showSwing = props.ratingVersion === "rating_3";
   return {
     cx: width / 2,
-    cy: props.compact ? height / 2 : height * 0.52,
+    cy: props.compact
+      ? height * (showSwing ? 0.38 : 0.5)
+      : height * (showSwing ? 0.42 : 0.52),
     radius:
       Math.min(width, height) *
-      (props.compact ? 0.31 : props.overlays?.length ? 0.275 : 0.3),
+      (props.compact
+        ? showSwing
+          ? 0.18
+          : 0.27
+        : props.overlays?.length
+          ? showSwing
+            ? 0.225
+            : 0.25
+          : showSwing
+            ? 0.235
+            : 0.27),
   };
 }
 
@@ -67,20 +91,118 @@ function pointAt(
   };
 }
 
+function labelBounds(props: RadarCanvasProps, width: number, height: number): Bounds {
+  const showSwing = props.ratingVersion === "rating_3";
+  return {
+    left: width * 0.035,
+    right: width * 0.965,
+    top: height * 0.035,
+    bottom: height * (showSwing ? (props.compact ? 0.76 : 0.78) : 0.95),
+  };
+}
+
+function distanceToBounds(
+  cx: number,
+  cy: number,
+  count: number,
+  index: number,
+  bounds: Bounds,
+) {
+  const angle = -Math.PI / 2 + (index * Math.PI * 2) / count;
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const candidates = [
+    dx > 0 ? (bounds.right - cx) / dx : dx < 0 ? (bounds.left - cx) / dx : Infinity,
+    dy > 0 ? (bounds.bottom - cy) / dy : dy < 0 ? (bounds.top - cy) / dy : Infinity,
+  ].filter((distance) => distance > 0 && Number.isFinite(distance));
+  return Math.min(...candidates);
+}
+
+function metricDistances(
+  props: RadarCanvasProps,
+  width: number,
+  height: number,
+  cx: number,
+  cy: number,
+  radius: number,
+  count: number,
+  index: number,
+  normalized: number,
+  clearance: number,
+) {
+  const maximumLabelDistance = distanceToBounds(
+    cx,
+    cy,
+    count,
+    index,
+    labelBounds(props, width, height),
+  );
+  const maximumPointDistance = Math.max(
+    radius,
+    maximumLabelDistance - clearance,
+  );
+  const pointDistance = visibleRadarPointDistance(
+    normalized,
+    radius,
+    maximumPointDistance,
+  );
+  return {
+    pointDistance,
+    labelDistance: Math.min(
+      Math.max(radius * 1.23, pointDistance + clearance),
+      maximumLabelDistance,
+    ),
+  };
+}
+
+export function visibleRadarPointDistance(
+  normalized: number,
+  radius: number,
+  safeBoundaryDistance: number,
+) {
+  return Math.min(
+    Math.max(0, normalized) * radius,
+    Math.max(radius, safeBoundaryDistance),
+  );
+}
+
 function radarPoints(
   radar: RadarResponse,
   dimensions: string[],
   cx: number,
   cy: number,
   radius: number,
+  props: RadarCanvasProps,
+  width: number,
+  height: number,
 ) {
   return dimensions.map((dimension, index) => {
     const sourceIndex = radar.radar.dimensions.indexOf(dimension);
     const value = sourceIndex >= 0 ? radar.radar.values[sourceIndex] : null;
     const maximum =
       sourceIndex >= 0 ? radar.radar.max_values[sourceIndex] || 1 : 1;
-    const normalized = Math.max(0, Math.min(1.12, (value ?? 0) / maximum));
-    return pointAt(cx, cy, dimensions.length, index, radius * normalized);
+    const limit =
+      props.radarScaleMode === "axis"
+        ? props.radarAxisScale?.[dimension] ?? maximum
+        : maximum * (props.radarScale ?? 1);
+    const normalized = Math.max(
+      0,
+      (value ?? 0) / Math.max(Number.EPSILON, limit),
+    );
+    const clearance = Math.max(28, width * (props.compact ? 0.055 : 0.038));
+    const { pointDistance } = metricDistances(
+      props,
+      width,
+      height,
+      cx,
+      cy,
+      radius,
+      dimensions.length,
+      index,
+      normalized,
+      clearance,
+    );
+    return pointAt(cx, cy, dimensions.length, index, pointDistance);
   });
 }
 
@@ -90,17 +212,22 @@ function datasetsFor(props: RadarCanvasProps): RadarDataset[] {
       .filter((entry) => entry.visible)
       .map((entry) => ({
         id: entry.id,
-        radar: entry.radar,
+        radar: selectRatingProfile(entry.radar, props.ratingVersion),
         color: entry.color,
       }));
   if (!props.radar) return [];
   return [
     {
       id: props.radar.player.steam_id,
-      radar: props.radar,
+      radar: selectRatingProfile(props.radar, props.ratingVersion),
       color: props.color ?? "#22d3ee",
     },
   ];
+}
+
+export function selectRatingProfile(response: RadarResponse, version: RatingVersion = "rating_2"): RadarResponse {
+  const profile = version === "rating_3" ? response.profiles?.rating_3 : response.profiles?.rating_2;
+  return profile ? { ...response, radar: profile } : response;
 }
 
 export function renderRadarCanvas(
@@ -125,17 +252,17 @@ export function renderRadarCanvas(
   ctx.textBaseline = "middle";
   if (!props.compact) {
     ctx.fillStyle = "#f4f6f8";
-    ctx.textAlign = "center";
+    ctx.textAlign = "left";
     ctx.font = `700 ${Math.max(22, width * 0.026)}px Inter, system-ui`;
     ctx.fillText(
       props.title || (datasets[0]?.radar.player.name ?? "选择玩家和比赛"),
-      width / 2,
-      height * 0.075,
+      width * 0.035,
+      height * 0.06,
     );
     if (props.subtitle) {
       ctx.fillStyle = "#9aa3ad";
       ctx.font = `500 ${Math.max(13, width * 0.012)}px Inter, system-ui`;
-      ctx.fillText(props.subtitle, width / 2, height * 0.115);
+      ctx.fillText(props.subtitle, width * 0.035, height * 0.1);
     }
   }
   if (!datasets.length) {
@@ -176,7 +303,16 @@ export function renderRadarCanvas(
     datasets[0];
 
   datasets.forEach((dataset) => {
-    const points = radarPoints(dataset.radar, dimensions, cx, cy, radius);
+    const points = radarPoints(
+      dataset.radar,
+      dimensions,
+      cx,
+      cy,
+      radius,
+      props,
+      width,
+      height,
+    );
     const muted = Boolean(highlighted && highlighted.id !== dataset.id);
     const focused = highlighted?.id === dataset.id;
     const average = dataset.id === "average";
@@ -214,7 +350,6 @@ export function renderRadarCanvas(
   });
 
   dimensions.forEach((label, index) => {
-    const text = pointAt(cx, cy, dimensions.length, index, radius * 1.23);
     const sourceIndex = valueDataset.radar.radar.dimensions.indexOf(label);
     const value =
       sourceIndex >= 0 ? valueDataset.radar.radar.values[sourceIndex] : null;
@@ -222,9 +357,41 @@ export function renderRadarCanvas(
       sourceIndex >= 0
         ? valueDataset.radar.radar.display_types[sourceIndex]
         : "number";
+    const valueMaximum =
+      sourceIndex >= 0
+        ? valueDataset.radar.radar.max_values[sourceIndex] || 1
+        : 1;
+    const valueLimit =
+      props.radarScaleMode === "axis"
+        ? props.radarAxisScale?.[label] ?? valueMaximum
+        : valueMaximum * (props.radarScale ?? 1);
+    const normalized = Math.max(
+      0,
+      (value ?? 0) / Math.max(Number.EPSILON, valueLimit),
+    );
     const labelSize = Math.max(12, width * (props.compact ? 0.018 : 0.012));
     const valueSize = Math.max(11, width * (props.compact ? 0.015 : 0.011));
     const line = Math.max(14, labelSize * 1.05);
+    const hasBest = Boolean(
+      props.showBestMarkers && props.bestMetricIndexes?.includes(index),
+    );
+    const clearance = Math.max(
+      line * (hasBest ? 2.55 : 2.05),
+      width * (props.compact ? 0.055 : 0.038),
+    );
+    const { labelDistance } = metricDistances(
+      props,
+      width,
+      height,
+      cx,
+      cy,
+      radius,
+      dimensions.length,
+      index,
+      normalized,
+      clearance,
+    );
+    const text = pointAt(cx, cy, dimensions.length, index, labelDistance);
     ctx.textAlign = "center";
     ctx.fillStyle = "#d7dde3";
     ctx.font = `700 ${labelSize}px Inter, system-ui`;
@@ -232,7 +399,7 @@ export function renderRadarCanvas(
     ctx.fillStyle = valueDataset.color;
     ctx.font = `750 ${valueSize}px ui-monospace, SFMono-Regular, monospace`;
     ctx.fillText(formatValue(value, displayType), text.x, text.y + line * 0.65);
-    if (props.showBestMarkers && props.bestMetricIndexes?.includes(index)) {
+    if (hasBest) {
       ctx.save();
       ctx.fillStyle = "#ffd76a";
       ctx.shadowColor = "#ffd76a";
@@ -244,7 +411,15 @@ export function renderRadarCanvas(
   });
 
   if (props.overlays?.length && !props.compact) {
-    drawOverlayLegend(ctx, datasets, width, height, props.highlightedOverlayId);
+    drawOverlayLegend(ctx, datasets, width, height, props.highlightedOverlayId, props.ratingVersion === "rating_3");
+  } else if (props.ratingVersion === "rating_3") {
+    drawSwingRows(ctx, datasets, width, height, props.compact ?? false);
+  }
+  if (props.ratingVersion === "rating_3" && props.showRatingWatermark) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(245,158,11,.72)";
+    ctx.font = `650 ${Math.max(10, width * 0.0085)}px Inter, system-ui`;
+    ctx.fillText("Rating 3.0 本地近似 · 非 HLTV 官方", width * 0.022, height * 0.972);
   }
 }
 
@@ -254,7 +429,12 @@ function drawOverlayLegend(
   width: number,
   height: number,
   highlightedId?: string | null,
+  showSwing = false,
 ) {
+  if (showSwing) {
+    drawSwingRows(ctx, datasets, width, height, true);
+    return;
+  }
   const gap = Math.max(16, width * 0.018);
   const fontSize = Math.max(11, width * 0.0095);
   ctx.font = `650 ${fontSize}px Inter, system-ui`;
@@ -283,6 +463,42 @@ function drawOverlayLegend(
     ctx.fillText(item.label, x + 28, y);
     ctx.restore();
     x += widths[index] + gap;
+  });
+}
+
+function drawSwingRows(ctx: CanvasRenderingContext2D, datasets: RadarDataset[], width: number, height: number, compact: boolean) {
+  const rows = datasets.filter((dataset) => dataset.radar.radar.round_swing != null);
+  if (!rows.length) return;
+  const rowHeight = Math.max(22, height * (compact ? 0.026 : 0.034));
+  const totalHeight = rows.length * rowHeight;
+  const startY = height * (compact ? 0.91 : 0.84) - totalHeight / 2;
+  const centerX = width / 2;
+  const halfWidth = width * (compact ? 0.27 : 0.27);
+  const fontSize = Math.max(11, width * 0.009);
+  rows.forEach((dataset, index) => {
+    const value = dataset.radar.radar.round_swing ?? 0;
+    const normalized = Math.min(1, Math.abs(value) / 10);
+    const y = startY + index * rowHeight;
+    const color = value > 0 ? "#35d07f" : value < 0 ? "#f05252" : "#8b949e";
+    ctx.fillStyle = "rgba(255,255,255,.08)";
+    ctx.fillRect(centerX - halfWidth, y, halfWidth * 2, Math.max(7, rowHeight * 0.32));
+    ctx.fillStyle = color;
+    const barWidth = halfWidth * normalized;
+    ctx.fillRect(value < 0 ? centerX - barWidth : centerX, y, barWidth, Math.max(7, rowHeight * 0.32));
+    ctx.fillStyle = "rgba(255,255,255,.8)";
+    ctx.fillRect(centerX - 1, y - 3, 2, Math.max(13, rowHeight * 0.5));
+    ctx.font = `700 ${fontSize}px Inter, system-ui`;
+    ctx.textAlign = "left";
+    ctx.fillStyle = dataset.color;
+    const label = datasets.length > 1
+      ? dataset.radar.player.name
+      : compact
+        ? "Round Swing"
+        : "Round Swing（回合影响）";
+    ctx.fillText(label, centerX - halfWidth, y - fontSize * 0.65);
+    ctx.textAlign = "right";
+    ctx.fillStyle = color;
+    ctx.fillText(`${value > 0 ? "+" : ""}${value.toFixed(2)}%`, centerX + halfWidth, y - fontSize * 0.65);
   });
 }
 
@@ -351,7 +567,16 @@ function hitTestOverlay(
   const { cx, cy, radius } = geometry(props, width, height);
   let best: { id: string; distance: number } | null = null;
   datasets.forEach((dataset) => {
-    const points = radarPoints(dataset.radar, dimensions, cx, cy, radius);
+    const points = radarPoints(
+      dataset.radar,
+      dimensions,
+      cx,
+      cy,
+      radius,
+      props,
+      width,
+      height,
+    );
     let distance = Infinity;
     points.forEach((start, index) => {
       distance = Math.min(

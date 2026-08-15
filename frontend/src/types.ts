@@ -1,5 +1,6 @@
 export type Page = "library" | "import" | "studio" | "settings";
 export type StudioKind = "radar" | "overlay" | "showcase";
+export type RatingVersion = "rating_2" | "rating_3";
 
 export interface Player {
   name: string;
@@ -28,6 +29,9 @@ export interface AppConfig {
     default_duration_ms: number;
     show_best_markers: boolean;
     audio_offset_ms: number;
+    radar_scale_mode: "global" | "axis";
+    radar_scale: number;
+    radar_axis_scale?: Record<string, number>;
   };
 }
 export interface BootstrapState {
@@ -51,11 +55,18 @@ export interface RadarPayload {
   max_values: number[];
   metrics: RadarMetric[];
   note: string;
+  round_swing?: number;
+  algorithm_version?: string;
 }
 export interface RadarResponse {
   player: Player;
   match_count: number;
   radar: RadarPayload;
+  profiles?: {
+    rating_2: RadarPayload;
+    rating_3?: RadarPayload;
+  };
+  rating_3_status?: { available: boolean; reason?: string };
 }
 export interface MatchRecord {
   demo_record_id: string;
@@ -81,8 +92,17 @@ export interface ImportItem {
   status: string;
   message?: string;
   demo_id?: string;
+  map_name?: string;
+  rounds?: number;
   players?: Player[];
+  player_details?: ImportPlayerDetail[];
   saved_count: number;
+}
+export interface ImportPlayerDetail extends Player {
+  team: "A" | "B";
+  kills: number;
+  deaths: number;
+  assists: number;
 }
 export interface ImportSummary {
   job_id: string;
@@ -118,6 +138,36 @@ export interface PlayerMedia {
   background_url?: string;
 }
 
+export interface ShowcaseMusicInfo {
+  url: string;
+  duration_ms: number;
+}
+
+export interface WeaponMethodology {
+  id: string;
+  label: string;
+  strength: number;
+  weapons: string[];
+}
+export interface RatingMethodology {
+  algorithm_version: string;
+  rating_2_formula: string;
+  impact_formula: string;
+  rating_3_formula: string;
+  rating_3_base_formula: string;
+  multi_kpr_formula: string;
+  multi_impact_formula: string;
+  swing_rating_formula: string;
+  swing_formula: string;
+  win_probability_formula: string;
+  weapon_weight_formula: string;
+  sniper_damage_formula: string;
+  weapon_categories: WeaponMethodology[];
+  contribution_weights: Record<string, number>;
+  constants: Record<string, number>;
+  limitations: string[];
+}
+
 export const defaultConfig: AppConfig = {
   export_width: 1920,
   export_height: 1080,
@@ -128,6 +178,9 @@ export const defaultConfig: AppConfig = {
     default_duration_ms: 4000,
     show_best_markers: true,
     audio_offset_ms: 0,
+    radar_scale_mode: "global",
+    radar_scale: 1,
+    radar_axis_scale: {},
   },
   import_sources: [],
 };

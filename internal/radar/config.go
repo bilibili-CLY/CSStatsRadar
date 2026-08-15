@@ -11,6 +11,8 @@ import (
 
 var themeColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
+const maxShowcaseAudioOffsetMS = 24 * 60 * 60 * 1000
+
 func DefaultConfig() AppConfig {
 	return AppConfig{
 		ExportWidth:              1920,
@@ -23,6 +25,9 @@ func DefaultConfig() AppConfig {
 		Showcase: ShowcaseConfig{
 			DefaultDurationMS: 4000,
 			ShowBestMarkers:   true,
+			RadarScaleMode:    "global",
+			RadarScale:        1.0,
+			RadarAxisScale:    map[string]float64{},
 			Layout: ShowcaseLayout{
 				RadarPosition: NormalizedPoint{X: 0.36, Y: 0.56},
 				NamePosition:  NormalizedPoint{X: 0.72, Y: 0.22},
@@ -195,8 +200,21 @@ func ValidateConfig(cfg AppConfig, errorCode string) *AppError {
 	if cfg.VideoFPS != 30 && cfg.VideoFPS != 60 {
 		return NewAppError(errorCode, httpStatusBadRequest, "视频帧率必须是 30 或 60。", nil)
 	}
-	if cfg.Showcase.AudioOffsetMS < -60000 || cfg.Showcase.AudioOffsetMS > 60000 {
-		return NewAppError(errorCode, httpStatusBadRequest, "音乐偏移必须在 -60 到 60 秒之间。", nil)
+	if cfg.Showcase.AudioOffsetMS < -maxShowcaseAudioOffsetMS || cfg.Showcase.AudioOffsetMS > maxShowcaseAudioOffsetMS {
+		return NewAppError(errorCode, httpStatusBadRequest, "音乐偏移超出可用范围。", nil)
+	}
+	if cfg.Showcase.RadarScaleMode != "global" && cfg.Showcase.RadarScaleMode != "axis" {
+		return NewAppError(errorCode, httpStatusBadRequest, "雷达缩放模式必须是 global 或 axis。", nil)
+	}
+	if cfg.Showcase.RadarScale < 0.5 || cfg.Showcase.RadarScale > 1.0 {
+		return NewAppError(errorCode, httpStatusBadRequest, "雷达外圈缩放必须在 0.5 到 1.0 之间。", nil)
+	}
+	if cfg.Showcase.RadarScaleMode == "axis" {
+		for name, value := range cfg.Showcase.RadarAxisScale {
+			if !validRadarAxisLimit(name, value) {
+				return NewAppError(errorCode, httpStatusBadRequest, "分轴上限超出该轴的取值范围。", nil)
+			}
+		}
 	}
 	if !isNormalizedPoint(cfg.Showcase.Layout.RadarPosition) ||
 		!isNormalizedPoint(cfg.Showcase.Layout.NamePosition) ||
@@ -231,6 +249,23 @@ func parseShowcaseConfig(raw any, fallback ShowcaseConfig) ShowcaseConfig {
 		}
 		if ffmpegPath, ok := value["ffmpeg_path"].(string); ok {
 			cfg.FFmpegPath = ffmpegPath
+		}
+		if radarScaleMode, ok := value["radar_scale_mode"].(string); ok {
+			cfg.RadarScaleMode = radarScaleMode
+		}
+		if radarScale, ok := numberToFloat(value["radar_scale"]); ok {
+			cfg.RadarScale = radarScale
+		}
+		if axisScale, ok := value["radar_axis_scale"].(map[string]any); ok {
+			parsed := map[string]float64{}
+			for axis, rawValue := range axisScale {
+				if axisValue, ok := numberToFloat(rawValue); ok {
+					parsed[axis] = axisValue
+				}
+			}
+			if len(parsed) > 0 {
+				cfg.RadarAxisScale = parsed
+			}
 		}
 	}
 	return cfg
@@ -278,6 +313,23 @@ func numberToFloat(raw any) (float64, bool) {
 
 func isNormalizedPoint(point NormalizedPoint) bool {
 	return point.X >= 0 && point.X <= 1 && point.Y >= 0 && point.Y <= 1
+}
+
+var radarAxisLimitRanges = map[string][2]float64{
+	"KPR":       {0.5, 2},
+	"Surviving": {0.3, 1},
+	"ADR":       {50, 200},
+	"KAST":      {0.35, 1},
+	"Impact":    {1, 4},
+	"Rating":    {0.75, 3},
+}
+
+func validRadarAxisLimit(name string, value float64) bool {
+	rng, ok := radarAxisLimitRanges[name]
+	if !ok {
+		return false
+	}
+	return value >= rng[0] && value <= rng[1]
 }
 
 const (

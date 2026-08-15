@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { bridge } from "./bridge";
 import { ImportView } from "./features/import/ImportView";
+import { RatingMethodologyDialog } from "./components/RatingMethodologyDialog";
 import { LibraryView } from "./features/library/LibraryView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { StudioView } from "./features/studio/StudioView";
@@ -35,6 +36,7 @@ export default function App() {
   const [studioKind, setStudioKind] = useState<StudioKind>("radar");
   const [error, setError] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
+  const [methodologyOpen, setMethodologyOpen] = useState(false);
   const refreshPlayers = useCallback(async () => {
     const values = await bridge.listPlayers();
     setPlayers(values);
@@ -155,6 +157,7 @@ export default function App() {
             initialKind={studioKind}
             config={config}
             onNeedMaterial={() => setPage("library")}
+            onShowMethodology={() => setMethodologyOpen(true)}
           />
         )}{" "}
         {page === "settings" && (
@@ -167,9 +170,11 @@ export default function App() {
               setConfig({ ...config, import_sources: next });
             }}
             onDataChanged={refreshPlayers}
+            onShowMethodology={() => setMethodologyOpen(true)}
           />
         )}
       </main>
+      <RatingMethodologyDialog open={methodologyOpen} onClose={() => setMethodologyOpen(false)} />
     </div>
   );
 }

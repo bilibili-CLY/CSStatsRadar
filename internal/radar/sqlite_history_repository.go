@@ -116,12 +116,31 @@ func migrateStudioSchema(db *sql.DB) error {
 			}
 		}
 	}
+	statColumns := []struct{ name, definition string }{
+		{"rating_3", "REAL"}, {"round_swing", "REAL"}, {"multi_kill", "REAL"},
+		{"rating_algorithm", "TEXT NOT NULL DEFAULT ''"}, {"rating_3_metrics_json", "TEXT NOT NULL DEFAULT '[]'"},
+	}
+	for _, column := range statColumns {
+		exists, err := sqliteColumnExists(db, "player_match_stats", column.name)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := db.Exec("ALTER TABLE player_match_stats ADD COLUMN " + column.name + " " + column.definition); err != nil {
+				return err
+			}
+		}
+	}
 	if _, err := db.Exec(`
 		UPDATE demos SET match_time_source = CASE WHEN match_time = imported_at THEN 'unknown' ELSE 'demo' END
 		WHERE match_time_source = '' OR match_time_source = 'unknown';
 		INSERT OR IGNORE INTO followed_players (steam_id, display_name, followed_at)
 		SELECT steam_id, latest_name, CURRENT_TIMESTAMP FROM players;
-		PRAGMA user_version = 2;`); err != nil {
+		UPDATE player_match_stats
+		SET rating = CASE WHEN rounds > 0 AND adr IS NOT NULL AND kast IS NOT NULL AND impact IS NOT NULL
+		THEN 0.0073 * kast * 100.0 + 0.3591 * kills / rounds - 0.5329 * deaths / rounds + 0.2372 * impact + 0.0032 * adr + 0.1587
+		ELSE rating END;
+		PRAGMA user_version = 3;`); err != nil {
 		return err
 	}
 	return nil
@@ -362,13 +381,18 @@ func (r *SQLiteHistoryRepository) SaveParsedDemo(input SaveParsedDemoInput) (*Sa
 		if err != nil {
 			return nil, NewAppError("database_open_failed", httpStatusInternal, "指标序列化失败："+err.Error(), nil)
 		}
+		rating3MetricsJSON, err := json.Marshal(stat.Rating3Metrics)
+		if err != nil {
+			return nil, NewAppError("database_open_failed", httpStatusInternal, "Rating 3.0 指标序列化失败："+err.Error(), nil)
+		}
 		if stat.SteamID == "" {
 			return nil, NewAppError("database_open_failed", httpStatusInternal, "比赛统计缺少 SteamID。", nil)
 		}
 		if _, err := tx.Exec(
 			`INSERT OR IGNORE INTO player_match_stats
-			 (demo_id, steam_id, rounds, kills, deaths, assists, total_damage, adr, kast, impact, rating, metrics_json)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 (demo_id, steam_id, rounds, kills, deaths, assists, total_damage, adr, kast, impact, rating, metrics_json,
+			  rating_3, round_swing, multi_kill, rating_algorithm, rating_3_metrics_json)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			stat.DemoRecordID,
 			stat.SteamID,
 			stat.Rounds,
@@ -381,6 +405,7 @@ func (r *SQLiteHistoryRepository) SaveParsedDemo(input SaveParsedDemoInput) (*Sa
 			nullableFloat(stat.Impact),
 			nullableFloat(stat.Rating),
 			string(metricsJSON),
+			nullableFloat(stat.Rating3), nullableFloat(stat.RoundSwing), nullableFloat(stat.MultiKill), stat.RatingAlgorithm, string(rating3MetricsJSON),
 		); err != nil {
 			return nil, NewAppError("database_open_failed", httpStatusInternal, "比赛统计保存失败："+err.Error(), nil)
 		}
@@ -849,6 +874,23 @@ func (r *SQLiteHistoryRepository) GetMetricSnapshots(steamID string, demoRecordI
 	return records, nil
 }
 
+func (r *SQLiteHistoryRepository) UpdateRating3Stats(record PlayerMatchRecord) *AppError {
+	db, appErr := r.currentDB()
+	if appErr != nil {
+		return appErr
+	}
+	metricsJSON, err := json.Marshal(record.Rating3Metrics)
+	if err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "Rating 3.0 指标序列化失败："+err.Error(), nil)
+	}
+	_, err = db.Exec(`UPDATE player_match_stats SET rating_3 = ?, round_swing = ?, multi_kill = ?, rating_algorithm = ?, rating_3_metrics_json = ? WHERE demo_id = ? AND steam_id = ?`,
+		nullableFloat(record.Rating3), nullableFloat(record.RoundSwing), nullableFloat(record.MultiKill), record.RatingAlgorithm, string(metricsJSON), record.DemoRecordID, record.SteamID)
+	if err != nil {
+		return NewAppError("database_open_failed", httpStatusInternal, "Rating 3.0 指标保存失败："+err.Error(), nil)
+	}
+	return nil
+}
+
 func (r *SQLiteHistoryRepository) currentDB() (*sql.DB, *AppError) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -941,6 +983,11 @@ CREATE TABLE IF NOT EXISTS player_match_stats (
   impact REAL,
   rating REAL,
   metrics_json TEXT NOT NULL,
+	  rating_3 REAL,
+	  round_swing REAL,
+	  multi_kill REAL,
+	  rating_algorithm TEXT NOT NULL DEFAULT '',
+	  rating_3_metrics_json TEXT NOT NULL DEFAULT '[]',
   PRIMARY KEY (demo_id, steam_id),
   FOREIGN KEY (demo_id) REFERENCES demos(id),
   FOREIGN KEY (steam_id) REFERENCES players(steam_id)
@@ -953,7 +1000,8 @@ CREATE INDEX IF NOT EXISTS idx_player_match_stats_steam_id ON player_match_stats
 const playerMatchSelectSQL = `
 SELECT d.id, d.match_time, d.match_time_source, d.imported_at, d.map_name, d.file_name, d.source_path,
        s.rounds, s.kills, s.deaths, s.assists, s.total_damage,
-       s.adr, s.kast, s.impact, s.rating, s.metrics_json,
+	   s.adr, s.kast, s.impact, s.rating, s.metrics_json,
+	   s.rating_3, s.round_swing, s.multi_kill, s.rating_algorithm, s.rating_3_metrics_json,
        COALESCE((SELECT GROUP_CONCAT(dt.tag_name, ',') FROM demo_tags dt WHERE dt.demo_id = d.id), '')
 FROM player_match_stats s
 JOIN demos d ON d.id = s.demo_id`
@@ -1052,12 +1100,13 @@ func scanPlayerMatchRecords(rows *sql.Rows) ([]PlayerMatchRecord, *AppError) {
 		var record PlayerMatchRecord
 		var matchTime, importedAt, tags string
 		var totalDamage sql.NullInt64
-		var adr, kast, impact, rating sql.NullFloat64
-		var metricsJSON string
+		var adr, kast, impact, rating, rating3, roundSwing, multiKill sql.NullFloat64
+		var metricsJSON, rating3MetricsJSON string
 		if err := rows.Scan(
 			&record.DemoRecordID, &matchTime, &record.MatchTimeSource, &importedAt, &record.MapName, &record.FileName, &record.SourcePath,
 			&record.Rounds, &record.Kills, &record.Deaths, &record.Assists, &totalDamage,
-			&adr, &kast, &impact, &rating, &metricsJSON, &tags,
+			&adr, &kast, &impact, &rating, &metricsJSON,
+			&rating3, &roundSwing, &multiKill, &record.RatingAlgorithm, &rating3MetricsJSON, &tags,
 		); err != nil {
 			return nil, NewAppError("database_open_failed", httpStatusInternal, "比赛记录解析失败："+err.Error(), nil)
 		}
@@ -1080,8 +1129,22 @@ func scanPlayerMatchRecords(rows *sql.Rows) ([]PlayerMatchRecord, *AppError) {
 		record.KAST = floatPtrFromNull(kast)
 		record.Impact = floatPtrFromNull(impact)
 		record.Rating = floatPtrFromNull(rating)
+		record.Rating3 = floatPtrFromNull(rating3)
+		record.RoundSwing = floatPtrFromNull(roundSwing)
+		record.MultiKill = floatPtrFromNull(multiKill)
 		if err := json.Unmarshal([]byte(metricsJSON), &record.Metrics); err != nil {
 			return nil, NewAppError("database_open_failed", httpStatusInternal, "指标反序列化失败："+err.Error(), nil)
+		}
+		if record.Rating != nil {
+			for index := range record.Metrics {
+				if record.Metrics[index].Name == "Rating" {
+					value := round3(*record.Rating)
+					record.Metrics[index].Value = &value
+				}
+			}
+		}
+		if rating3MetricsJSON != "" {
+			_ = json.Unmarshal([]byte(rating3MetricsJSON), &record.Rating3Metrics)
 		}
 		records = append(records, record)
 	}

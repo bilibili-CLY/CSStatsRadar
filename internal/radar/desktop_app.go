@@ -182,8 +182,8 @@ func (a *DesktopApp) CancelImport(jobID string) error {
 	}
 	return nil
 }
-func (a *DesktopApp) FollowAndBackfill(jobID string, players []Player) (*ImportSummary, error) {
-	value, appErr := a.imports.Backfill(jobID, players)
+func (a *DesktopApp) FollowAndBackfill(jobID, path string, players []Player) (*ImportSummary, error) {
+	value, appErr := a.imports.Backfill(jobID, path, players)
 	if appErr != nil {
 		return nil, appErr
 	}
@@ -238,12 +238,54 @@ func (a *DesktopApp) ClearAllData() error {
 }
 
 func (a *DesktopApp) BuildRadar(steamID string, demoRecordIDs []string) (AggregateRadarResponse, error) {
+	a.backfillRating3(steamID, demoRecordIDs)
 	value, appErr := NewAggregateRadarService(a.repo).Build(steamID, demoRecordIDs)
 	if appErr != nil {
 		return AggregateRadarResponse{}, appErr
 	}
 	return value, nil
 }
+
+func (a *DesktopApp) backfillRating3(steamID string, demoRecordIDs []string) {
+	records, appErr := a.repo.GetMetricSnapshots(steamID, demoRecordIDs)
+	if appErr != nil {
+		return
+	}
+	for _, record := range records {
+		if record.RatingAlgorithm == Rating3AlgorithmVersion && len(record.Rating3Metrics) > 0 {
+			continue
+		}
+		if strings.TrimSpace(record.SourcePath) == "" {
+			continue
+		}
+		if _, err := os.Stat(record.SourcePath); err != nil {
+			continue
+		}
+		data, parseErr := (JSONFixtureParser{}).Parse(record.SourcePath)
+		if parseErr != nil {
+			continue
+		}
+		player := Player{SteamID: steamID}
+		for _, candidate := range data.Players {
+			if candidate.SteamID == steamID {
+				player = candidate
+				break
+			}
+		}
+		stats := (PlayerStatsCalculator{}).Calculate(data, player)
+		if !stats.Rating3Available {
+			continue
+		}
+		record.Rating3 = metricValue(stats.Rating3Metrics, "Rating")
+		record.MultiKill = metricValue(stats.Rating3Metrics, "Multi-Kill")
+		record.RoundSwing = stats.RoundSwing
+		record.RatingAlgorithm = Rating3AlgorithmVersion
+		record.Rating3Metrics = metricsForOrder(stats.Rating3Metrics, Rating3MetricOrder)
+		_ = a.repo.UpdateRating3Stats(record)
+	}
+}
+
+func (a *DesktopApp) GetRatingMethodology() RatingMethodology { return GetRatingMethodology() }
 
 func (a *DesktopApp) LoadDraft(kind string) (*EditorDraft, error) {
 	value, appErr := a.repo.GetEditorDraft(kind)
@@ -259,13 +301,16 @@ func (a *DesktopApp) SaveDraft(kind, payload string) error {
 	return nil
 }
 
-func (a *DesktopApp) SavePreferences(exportWidth, exportHeight, videoFPS int, ffmpegPath string, reduceMotion, showBestMarkers bool, audioOffsetMS int) (AppConfig, error) {
+func (a *DesktopApp) SavePreferences(exportWidth, exportHeight, videoFPS int, ffmpegPath string, reduceMotion, showBestMarkers bool, audioOffsetMS int, radarScaleMode string, radarScale float64, radarAxisScale map[string]float64) (AppConfig, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.cfg.ExportWidth, a.cfg.ExportHeight, a.cfg.VideoFPS = exportWidth, exportHeight, videoFPS
 	a.cfg.Showcase.FFmpegPath, a.cfg.ReduceMotion = strings.TrimSpace(ffmpegPath), reduceMotion
 	a.cfg.Showcase.ShowBestMarkers = showBestMarkers
 	a.cfg.Showcase.AudioOffsetMS = audioOffsetMS
+	a.cfg.Showcase.RadarScaleMode = radarScaleMode
+	a.cfg.Showcase.RadarScale = radarScale
+	a.cfg.Showcase.RadarAxisScale = radarAxisScale
 	if appErr := a.config.Save(a.cfg); appErr != nil {
 		return AppConfig{}, appErr
 	}
@@ -463,23 +508,23 @@ func (a *DesktopApp) ClearPlayerMedia(steamID, kind string) (DesktopPlayerMedia,
 	return a.GetPlayerMedia(steamID)
 }
 
-func (a *DesktopApp) ChooseShowcaseMusic() (string, error) {
+func (a *DesktopApp) ChooseShowcaseMusic() (ShowcaseMusicInfo, error) {
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "选择背景音乐", Filters: []runtime.FileFilter{{DisplayName: "音频", Pattern: "*.mp3;*.wav;*.m4a;*.aac"}}})
 	if err != nil || path == "" {
-		return "", err
+		return ShowcaseMusicInfo{}, err
 	}
 	target, err := copyMediaFile(DefaultShowcaseMusicDir(), "showcase", path)
 	if err != nil {
-		return "", err
+		return ShowcaseMusicInfo{}, err
 	}
 	a.mu.Lock()
 	a.cfg.Showcase.MusicPath = target
 	saveErr := a.config.Save(a.cfg)
 	a.mu.Unlock()
 	if saveErr != nil {
-		return "", saveErr
+		return ShowcaseMusicInfo{}, saveErr
 	}
-	return fileDataURL(target)
+	return showcaseMusicInfo(target)
 }
 
 func (a *DesktopApp) GetShowcaseMusic() (string, error) {
@@ -490,6 +535,24 @@ func (a *DesktopApp) GetShowcaseMusic() (string, error) {
 		return "", nil
 	}
 	return fileDataURL(path)
+}
+
+func (a *DesktopApp) GetShowcaseMusicInfo() (ShowcaseMusicInfo, error) {
+	a.mu.RLock()
+	path := a.cfg.Showcase.MusicPath
+	a.mu.RUnlock()
+	if path == "" {
+		return ShowcaseMusicInfo{}, nil
+	}
+	return showcaseMusicInfo(path)
+}
+
+func (a *DesktopApp) ClearShowcaseMusic() error {
+	a.mu.Lock()
+	a.cfg.Showcase.MusicPath = ""
+	err := a.config.Save(a.cfg)
+	a.mu.Unlock()
+	return err
 }
 
 func copyMediaFile(baseDir, steamID, sourcePath string) (string, error) {

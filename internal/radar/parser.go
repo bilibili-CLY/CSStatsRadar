@@ -128,6 +128,7 @@ func (p DemoinfocsParser) Parse(filePath string) (data DemoData, appErr *AppErro
 			return
 		}
 		builder.collectPlayers(parser.GameState().Participants().Playing())
+		builder.captureRoundEconomy()
 	})
 	parser.RegisterEventHandler(func(e events.Kill) {
 		builder.addKill(e, parser.GameState().IsWarmupPeriod())
@@ -135,11 +136,13 @@ func (p DemoinfocsParser) Parse(filePath string) (data DemoData, appErr *AppErro
 	parser.RegisterEventHandler(func(e events.PlayerHurt) {
 		builder.addDamage(e, parser.GameState().IsWarmupPeriod())
 	})
+	parser.RegisterEventHandler(func(e events.BombPlanted) { builder.markBombPlanted(e.Player) })
+	parser.RegisterEventHandler(func(e events.BombDefused) { builder.markBombDefused(e.Player) })
 	parser.RegisterEventHandler(func(e events.RoundEnd) {
 		if parser.GameState().IsWarmupPeriod() {
 			return
 		}
-		builder.endRound()
+		builder.endRound(e)
 	})
 
 	if err := parser.ParseToEnd(); err != nil {
@@ -202,15 +205,40 @@ func (b *demoinfocsDataBuilder) addKill(event events.Kill, isWarmup bool) {
 	killer := playerID(event.Killer)
 	victim := playerID(event.Victim)
 	assister := playerID(event.Assister)
+	killerSide, victimSide := playerSide(event.Killer), playerSide(event.Victim)
+	if killer == "" || victim == "" || killer == victim || (killerSide != "" && killerSide == victimSide) {
+		return
+	}
 	b.collectPlayer(event.Killer)
 	b.collectPlayer(event.Victim)
 	b.collectPlayer(event.Assister)
-	b.kills = append(b.kills, KillEvent{
-		RoundNumber:     roundNumber,
-		AttackerSteamID: killer,
-		VictimSteamID:   victim,
-		AssisterSteamID: assister,
-	})
+	kill := KillEvent{
+		RoundNumber:       roundNumber,
+		Tick:              b.currentTick(),
+		AttackerSteamID:   killer,
+		VictimSteamID:     victim,
+		AssisterSteamID:   assister,
+		AttackerSide:      playerSide(event.Killer),
+		VictimSide:        playerSide(event.Victim),
+		Weapon:            equipmentName(event.Weapon),
+		VictimWeapon:      activeWeaponName(event.Victim),
+		AttackerArmor:     playerArmor(event.Killer),
+		VictimArmor:       playerArmor(event.Victim),
+		AttackerEquipment: playerEquipment(event.Killer),
+		VictimEquipment:   playerEquipment(event.Victim),
+		AssistedFlash:     event.AssistedFlash,
+	}
+	for index := len(b.kills) - 1; index >= 0; index-- {
+		previous := b.kills[index]
+		if previous.RoundNumber != roundNumber || kill.Tick-previous.Tick > 5*64 {
+			break
+		}
+		if previous.AttackerSteamID == kill.VictimSteamID && strings.EqualFold(previous.VictimSide, kill.AttackerSide) {
+			kill.TradedPlayerSteamID = previous.VictimSteamID
+			break
+		}
+	}
+	b.kills = append(b.kills, kill)
 }
 
 func (b *demoinfocsDataBuilder) addDamage(event events.PlayerHurt, isWarmup bool) {
@@ -223,18 +251,34 @@ func (b *demoinfocsDataBuilder) addDamage(event events.PlayerHurt, isWarmup bool
 	if attacker == "" || victim == "" || event.HealthDamageTaken <= 0 {
 		return
 	}
+	attackerSide, victimSide := playerSide(event.Attacker), playerSide(event.Player)
+	if attacker == victim || (attackerSide != "" && attackerSide == victimSide) {
+		return
+	}
 	b.collectPlayer(event.Attacker)
 	b.collectPlayer(event.Player)
 	b.damages = append(b.damages, DamageEvent{
-		RoundNumber:     roundNumber,
-		AttackerSteamID: attacker,
-		VictimSteamID:   victim,
-		Damage:          event.HealthDamageTaken,
+		RoundNumber:       roundNumber,
+		Tick:              b.currentTick(),
+		AttackerSteamID:   attacker,
+		VictimSteamID:     victim,
+		Damage:            event.HealthDamageTaken,
+		AttackerSide:      playerSide(event.Attacker),
+		VictimSide:        playerSide(event.Player),
+		Weapon:            equipmentName(event.Weapon),
+		VictimWeapon:      activeWeaponName(event.Player),
+		AttackerArmor:     playerArmor(event.Attacker),
+		VictimArmor:       playerArmor(event.Player),
+		AttackerEquipment: playerEquipment(event.Attacker),
+		VictimEquipment:   playerEquipment(event.Player),
 	})
 }
 
-func (b *demoinfocsDataBuilder) endRound() {
+func (b *demoinfocsDataBuilder) endRound(event events.RoundEnd) {
 	roundNumber := b.ensureRound()
+	if len(b.rounds) > 0 {
+		b.rounds[len(b.rounds)-1].WinnerSide = teamSide(event.Winner)
+	}
 	playing := b.parser.GameState().Participants().Playing()
 	b.collectPlayers(playing)
 	for _, player := range playing {
@@ -246,9 +290,44 @@ func (b *demoinfocsDataBuilder) endRound() {
 			RoundNumber: roundNumber,
 			SteamID:     id,
 			Survived:    player.IsAlive(),
+			Side:        playerSide(player),
 		})
 	}
 	b.roundOpen = false
+}
+
+func (b *demoinfocsDataBuilder) captureRoundEconomy() {
+	if len(b.rounds) == 0 {
+		return
+	}
+	state := b.parser.GameState()
+	b.rounds[len(b.rounds)-1].TeamEconomy = map[string]int{
+		"T":  state.TeamTerrorists().FreezeTimeEndEquipmentValue(),
+		"CT": state.TeamCounterTerrorists().FreezeTimeEndEquipmentValue(),
+	}
+}
+
+func (b *demoinfocsDataBuilder) markBombPlanted(player *common.Player) {
+	if len(b.rounds) == 0 {
+		return
+	}
+	b.rounds[len(b.rounds)-1].BombPlanted = true
+	b.rounds[len(b.rounds)-1].BombPlantTick = b.currentTick()
+	b.rounds[len(b.rounds)-1].BombPlanterID = playerID(player)
+}
+
+func (b *demoinfocsDataBuilder) markBombDefused(player *common.Player) {
+	if len(b.rounds) == 0 {
+		return
+	}
+	b.rounds[len(b.rounds)-1].BombDefuserID = playerID(player)
+}
+
+func (b *demoinfocsDataBuilder) currentTick() int {
+	if b.parser == nil {
+		return 0
+	}
+	return b.parser.GameState().IngameTick()
 }
 
 func (b *demoinfocsDataBuilder) discardOpenRound() {
@@ -321,7 +400,7 @@ func (b *demoinfocsDataBuilder) data() DemoData {
 		Kills:              b.kills,
 		Damages:            &b.damages,
 		Survivals:          b.survivals,
-		TradeDataAvailable: false,
+		TradeDataAvailable: true,
 		Source:             "demoinfocs",
 		Meta:               b.meta,
 	}
@@ -332,6 +411,48 @@ func playerID(player *common.Player) string {
 		return ""
 	}
 	return strconv.FormatUint(player.SteamID64, 10)
+}
+
+func teamSide(team common.Team) string {
+	if team == common.TeamTerrorists {
+		return "T"
+	}
+	if team == common.TeamCounterTerrorists {
+		return "CT"
+	}
+	return ""
+}
+
+func playerSide(player *common.Player) string {
+	if player == nil {
+		return ""
+	}
+	return teamSide(player.Team)
+}
+func playerArmor(player *common.Player) bool { return player != nil && player.Armor() > 0 }
+func playerEquipment(player *common.Player) int {
+	if player == nil {
+		return 0
+	}
+	return player.EquipmentValueCurrent()
+}
+func equipmentName(equipment *common.Equipment) string {
+	if equipment == nil {
+		return ""
+	}
+	return equipment.String()
+}
+
+func activeWeaponName(player *common.Player) (name string) {
+	if player == nil {
+		return ""
+	}
+	defer func() {
+		if recover() != nil {
+			name = ""
+		}
+	}()
+	return equipmentName(player.ActiveWeapon())
 }
 
 func hashBytes(data []byte) string {

@@ -20,9 +20,6 @@
   gap: 6px;
   margin: 5px 0 15px;
 }
-.media-actions button:last-child {
-  grid-column: 1/-1;
-}
 .music-preview {
   position: absolute;
   width: 1px;

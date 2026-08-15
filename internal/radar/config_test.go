@@ -100,6 +100,9 @@ func TestShowcaseConfigSaveAndRead(t *testing.T) {
 		ShowBestMarkers:   false,
 		AudioOffsetMS:     1250,
 		FFmpegPath:        filepath.Join(t.TempDir(), "ffmpeg"),
+		RadarScaleMode:    "global",
+		RadarScale:        0.8,
+		RadarAxisScale:    map[string]float64{"KPR": 0.9},
 		Layout: ShowcaseLayout{
 			RadarPosition: NormalizedPoint{X: 0.2, Y: 0.3},
 			NamePosition:  NormalizedPoint{X: 0.4, Y: 0.5},
@@ -208,10 +211,23 @@ func TestInvalidShowcaseConfig(t *testing.T) {
 	cfg.Showcase.Layout.ImagePosition.X = 2
 	cases = append(cases, cfg)
 	cfg = base
-	cfg.Showcase.AudioOffsetMS = -60001
+	cfg.Showcase.AudioOffsetMS = -maxShowcaseAudioOffsetMS - 1
 	cases = append(cases, cfg)
 	cfg = base
-	cfg.Showcase.AudioOffsetMS = 60001
+	cfg.Showcase.AudioOffsetMS = maxShowcaseAudioOffsetMS + 1
+	cases = append(cases, cfg)
+	cfg = base
+	cfg.Showcase.RadarScaleMode = "unknown"
+	cases = append(cases, cfg)
+	cfg = base
+	cfg.Showcase.RadarScale = 0.2
+	cases = append(cases, cfg)
+	cfg = base
+	cfg.Showcase.RadarScale = 1.5
+	cases = append(cases, cfg)
+	cfg = base
+	cfg.Showcase.RadarScaleMode = "axis"
+	cfg.Showcase.RadarAxisScale = map[string]float64{"ADR": 0.3}
 	cases = append(cases, cfg)
 
 	for _, cfg := range cases {

@@ -3,6 +3,7 @@ package radar
 import "math"
 
 var MetricOrder = []string{"KPR", "Surviving", "ADR", "KAST", "Impact", "Rating"}
+var Rating3MetricOrder = []string{"KPR", "Surviving", "ADR", "KAST", "Multi-Kill", "Rating"}
 
 type PlayerStatsCalculator struct{}
 
@@ -63,7 +64,10 @@ func (c PlayerStatsCalculator) Calculate(demo DemoData, player Player) PlayerSta
 		SurvivedRounds: survivedRounds,
 		KASTRounds:     len(kastSet),
 	}
-	return PlayerStatsResult{Base: base, Metrics: buildMetrics(base, demo.TradeDataAvailable)}
+	result := PlayerStatsResult{Base: base, Metrics: buildMetrics(base, demo.TradeDataAvailable)}
+	result.Rating3Metrics, result.RoundSwing, result.Rating3Reason = calculateRating3(demo, player, base)
+	result.Rating3Available = result.Rating3Metrics != nil
+	return result
 }
 
 func buildMetrics(base PlayerBaseStats, tradeDataAvailable bool) map[string]RadarMetric {
@@ -101,7 +105,7 @@ func buildMetrics(base PlayerBaseStats, tradeDataAvailable bool) map[string]Rada
 	if adr != nil {
 		adrValue = *adr
 	}
-	rating := 0.0073*adrValue + 0.3591*kpr - 0.5329*(float64(base.Deaths)/rounds) + 0.2372*impact + 0.0032*kast*100 + 0.1587
+	rating := 0.0073*kast*100 + 0.3591*kpr - 0.5329*(float64(base.Deaths)/rounds) + 0.2372*impact + 0.0032*adrValue + 0.1587
 
 	metrics := map[string]RadarMetric{
 		"KPR":       okMetric("KPR", kpr, "number", ""),
@@ -148,6 +152,8 @@ func maxValue(name string) float64 {
 	case "KAST":
 		return 0.7
 	case "Impact":
+		return 2
+	case "Multi-Kill":
 		return 2
 	case "Rating":
 		return 1.5

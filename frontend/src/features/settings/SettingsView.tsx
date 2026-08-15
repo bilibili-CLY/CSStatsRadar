@@ -5,6 +5,7 @@ import {
   Film,
   FolderCog,
   Gauge,
+  BookOpen,
   Save,
 } from "lucide-react";
 import { bridge } from "../../bridge";
@@ -17,7 +18,24 @@ interface Props {
   sources: ImportSource[];
   onSourcesChange: (sources: ImportSource[]) => void;
   onDataChanged: () => Promise<void>;
+  onShowMethodology: () => void;
 }
+
+const radarAxisLimits: Array<{
+  name: string;
+  min: number;
+  max: number;
+  step: number;
+  defaultValue: number;
+}> = [
+  { name: "KPR", min: 0.5, max: 2, step: 0.05, defaultValue: 1 },
+  { name: "Surviving", min: 0.3, max: 1, step: 0.01, defaultValue: 0.6 },
+  { name: "ADR", min: 50, max: 200, step: 5, defaultValue: 100 },
+  { name: "KAST", min: 0.35, max: 1, step: 0.01, defaultValue: 0.7 },
+  { name: "Impact", min: 1, max: 4, step: 0.05, defaultValue: 2 },
+  { name: "Multi-Kill", min: 1, max: 4, step: 0.05, defaultValue: 2 },
+  { name: "Rating", min: 0.75, max: 3, step: 0.05, defaultValue: 1.5 },
+];
 
 export function SettingsView({
   config,
@@ -25,6 +43,7 @@ export function SettingsView({
   sources,
   onSourcesChange,
   onDataChanged,
+  onShowMethodology,
 }: Props) {
   const [draft, setDraft] = useState(config);
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">(
@@ -43,6 +62,9 @@ export function SettingsView({
         draft.reduce_motion,
         draft.showcase.show_best_markers,
         draft.showcase.audio_offset_ms,
+        draft.showcase.radar_scale_mode,
+        draft.showcase.radar_scale,
+        draft.showcase.radar_axis_scale ?? {},
       );
       setDraft(next);
       onChange(next);
@@ -120,6 +142,14 @@ export function SettingsView({
       )}
       {error && <div className="notice danger">{error}</div>}
       <div className="settings-grid">
+        <section className="card settings-section">
+          <div className="settings-icon"><BookOpen /></div>
+          <div>
+            <h2>评分算法与透明度</h2>
+            <p>Rating 3.0 使用透明的本地近似算法，当前版本 <code>local-r3-2025.10-v1</code>。</p>
+            <button className="quiet" onClick={onShowMethodology}>查看 Rating 与 Swing 公式</button>
+          </div>
+        </section>
         <section className="card settings-section">
           <div className="settings-icon">
             <FolderCog />
@@ -212,6 +242,91 @@ export function SettingsView({
               />
               <span>轮播中显示单项最佳 BEST 标记</span>
             </label>
+            <h3>雷达外圈缩放</h3>
+            <p className="field-note">
+              调小上限可凸显单项爆发数据，标签仍显示真实数值。
+            </p>
+            <div className="segmented">
+              <button
+                className={draft.showcase.radar_scale_mode === "global" ? "active" : ""}
+                onClick={() =>
+                  setDraft({
+                    ...draft,
+                    showcase: {
+                      ...draft.showcase,
+                      radar_scale_mode: "global",
+                    },
+                  })
+                }
+              >
+                全局缩放
+              </button>
+              <button
+                className={draft.showcase.radar_scale_mode === "axis" ? "active" : ""}
+                onClick={() =>
+                  setDraft({
+                    ...draft,
+                    showcase: {
+                      ...draft.showcase,
+                      radar_scale_mode: "axis",
+                    },
+                  })
+                }
+              >
+                分轴微调
+              </button>
+            </div>
+            {draft.showcase.radar_scale_mode === "global" ? (
+              <label className="field">
+                <span>全局缩放系数</span>
+                <input
+                  type="number"
+                  min={0.5}
+                  max={1.0}
+                  step={0.05}
+                  value={draft.showcase.radar_scale}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      showcase: {
+                        ...draft.showcase,
+                        radar_scale: Number(e.target.value),
+                      },
+                    })
+                  }
+                />
+              </label>
+            ) : (
+              <div className="two-fields">
+                {radarAxisLimits.map((axis) => (
+                  <label className="field" key={axis.name}>
+                    <span>{axis.name}</span>
+                    <input
+                      type="number"
+                      min={axis.min}
+                      max={axis.max}
+                      step={axis.step}
+                      value={
+                        draft.showcase.radar_axis_scale?.[axis.name] ??
+                        axis.defaultValue
+                      }
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          showcase: {
+                            ...draft.showcase,
+                            radar_axis_scale: {
+                              ...draft.showcase.radar_axis_scale,
+                              [axis.name]: Number(e.target.value),
+                            },
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         </section>
         <section className="card settings-section">

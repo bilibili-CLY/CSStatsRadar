@@ -15,28 +15,54 @@ type Player struct {
 }
 
 type RoundData struct {
-	RoundNumber int `json:"round_number"`
+	RoundNumber   int            `json:"round_number"`
+	WinnerSide    string         `json:"winner_side,omitempty"`
+	BombPlanted   bool           `json:"bomb_planted,omitempty"`
+	BombPlantTick int            `json:"bomb_plant_tick,omitempty"`
+	BombPlanterID string         `json:"bomb_planter_id,omitempty"`
+	BombDefuserID string         `json:"bomb_defuser_id,omitempty"`
+	TeamEconomy   map[string]int `json:"team_economy,omitempty"`
 }
 
 type KillEvent struct {
 	RoundNumber         int    `json:"round_number"`
+	Tick                int    `json:"tick,omitempty"`
 	AttackerSteamID     string `json:"attacker_steam_id,omitempty"`
 	VictimSteamID       string `json:"victim_steam_id,omitempty"`
 	AssisterSteamID     string `json:"assister_steam_id,omitempty"`
 	TradedPlayerSteamID string `json:"traded_player_steam_id,omitempty"`
+	AttackerSide        string `json:"attacker_side,omitempty"`
+	VictimSide          string `json:"victim_side,omitempty"`
+	Weapon              string `json:"weapon,omitempty"`
+	VictimWeapon        string `json:"victim_weapon,omitempty"`
+	AttackerArmor       bool   `json:"attacker_armor,omitempty"`
+	VictimArmor         bool   `json:"victim_armor,omitempty"`
+	AttackerEquipment   int    `json:"attacker_equipment,omitempty"`
+	VictimEquipment     int    `json:"victim_equipment,omitempty"`
+	AssistedFlash       bool   `json:"assisted_flash,omitempty"`
 }
 
 type DamageEvent struct {
-	RoundNumber     int    `json:"round_number"`
-	AttackerSteamID string `json:"attacker_steam_id,omitempty"`
-	VictimSteamID   string `json:"victim_steam_id,omitempty"`
-	Damage          int    `json:"damage"`
+	RoundNumber       int    `json:"round_number"`
+	Tick              int    `json:"tick,omitempty"`
+	AttackerSteamID   string `json:"attacker_steam_id,omitempty"`
+	VictimSteamID     string `json:"victim_steam_id,omitempty"`
+	Damage            int    `json:"damage"`
+	AttackerSide      string `json:"attacker_side,omitempty"`
+	VictimSide        string `json:"victim_side,omitempty"`
+	Weapon            string `json:"weapon,omitempty"`
+	VictimWeapon      string `json:"victim_weapon,omitempty"`
+	AttackerArmor     bool   `json:"attacker_armor,omitempty"`
+	VictimArmor       bool   `json:"victim_armor,omitempty"`
+	AttackerEquipment int    `json:"attacker_equipment,omitempty"`
+	VictimEquipment   int    `json:"victim_equipment,omitempty"`
 }
 
 type SurvivalState struct {
 	RoundNumber int    `json:"round_number"`
 	SteamID     string `json:"steam_id"`
 	Survived    bool   `json:"survived"`
+	Side        string `json:"side,omitempty"`
 }
 
 type DemoMeta struct {
@@ -80,12 +106,20 @@ type ShowcaseLayout struct {
 }
 
 type ShowcaseConfig struct {
-	DefaultDurationMS int            `json:"default_duration_ms"`
-	Layout            ShowcaseLayout `json:"layout"`
-	MusicPath         string         `json:"music_path,omitempty"`
-	ShowBestMarkers   bool           `json:"show_best_markers"`
-	AudioOffsetMS     int            `json:"audio_offset_ms"`
-	FFmpegPath        string         `json:"ffmpeg_path,omitempty"`
+	DefaultDurationMS int                `json:"default_duration_ms"`
+	Layout            ShowcaseLayout     `json:"layout"`
+	MusicPath         string             `json:"music_path,omitempty"`
+	ShowBestMarkers   bool               `json:"show_best_markers"`
+	AudioOffsetMS     int                `json:"audio_offset_ms"`
+	FFmpegPath        string             `json:"ffmpeg_path,omitempty"`
+	RadarScaleMode    string             `json:"radar_scale_mode"`
+	RadarScale        float64            `json:"radar_scale"`
+	RadarAxisScale    map[string]float64 `json:"radar_axis_scale"`
+}
+
+type ShowcaseMusicInfo struct {
+	URL        string `json:"url"`
+	DurationMS int    `json:"duration_ms"`
 }
 
 type PlayerImageSourceType string
@@ -157,23 +191,41 @@ type RadarMetric struct {
 }
 
 type PlayerStatsResult struct {
-	Base    PlayerBaseStats        `json:"base"`
-	Metrics map[string]RadarMetric `json:"metrics"`
+	Base             PlayerBaseStats        `json:"base"`
+	Metrics          map[string]RadarMetric `json:"metrics"`
+	Rating3Metrics   map[string]RadarMetric `json:"rating_3_metrics,omitempty"`
+	RoundSwing       *float64               `json:"round_swing,omitempty"`
+	Rating3Available bool                   `json:"rating_3_available"`
+	Rating3Reason    string                 `json:"rating_3_reason,omitempty"`
 }
 
 type RadarPayload struct {
-	Dimensions   []string      `json:"dimensions"`
-	Values       []*float64    `json:"values"`
-	DisplayTypes []string      `json:"display_types"`
-	MaxValues    []float64     `json:"max_values"`
-	MinValues    []float64     `json:"min_values"`
-	Note         string        `json:"note"`
-	Metrics      []RadarMetric `json:"metrics"`
+	Dimensions       []string      `json:"dimensions"`
+	Values           []*float64    `json:"values"`
+	DisplayTypes     []string      `json:"display_types"`
+	MaxValues        []float64     `json:"max_values"`
+	MinValues        []float64     `json:"min_values"`
+	Note             string        `json:"note"`
+	Metrics          []RadarMetric `json:"metrics"`
+	RoundSwing       *float64      `json:"round_swing,omitempty"`
+	AlgorithmVersion string        `json:"algorithm_version,omitempty"`
+}
+
+type RatingProfiles struct {
+	Rating2 RadarPayload  `json:"rating_2"`
+	Rating3 *RadarPayload `json:"rating_3,omitempty"`
+}
+
+type Rating3Status struct {
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 type RadarResponse struct {
-	Player Player       `json:"player"`
-	Radar  RadarPayload `json:"radar"`
+	Player        Player         `json:"player"`
+	Radar         RadarPayload   `json:"radar"`
+	Profiles      RatingProfiles `json:"profiles"`
+	Rating3Status Rating3Status  `json:"rating_3_status"`
 }
 
 type DemoSaveStatus string
@@ -224,6 +276,11 @@ type PlayerMatchRecord struct {
 	KAST            *float64      `json:"kast"`
 	Impact          *float64      `json:"impact"`
 	Rating          *float64      `json:"rating"`
+	Rating3         *float64      `json:"rating_3,omitempty"`
+	RoundSwing      *float64      `json:"round_swing,omitempty"`
+	MultiKill       *float64      `json:"multi_kill,omitempty"`
+	RatingAlgorithm string        `json:"rating_algorithm,omitempty"`
+	Rating3Metrics  []RadarMetric `json:"rating_3_metrics,omitempty"`
 	Metrics         []RadarMetric `json:"metrics,omitempty"`
 }
 
@@ -240,14 +297,26 @@ type EditorDraft struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+type ImportPlayerDetail struct {
+	Name    string `json:"name"`
+	SteamID string `json:"steam_id"`
+	Team    string `json:"team"`
+	Kills   int    `json:"kills"`
+	Deaths  int    `json:"deaths"`
+	Assists int    `json:"assists"`
+}
+
 type ImportItemResult struct {
-	Path       string   `json:"path"`
-	FileName   string   `json:"file_name"`
-	Status     string   `json:"status"`
-	Message    string   `json:"message,omitempty"`
-	DemoID     string   `json:"demo_id,omitempty"`
-	Players    []Player `json:"players,omitempty"`
-	SavedCount int      `json:"saved_count"`
+	Path          string               `json:"path"`
+	FileName      string               `json:"file_name"`
+	Status        string               `json:"status"`
+	Message       string               `json:"message,omitempty"`
+	DemoID        string               `json:"demo_id,omitempty"`
+	MapName       string               `json:"map_name,omitempty"`
+	Rounds        int                  `json:"rounds,omitempty"`
+	Players       []Player             `json:"players,omitempty"`
+	PlayerDetails []ImportPlayerDetail `json:"player_details,omitempty"`
+	SavedCount    int                  `json:"saved_count"`
 }
 
 type ImportSummary struct {
@@ -283,9 +352,37 @@ type ShowcaseVideoExportRequest struct {
 }
 
 type AggregateRadarResponse struct {
-	Player     Player       `json:"player"`
-	MatchCount int          `json:"match_count"`
-	Radar      RadarPayload `json:"radar"`
+	Player        Player         `json:"player"`
+	MatchCount    int            `json:"match_count"`
+	Radar         RadarPayload   `json:"radar"`
+	Profiles      RatingProfiles `json:"profiles"`
+	Rating3Status Rating3Status  `json:"rating_3_status"`
+}
+
+type WeaponMethodology struct {
+	ID       string   `json:"id"`
+	Label    string   `json:"label"`
+	Strength float64  `json:"strength"`
+	Weapons  []string `json:"weapons"`
+}
+
+type RatingMethodology struct {
+	AlgorithmVersion      string              `json:"algorithm_version"`
+	Rating2Formula        string              `json:"rating_2_formula"`
+	ImpactFormula         string              `json:"impact_formula"`
+	Rating3Formula        string              `json:"rating_3_formula"`
+	Rating3BaseFormula    string              `json:"rating_3_base_formula"`
+	MultiKPRFormula       string              `json:"multi_kpr_formula"`
+	MultiImpactFormula    string              `json:"multi_impact_formula"`
+	SwingRatingFormula    string              `json:"swing_rating_formula"`
+	SwingFormula          string              `json:"swing_formula"`
+	WinProbabilityFormula string              `json:"win_probability_formula"`
+	WeaponWeightFormula   string              `json:"weapon_weight_formula"`
+	SniperDamageFormula   string              `json:"sniper_damage_formula"`
+	WeaponCategories      []WeaponMethodology `json:"weapon_categories"`
+	ContributionWeights   map[string]float64  `json:"contribution_weights"`
+	Constants             map[string]float64  `json:"constants"`
+	Limitations           []string            `json:"limitations"`
 }
 
 type UploadResponse struct {
