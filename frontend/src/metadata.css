@@ -8,6 +8,12 @@
   border: 1px solid #3a424c;
   border-radius: 8px;
   background: #111418;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+.metadata-editor:hover {
+  border-color: var(--border-strong);
 }
 .metadata-editor .field {
   margin: 0;
@@ -15,6 +21,21 @@
 .danger-action {
   color: #f0a5a5;
   border-color: rgba(226, 102, 102, 0.4);
+  will-change: transform;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+.danger-action:hover:not(:disabled) {
+  background: rgba(240, 82, 82, 0.1);
+  border-color: rgba(226, 102, 102, 0.7);
+  color: #ffc0c0;
+}
+.danger-action:active:not(:disabled) {
+  transform: scale(0.98);
 }
 .text-danger-button {
   align-self: flex-start;
@@ -25,6 +46,7 @@
   background: transparent;
   color: #b97878;
   font-size: 9px;
+  transition: color var(--transition-fast);
 }
 .text-danger-button:hover:not(:disabled) {
   background: transparent;

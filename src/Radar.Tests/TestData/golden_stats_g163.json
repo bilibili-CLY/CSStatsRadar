@@ -1,0 +1,1212 @@
+[
+  {
+    "steam_id": "76561198847209091",
+    "name": "Noiki",
+    "base": {
+      "rounds": 7,
+      "kills": 7,
+      "deaths": 4,
+      "assists": 3,
+      "total_damage": 664,
+      "survived_rounds": 3,
+      "kast_rounds": 6
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 94.857,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 1.9,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.857,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 1,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 1.593,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.429,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 88.625,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.888,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.942,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 1.927,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 1.558,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.429,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": 2.32,
+    "rating_3_available": true
+  },
+  {
+    "steam_id": "76561198322733550",
+    "name": "JULLL",
+    "base": {
+      "rounds": 7,
+      "kills": 6,
+      "deaths": 7,
+      "assists": 0,
+      "total_damage": 748,
+      "survived_rounds": 0,
+      "kast_rounds": 6
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 106.857,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 1.416,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.857,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.857,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 1.237,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 97.903,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.848,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.777,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 1.321,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 1.153,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": 2.47,
+    "rating_3_available": true
+  },
+  {
+    "steam_id": "76561198969603907",
+    "name": "闪电幽魂",
+    "base": {
+      "rounds": 7,
+      "kills": 0,
+      "deaths": 7,
+      "assists": 2,
+      "total_damage": 144,
+      "survived_rounds": 0,
+      "kast_rounds": 4
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 20.571,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 0,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.571,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.04,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 19.667,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.558,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 0,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.063,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": -13.64,
+    "rating_3_available": true
+  },
+  {
+    "steam_id": "76561198213920660",
+    "name": "Awesome马润",
+    "base": {
+      "rounds": 7,
+      "kills": 3,
+      "deaths": 4,
+      "assists": 1,
+      "total_damage": 300,
+      "survived_rounds": 3,
+      "kast_rounds": 7
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 42.857,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 0.563,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 1,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.429,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 1.009,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.429,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 39.686,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 1.033,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.393,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 0.478,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.883,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.429,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": -6.05,
+    "rating_3_available": true
+  },
+  {
+    "steam_id": "76561198349492715",
+    "name": "q1713122446",
+    "base": {
+      "rounds": 7,
+      "kills": 4,
+      "deaths": 6,
+      "assists": 0,
+      "total_damage": 441,
+      "survived_rounds": 1,
+      "kast_rounds": 3
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 63,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 0.807,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.429,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.571,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.613,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.143,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 65.75,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.448,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.585,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 0.913,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.84,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.143,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": 5.45,
+    "rating_3_available": true
+  },
+  {
+    "steam_id": "76561198165602682",
+    "name": "泰森123",
+    "base": {
+      "rounds": 7,
+      "kills": 13,
+      "deaths": 3,
+      "assists": 2,
+      "total_damage": 1311,
+      "survived_rounds": 4,
+      "kast_rounds": 7
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 187.286,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 3.666,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 1,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 1.857,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 2.796,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.571,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 190.24,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 1.032,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 1.769,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 3.938,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 2.824,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.571,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": 25.26,
+    "rating_3_available": true
+  },
+  {
+    "steam_id": "76561198436531748",
+    "name": "shiroko",
+    "base": {
+      "rounds": 7,
+      "kills": 8,
+      "deaths": 3,
+      "assists": 1,
+      "total_damage": 704,
+      "survived_rounds": 4,
+      "kast_rounds": 6
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 100.571,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 2.084,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.857,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 1.143,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 1.783,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.571,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 87.729,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.869,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.965,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 1.928,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 1.703,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.571,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": 3.28,
+    "rating_3_available": true
+  },
+  {
+    "steam_id": "76561199849909959",
+    "name": "鬣狗掏肛",
+    "base": {
+      "rounds": 7,
+      "kills": 3,
+      "deaths": 4,
+      "assists": 3,
+      "total_damage": 379,
+      "survived_rounds": 3,
+      "kast_rounds": 6
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 54.143,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 0.683,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.857,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.429,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.969,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.429,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 53.409,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.88,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.446,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 0.715,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.972,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0.429,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": -8.88,
+    "rating_3_available": true
+  },
+  {
+    "steam_id": "76561199827944234",
+    "name": "Twistzz",
+    "base": {
+      "rounds": 7,
+      "kills": 3,
+      "deaths": 7,
+      "assists": 1,
+      "total_damage": 407,
+      "survived_rounds": 0,
+      "kast_rounds": 3
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 58.143,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 0.563,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.429,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.429,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.412,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 62.977,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.44,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.435,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 0.649,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.461,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": -6.93,
+    "rating_3_available": true
+  },
+  {
+    "steam_id": "76561199118574276",
+    "name": "Quinl4N",
+    "base": {
+      "rounds": 7,
+      "kills": 5,
+      "deaths": 7,
+      "assists": 0,
+      "total_damage": 570,
+      "survived_rounds": 0,
+      "kast_rounds": 5
+    },
+    "metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 81.429,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Impact": {
+        "name": "Impact",
+        "value": 1.111,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制影响力算法第一版。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.714,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.714,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.928,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "本地自制综合评分算法第一版。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "rating_3_metrics": {
+      "ADR": {
+        "name": "ADR",
+        "value": 86.326,
+        "display_type": "number",
+        "max_value": 100,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "KAST": {
+        "name": "KAST",
+        "value": 0.699,
+        "display_type": "percentage",
+        "max_value": 0.7,
+        "min_value": 0,
+        "status": "ok"
+      },
+      "KPR": {
+        "name": "KPR",
+        "value": 0.699,
+        "display_type": "number",
+        "max_value": 1,
+        "min_value": 0,
+        "status": "ok",
+        "note": "已按枪械对位修正。"
+      },
+      "Multi-Kill": {
+        "name": "Multi-Kill",
+        "value": 1.079,
+        "display_type": "number",
+        "max_value": 2,
+        "min_value": 0,
+        "status": "ok",
+        "note": "经济修正后的多杀子评分。"
+      },
+      "Rating": {
+        "name": "Rating",
+        "value": 0.948,
+        "display_type": "number",
+        "max_value": 1.5,
+        "min_value": 0,
+        "status": "ok",
+        "note": "Rating 3.0 本地近似。"
+      },
+      "Surviving": {
+        "name": "Surviving",
+        "value": 0,
+        "display_type": "percentage",
+        "max_value": 0.6,
+        "min_value": 0,
+        "status": "ok"
+      }
+    },
+    "round_swing": -3.27,
+    "rating_3_available": true
+  }
+]

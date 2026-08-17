@@ -1,7 +1,7 @@
 name: Release
 
-# 按 v* tag 触发：在 macOS / Windows runner 上分别构建安装包，
-# 汇总后发布为 GitHub Release。
+# 按 v* tag 触发：在 Windows runner 上构建 .NET 8 自包含应用，
+# 打包为 zip 后发布为 GitHub Release。
 on:
   push:
     tags:
@@ -11,28 +11,17 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build (${{ matrix.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macos
-            os: macos-latest
-            wails_platform: darwin/universal
-          - name: windows
-            os: windows-latest
-            wails_platform: windows/amd64
-    runs-on: ${{ matrix.os }}
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
         with:
-          go-version: '1.25'
-          check-latest: true
+          dotnet-version: '8.0.x'
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -41,75 +30,49 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Wails CLI v2.12.0
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
 
-      - name: Install NSIS (Windows)
-        if: runner.os == 'Windows'
+      - name: Publish .NET app (Windows x64, self-contained)
+        run: |
+          dotnet publish src/Radar.App/Radar.App.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o publish
+        shell: pwsh
+
+      - name: Copy frontend dist to publish output
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
-          $dirs = @("C:\Program Files (x86)\NSIS", "C:\Program Files\NSIS") | Where-Object { Test-Path "$_\makensis.exe" }
-          if ($dirs) { Add-Content $env:GITHUB_PATH $dirs[0] }
+          Copy-Item -Path frontend/dist -Destination publish/dist -Recurse
 
-      - name: Build application
-        working-directory: cmd/cs-radar-studio
-        env:
-          # 绑定生成阶段会执行 NewDesktopApp() 打开数据库；指向临时可写路径，
-          # 避免在 runner 上创建/触碰 ~/.csplayerstatsradar。
-          CS_RADAR_DB_PATH: ${{ runner.temp }}/cs-radar-build.db
-          CS_RADAR_CONFIG_PATH: ${{ runner.temp }}/cs-radar-build-config.json
-        shell: bash
+      - name: Create zip archive
+        shell: pwsh
         run: |
-          # macOS 使用 -platform darwin/universal 生成通用二进制；
-          # Windows 不指定 -platform，让 Wails 自动生成 NSIS 安装包。
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            wails build -clean -platform darwin/universal
-          else
-            wails build -clean
-          fi
-
-      - name: Package macOS app (.zip)
-        if: runner.os == 'macOS'
-        working-directory: cmd/cs-radar-studio/build/bin
-        run: |
-          set -e
-          ls -la
-          ditto -c -k --keepParent CSPlayerStatsRadar.app "CSPlayerStatsRadar-${GITHUB_REF_NAME}-macos-universal.zip"
-
-      - name: Rename Windows installer
-        if: runner.os == 'Windows'
-        working-directory: cmd/cs-radar-studio/build/bin
-        shell: bash
-        run: |
-          ls -la
-          # 关闭 pipefail，ls 在无匹配文件时返回非零但不影响后续逻辑
-          set +e
-          installer=$(ls *-installer.exe 2>/dev/null | head -1)
-          set -e
-          if [ -n "$installer" ]; then
-            mv "$installer" "CSPlayerStatsRadar-${GITHUB_REF_NAME}-windows-amd64.exe"
-          else
-            echo "WARNING: NSIS installer not found, shipping raw binary" >&2
-            mv CSPlayerStatsRadar.exe "CSPlayerStatsRadar-${GITHUB_REF_NAME}-windows-amd64.exe"
-          fi
+          Compress-Archive -Path publish/* -DestinationPath "CSPlayerStatsRadar-${{ github.ref_name }}-windows-x64.zip"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.name }}
-          path: cmd/cs-radar-studio/build/bin/CSPlayerStatsRadar-${{ github.ref_name }}-*
+          name: build-windows
+          path: CSPlayerStatsRadar-${{ github.ref_name }}-windows-x64.zip
           if-no-files-found: error
           retention-days: 7
 
   release:
     name: Publish release
-    needs: build
+    needs: build-windows
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download all build artifacts
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts

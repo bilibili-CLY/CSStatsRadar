@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Dispatch, KeyboardEvent as ReactKeyboardEvent, SetStateAction } from "react";
 import {
   CheckCircle2,
   FileArchive,
@@ -19,7 +19,11 @@ import {
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { BusyMessage, Spinner } from "../../components/Busy";
+import { PlayerAvatarView } from "../../components/PlayerAvatar";
+import { claimCompletedImport } from "./completion";
 import type {
+  DemoRecord,
+  DemoAnalysis,
   ImportItem,
   ImportPlayerDetail,
   ImportSource,
@@ -30,7 +34,10 @@ interface Props {
   sources: ImportSource[];
   followedSteamIDs: string[];
   onSourcesChange: (sources: ImportSource[]) => void;
-  onImported: () => void;
+  onImported: () => void | Promise<void>;
+  demos: DemoRecord[];
+  onDemosChange: (demos: DemoRecord[]) => void;
+  onAnalyze: (demoId: string) => void;
 }
 
 type ViewMode = "grid" | "list";
@@ -40,30 +47,43 @@ export function ImportView({
   followedSteamIDs,
   onSourcesChange,
   onImported,
+  demos,
+  onDemosChange,
+  onAnalyze,
 }: Props) {
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [activeItem, setActiveItem] = useState<ImportItem | null>(null);
+  const [activeDemo, setActiveDemo] = useState<DemoRecord | null>(null);
+  const [activeAnalysis, setActiveAnalysis] = useState<DemoAnalysis | null>(null);
+  const [dialogError, setDialogError] = useState("");
   const [jobId, setJobId] = useState("");
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedDemos, setSelectedDemos] = useState<Set<string>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
   const [starting, setStarting] = useState(false);
   const [following, setFollowing] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const jobIdRef = useRef("");
+  const finalizedJobs = useRef(new Set<string>());
   const running = starting || summary?.status === "running";
 
   useEffect(
     () =>
       bridge.onImportProgress((next) => {
-        if (!jobId || next.job_id === jobId) {
-          setSummary(next);
-          if (next.status === "completed") onImported();
-        }
+        if (next.job_id === jobIdRef.current) setSummary(next);
       }),
-    [jobId, onImported],
+    [],
   );
+
+  useEffect(() => {
+    if (!claimCompletedImport(finalizedJobs.current, summary)) return;
+    Promise.all([Promise.resolve(onImported()), bridge.listDemos().then(onDemosChange)]).catch((value) => setError(message(value)));
+  }, [summary?.job_id, summary?.status, onImported, onDemosChange]);
 
   useEffect(() => {
     if (!jobId || !running) return;
@@ -82,19 +102,39 @@ export function ImportView({
     () => new Set(followedSteamIDs),
     [followedSteamIDs],
   );
-  const activePlayers = useMemo(
-    () => (activeItem ? playerDetails(activeItem) : []),
-    [activeItem],
-  );
+  const activePlayers = useMemo(() => activeItem ? playerDetails(activeItem) : activeDemo ? persistentPlayerDetails(activeDemo, activeAnalysis) : [], [activeItem, activeDemo, activeAnalysis]);
 
   useEffect(() => {
-    if (!activeItem) return;
+    if (!activeDemo) { setActiveAnalysis(null); return; }
+    setDialogError("");
+    bridge.getDemoAnalysis(activeDemo.demo_record_id).then(setActiveAnalysis).catch((value) => setDialogError(message(value)));
+  }, [activeDemo]);
+
+  useEffect(() => {
+    if (!activeItem && !activeDemo) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !following) setActiveItem(null);
+      if (event.key === "Escape" && !following) { setActiveItem(null); setActiveDemo(null); }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [activeItem, following]);
+  }, [activeItem, activeDemo, following]);
+
+  useEffect(() => {
+    const available = new Set(demos.map((demo) => demo.demo_record_id));
+    setSelectedDemos((current) => {
+      const next = new Set(Array.from(current).filter((id) => available.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [demos]);
+
+  useEffect(() => {
+    if (!pendingDelete.length) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !deleting) setPendingDelete([]);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [pendingDelete.length, deleting]);
 
   const visibleItems = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -113,6 +153,17 @@ export function ImportView({
       return true;
     });
   }, [query, sourceFilter, sources, statusFilter, summary]);
+
+  const visibleDemos = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const selectedSource = sources.find((source) => source.id === sourceFilter);
+    if (statusFilter !== "all" && statusFilter !== "imported") return [];
+    return demos.filter((demo) => {
+      if (normalizedQuery && !`${demo.file_name} ${demo.map_name} ${demo.source_path ?? ""} ${demo.note ?? ""}`.toLocaleLowerCase().includes(normalizedQuery)) return false;
+      if (selectedSource && !demo.source_path?.startsWith(selectedSource.path)) return false;
+      return true;
+    });
+  }, [demos, query, sourceFilter, sources, statusFilter]);
 
   async function addSource() {
     try {
@@ -144,6 +195,7 @@ export function ImportView({
       const id = paths
         ? await bridge.importFiles(paths)
         : await bridge.scanSources([]);
+      jobIdRef.current = id;
       setJobId(id);
       setSummary(await bridge.importSummary(id));
     } catch (value) {
@@ -164,26 +216,55 @@ export function ImportView({
   }
 
   async function follow() {
-    if (!summary || !activeItem || !selected.size) return;
+    if ((!summary || !activeItem) && !activeDemo || !selected.size) return;
     const players = activePlayers
       .filter((player) => selected.has(player.steam_id))
       .map(({ name, steam_id }) => ({ name, steam_id }));
     try {
       setFollowing(true);
-      setSummary(
-        await bridge.followAndBackfill(
-          summary.job_id,
-          activeItem.path,
-          players,
-        ),
-      );
+      if (activeDemo) await bridge.followDemoPlayers(activeDemo.demo_record_id, players.map((player) => player.steam_id));
+      else if (summary && activeItem) setSummary(await bridge.followAndBackfill(summary.job_id, activeItem.path, players));
       setSelected(new Set());
       setActiveItem(null);
+      setActiveDemo(null);
+      await refreshDemos();
       onImported();
     } catch (value) {
       setError(message(value));
     } finally {
       setFollowing(false);
+    }
+  }
+
+  async function relocateAndFollow() {
+    if (!activeDemo) return;
+    const ids = Array.from(selected);
+    try {
+      setFollowing(true); setDialogError("");
+      const analysis = await bridge.chooseReplacementDemo(activeDemo.demo_record_id);
+      setActiveAnalysis(analysis);
+      await bridge.followDemoPlayers(activeDemo.demo_record_id, ids);
+      setSelected(new Set()); setActiveDemo(null); await refreshDemos(); onImported();
+    } catch (value) { setDialogError(message(value)); }
+    finally { setFollowing(false); }
+  }
+
+  async function refreshDemos() { onDemosChange(await bridge.listDemos()); }
+  async function confirmDeleteDemos() {
+    if (!pendingDelete.length || deleting) return;
+    try {
+      setDeleting(true);
+      setError("");
+      await bridge.deleteDemos(pendingDelete);
+      const nextDemos = await bridge.listDemos();
+      onDemosChange(nextDemos);
+      setSelectedDemos(new Set());
+      setPendingDelete([]);
+      await Promise.resolve(onImported());
+    } catch (value) {
+      setError(message(value));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -281,7 +362,7 @@ export function ImportView({
           </select>
         </label>
         <span className="import-filter-count">
-          显示 {visibleItems.length} / {summary?.items.length ?? 0}
+          显示 {visibleDemos.length} / {demos.length}
         </span>
       </section>
 
@@ -324,40 +405,9 @@ export function ImportView({
         </div>
       </section>
 
-      <section
-        className="demo-catalog"
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
-          event.preventDefault();
-          const paths = Array.from(event.dataTransfer.files)
-            .map((file) => (file as File & { path?: string }).path)
-            .filter(Boolean) as string[];
-          if (paths.length) start(paths);
-        }}
-      >
-        <div className="demo-catalog-heading">
-          <div>
-            <h2>最近一次扫描</h2>
-            <p>
-              {summary
-                ? `${summary.processed} / ${summary.total} 个文件已处理`
-                : "扫描素材来源后，结果会以卡片形式显示在这里。"}
-            </p>
-          </div>
-          {summary && (
-            <div className="catalog-stats" aria-label="导入统计">
-              <span>
-                新增 <strong>{summary.imported}</strong>
-              </span>
-              <span>
-                重复 <strong>{summary.duplicates}</strong>
-              </span>
-              <span className={summary.failed ? "danger-text" : ""}>
-                失败 <strong>{summary.failed}</strong>
-              </span>
-            </div>
-          )}
-        </div>
+      {summary && <section className="import-task-summary card" aria-label="本次导入结果">
+        <div><strong>本次任务</strong><span>{summary.processed}/{summary.total} 已处理</span></div>
+        <div className="catalog-stats"><span>新增 <strong>{summary.imported}</strong></span><span>重复 <strong>{summary.duplicates}</strong></span><span className={summary.failed ? "danger-text" : ""}>失败 <strong>{summary.failed}</strong></span></div>
 
         {running && summary && (
           <div className="import-progress-panel">
@@ -378,69 +428,28 @@ export function ImportView({
           </div>
         )}
 
-        {visibleItems.length ? (
-          <div className={`demo-result-grid ${viewMode}`}>
-            {visibleItems.map((item) => (
-              <DemoCard
-                item={item}
-                key={item.path}
-                onOpen={() => {
-                  setSelected(new Set());
-                  setActiveItem(item);
-                }}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="demo-empty-state">
-            <span>
-              <UploadCloud size={29} />
-            </span>
-            <h2>
-              {summary?.items.length
-                ? "没有符合当前筛选的 Demo"
-                : "还没有扫描结果"}
-            </h2>
-            <p>
-              {summary?.items.length
-                ? "调整文件名、来源或状态筛选后再试。"
-                : "添加素材目录并扫描，或将 DEM / ZIP 文件拖到此处。"}
-            </p>
-            {!summary?.items.length && (
-              <div>
-                <button className="primary" onClick={chooseFiles}>
-                  <FileUp size={16} />
-                  选择文件
-                </button>
-                <button className="quiet" onClick={addSource}>
-                  <FolderPlus size={16} />
-                  添加目录
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        {!!visibleItems.filter((item) => item.status !== "imported").length && <div className="import-task-items">{visibleItems.filter((item) => item.status !== "imported").map((item) => <DemoCard item={item} key={item.path} onOpen={() => { setSelected(new Set()); setActiveItem(item); }}/>)}</div>}
+      </section>}
 
-        <footer className="catalog-footer">
-          <span>共 {summary?.items.length ?? 0} 个 Demo</span>
-          <div>
-            <button aria-label="上一页" disabled>
-              ‹
-            </button>
-            <span>第 1 / 1 页</span>
-            <button aria-label="下一页" disabled>
-              ›
-            </button>
-          </div>
-        </footer>
+      <section className="demo-catalog" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const paths = Array.from(event.dataTransfer.files).map((file) => (file as File & { path?: string }).path).filter(Boolean) as string[]; if (paths.length) start(paths); }}>
+        <div className="demo-catalog-heading"><div><h2>比赛目录</h2><p>成功解析的 Demo 会跨页面和重启保留。</p></div><div className="catalog-bulk-actions"><label><input type="checkbox" checked={visibleDemos.length > 0 && visibleDemos.every((demo) => selectedDemos.has(demo.demo_record_id))} onChange={(event) => setSelectedDemos(event.target.checked ? new Set(visibleDemos.map((demo) => demo.demo_record_id)) : new Set())}/>全选当前</label><button className="danger-action" disabled={!selectedDemos.size || deleting} onClick={() => setPendingDelete(Array.from(selectedDemos))}><Trash2 size={15}/>删除所选 ({selectedDemos.size})</button></div></div>
+	        <div className="demo-catalog-content">{visibleDemos.length ? <div className={`demo-record-grid ${viewMode}`}>{visibleDemos.map((demo) => <PersistentDemoCard key={demo.demo_record_id} demo={demo} selected={selectedDemos.has(demo.demo_record_id)} onSelected={(checked) => setSelectedDemos((current) => { const next = new Set(current); checked ? next.add(demo.demo_record_id) : next.delete(demo.demo_record_id); return next; })} onSaved={refreshDemos} onPlayers={() => { setSelected(new Set()); setActiveDemo(demo); }} onAnalyze={() => onAnalyze(demo.demo_record_id)} onDelete={() => setPendingDelete([demo.demo_record_id])}/>)}</div> : <div className="demo-empty-state"><span><UploadCloud size={29}/></span><h2>{demos.length ? "没有符合当前筛选的 Demo" : "还没有比赛记录"}</h2><p>{demos.length ? "调整文件名、来源或状态筛选后再试。" : "添加素材目录并扫描，或将 DEM / ZIP 文件拖到此处。"}</p>{!demos.length && <div><button className="primary" onClick={chooseFiles}><FileUp size={16}/>选择文件</button><button className="quiet" onClick={addSource}><FolderPlus size={16}/>添加目录</button></div>}</div>}</div>
+	        <footer className="catalog-footer"><span>显示 {visibleDemos.length} / {demos.length} 个 Demo</span></footer>
       </section>
 
-      {activeItem && (
+      {!!pendingDelete.length && <div className="confirm-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target && !deleting) setPendingDelete([]); }}>
+        <section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-demo-title" aria-describedby="delete-demo-description">
+          <span className="confirm-danger-icon"><Trash2 size={20}/></span>
+          <div><h2 id="delete-demo-title">删除 {pendingDelete.length} 场比赛？</h2><p id="delete-demo-description">将删除比赛记录、分析数据和该场玩家统计。关注关系、玩家资料、头像和制作素材会保留。</p></div>
+          <footer><button autoFocus disabled={deleting} onClick={() => setPendingDelete([])}>取消</button><button className="danger-action" disabled={deleting} onClick={confirmDeleteDemos}>{deleting ? <Spinner/> : <Trash2 size={15}/>} {deleting ? "正在删除" : "确认删除"}</button></footer>
+        </section>
+      </div>}
+
+      {(activeItem || activeDemo) && (
         <div
           className="import-player-backdrop"
           onMouseDown={(event) => {
-            if (event.currentTarget === event.target && !following)
-              setActiveItem(null);
+            if (event.currentTarget === event.target && !following) { setActiveItem(null); setActiveDemo(null); }
           }}
         >
           <section
@@ -452,7 +461,7 @@ export function ImportView({
             <header className="import-dialog-header">
               <div>
                 <span className="eyebrow">当前场次</span>
-                <h2 id="import-player-dialog-title">{activeItem.file_name}</h2>
+                <h2 id="import-player-dialog-title">{activeItem?.file_name ?? activeDemo?.file_name}</h2>
                 <p>选择需要关注的玩家，仅补写这一场 Demo 的比赛数据。</p>
               </div>
               <button
@@ -460,7 +469,7 @@ export function ImportView({
                 aria-label="关闭玩家选择"
                 autoFocus
                 disabled={following}
-                onClick={() => setActiveItem(null)}
+                onClick={() => { setActiveItem(null); setActiveDemo(null); }}
               >
                 <X size={18} />
               </button>
@@ -469,20 +478,22 @@ export function ImportView({
             <div className="import-match-summary">
               <span>
                 <small>地图</small>
-                <strong>{activeItem.map_name || "未知地图"}</strong>
+                <strong>{activeItem?.map_name || activeDemo?.map_name || "未知地图"}</strong>
               </span>
               <span>
                 <small>回合</small>
-                <strong>{activeItem.rounds || "—"}</strong>
+                <strong>{activeItem?.rounds || activeDemo?.rounds || "—"}</strong>
               </span>
               <span>
                 <small>参赛玩家</small>
                 <strong>{activePlayers.length}</strong>
               </span>
-              <span className={`status-pill ${activeItem.status}`}>
-                {statusLabel(activeItem.status)}
+              <span className={`status-pill ${activeItem?.status ?? "imported"}`}>
+                {activeItem ? statusLabel(activeItem.status) : "已入库"}
               </span>
             </div>
+
+            {dialogError && <div className="notice danger" role="alert"><span>{dialogError}</span>{activeDemo && <button onClick={relocateAndFollow} disabled={following || !selected.size}>重新定位并继续</button>}</div>}
 
             <div className="import-player-heading">
               <div>
@@ -533,6 +544,37 @@ export function ImportView({
   );
 }
 
+function PersistentDemoCard({ demo, selected, onSelected, onSaved, onPlayers, onAnalyze, onDelete }: { demo: DemoRecord; selected: boolean; onSelected: (checked: boolean) => void; onSaved: () => Promise<void>; onPlayers: () => void; onAnalyze: () => void; onDelete: () => void }) {
+  const [note, setNote] = useState(demo.note ?? "");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  useEffect(() => setNote(demo.note ?? ""), [demo.note]);
+  async function save() {
+    if (note.trim() === (demo.note ?? "").trim()) return;
+    try { setSaveState("saving"); await bridge.updateDemoNote(demo.demo_record_id, note); setSaveState("saved"); await onSaved(); }
+    catch { setSaveState("error"); }
+  }
+  function toggleFromKeyboard(event: ReactKeyboardEvent<HTMLElement>) {
+    if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) { event.preventDefault(); onSelected(!selected); }
+  }
+  return <article className={`persistent-demo-card ${selected ? "selected" : ""}`} role="checkbox" aria-checked={selected} tabIndex={0} onKeyDown={toggleFromKeyboard} onClick={() => onSelected(!selected)}>
+    <header><label className="demo-select" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selected} onChange={(event) => onSelected(event.target.checked)}/><span className="sr-only">选择 {demo.file_name}</span></label><div className="persistent-demo-summary"><span className="demo-file-icon"><FileArchive size={18}/></span><span><strong title={demo.file_name}>{demo.map_name || "未知地图"}</strong><small title={demo.file_name}>{demo.file_name}</small></span><b>{demo.score_a}<i>:</i>{demo.score_b}</b></div></header>
+    <div className="persistent-demo-meta"><span>{demo.rounds || "—"} 回合</span><span>{demo.participants?.length ?? 0} 名玩家</span><span title={demo.match_time_source}>{formatDemoDate(demo.match_time)}</span></div>
+    <label className="demo-note-field" onClick={(event) => event.stopPropagation()}><span className="sr-only">比赛备注</span><input value={note} maxLength={500} placeholder="点击添加备注…" onChange={(event) => { setNote(event.target.value); setSaveState("idle"); }} onBlur={save} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) event.currentTarget.blur(); }}/><small aria-live="polite">{saveState === "saving" ? "保存中…" : saveState === "saved" ? "已保存" : saveState === "error" ? "保存失败" : `${note.length}/500`}</small></label>
+    <footer><button onClick={(event) => { event.stopPropagation(); onPlayers(); }}>玩家</button><button onClick={(event) => { event.stopPropagation(); onAnalyze(); }}><Play size={15}/>{demo.analysis_ready ? "分析" : "打开时补解析"}</button><button className="icon-button danger-action" aria-label={`删除 ${demo.file_name}`} onClick={(event) => { event.stopPropagation(); onDelete(); }}><Trash2 size={15}/></button></footer>
+  </article>;
+}
+
+function persistentPlayerDetails(demo: DemoRecord, analysis: DemoAnalysis | null): ImportPlayerDetail[] {
+  if (!analysis) return playerDetails({ players: demo.participants ?? [] } as ImportItem);
+  return analysis.players.map((entry) => ({
+    ...entry.player,
+    team: entry.team_id,
+    kills: entry.rounds.reduce((sum, round) => sum + round.kills, 0),
+    deaths: entry.rounds.reduce((sum, round) => sum + round.deaths, 0),
+    assists: entry.rounds.reduce((sum, round) => sum + round.assists, 0),
+  }));
+}
+
 function DemoCard({ item, onOpen }: { item: ImportItem; onOpen: () => void }) {
   const playerCount = item.players?.length ?? 0;
   const success = item.status === "imported";
@@ -581,6 +623,11 @@ function DemoCard({ item, onOpen }: { item: ImportItem; onOpen: () => void }) {
   );
 }
 
+function formatDemoDate(value: string) {
+  const date = new Date(value); if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
 function TeamPanel({
   name,
   tone,
@@ -624,6 +671,7 @@ function TeamPanel({
                   })
                 }
               />
+              <PlayerAvatarView name={player.name} steamId={player.steam_id}/>
               <span className="import-player-name">
                 <strong>{player.name}</strong>
                 <small>{player.steam_id}</small>

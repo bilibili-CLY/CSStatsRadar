@@ -30,9 +30,11 @@ import {
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { Spinner } from "../../components/Busy";
+import { PlayerAvatarView } from "../../components/PlayerAvatar";
 import {
   RadarCanvas,
   renderRadarCanvas,
+  renderSwingCanvas,
   selectRatingProfile,
   type RadarCanvasHandle,
 } from "../../components/RadarCanvas";
@@ -42,9 +44,17 @@ import type {
   PlayerMedia,
   RadarResponse,
   RatingVersion,
+  ShowcaseLayoutDraft,
+  ShowcaseSlide,
   StudioKind,
   StudioSeed,
 } from "../../types";
+import {
+  draftColors as colors,
+  makeInitialDraft,
+  stripLegacyDraftFields,
+} from "./draftMutations";
+import { appendOverlayEntry } from "./draftMutations";
 
 interface Props {
   seed: StudioSeed | null;
@@ -54,16 +64,6 @@ interface Props {
   onShowMethodology: () => void;
 }
 type SaveState = "idle" | "saving" | "saved" | "error";
-const colors = [
-  "#22d3ee",
-  "#f59e0b",
-  "#a78bfa",
-  "#34d399",
-  "#fb7185",
-  "#60a5fa",
-  "#facc15",
-  "#f472b6",
-];
 
 export function StudioView({
   seed,
@@ -142,7 +142,8 @@ function useDraft<T>(kind: StudioKind, initial: T) {
     bridge
       .loadDraft(kind)
       .then((draft) => {
-        if (draft) setValue(JSON.parse(draft.payload) as T);
+        if (draft)
+          setValue(stripLegacyDraftFields(JSON.parse(draft.payload)) as T);
       })
       .finally(() => {
         loaded.current = true;
@@ -191,8 +192,7 @@ function RadarEditor({
       color: "#22d3ee",
       width: config.export_width,
       height: config.export_height,
-      ratingVersion: "rating_2" as RatingVersion,
-      showRatingWatermark: true,
+      fontScale: 1,
     },
   );
   const canvas = useRef<RadarCanvasHandle>(null);
@@ -220,7 +220,6 @@ function RadarEditor({
   }
   return (
     <div className="editor-layout">
-      {(draft.ratingVersion ?? "rating_2") === "rating_3" && <RatingReplicaNotice onShow={onShowMethodology} />}
       <aside className="card editor-queue">
         <div className="section-heading">
           <div>
@@ -230,9 +229,7 @@ function RadarEditor({
         </div>
         {draft.radar ? (
           <div className="material-card">
-            <span className="avatar">
-              {draft.radar.player.name.slice(0, 1)}
-            </span>
+            <PlayerAvatarView name={draft.radar.player.name} steamId={draft.radar.player.steam_id}/>
             <div>
               <strong>{draft.radar.player.name}</strong>
               <p>{draft.radar.match_count} 场比赛</p>
@@ -264,8 +261,9 @@ function RadarEditor({
             radarScaleMode={config.showcase.radar_scale_mode}
             radarScale={config.showcase.radar_scale}
             radarAxisScale={config.showcase.radar_axis_scale}
-            ratingVersion={draft.ratingVersion ?? "rating_2"}
-            showRatingWatermark={draft.showRatingWatermark ?? true}
+            ratingVersion={config.rating_version}
+            showRatingWatermark={config.show_rating_watermark}
+            fontScale={draft.fontScale}
           />
         </div>
       </main>
@@ -293,14 +291,19 @@ function RadarEditor({
             onChange={(e) => setDraft({ ...draft, color: e.target.value })}
           />
         </Field>
-        <RatingControls
-          version={draft.ratingVersion ?? "rating_2"}
-          watermark={draft.showRatingWatermark ?? true}
-          available={draft.radar ? rating3Available(draft.radar) : false}
-          reason={draft.radar?.rating_3_status?.reason}
-          onVersion={(ratingVersion) => setDraft({ ...draft, ratingVersion })}
-          onWatermark={(showRatingWatermark) => setDraft({ ...draft, showRatingWatermark })}
-          onShowMethodology={onShowMethodology}
+        {config.rating_version === "rating_3" && !(draft.radar && rating3Available(draft.radar)) && (
+          <div className="notice warning compact">
+            <AlertTriangle size={16} />
+            {draft.radar?.rating_3_status?.reason ?? "此素材缺少 Rating 3.0 增强事件数据，将以 Rating 2.0 数值渲染。"}
+          </div>
+        )}
+        <Range
+          label="文字大小"
+          min={0.7}
+          max={1.5}
+          step={0.05}
+          value={draft.fontScale ?? 1}
+          onChange={(fontScale) => setDraft({ ...draft, fontScale })}
         />
         <SizePreset
           value={{ w: draft.width, h: draft.height }}
@@ -338,8 +341,7 @@ function OverlayEditor({
       subtitle: "队列平均（含隐藏玩家）",
       width: config.export_width,
       height: config.export_height,
-      ratingVersion: "rating_2" as RatingVersion,
-      showRatingWatermark: true,
+      fontScale: 1,
     },
   );
   const canvas = useRef<RadarCanvasHandle>(null);
@@ -379,7 +381,6 @@ function OverlayEditor({
   }
   return (
     <div className="editor-layout">
-      {(draft.ratingVersion ?? "rating_2") === "rating_3" && <RatingReplicaNotice onShow={onShowMethodology} />}
       <aside className="card editor-queue">
         <div className="section-heading">
           <div>
@@ -427,6 +428,7 @@ function OverlayEditor({
             >
               <GripVertical size={15} />
               <span className="color-dot" style={{ background: entry.color }} />
+              <PlayerAvatarView name={entry.radar.player.name} steamId={entry.radar.player.steam_id}/>
               <strong>{entry.radar.player.name}</strong>
               <button
                 className="icon-button"
@@ -480,8 +482,9 @@ function OverlayEditor({
             radarScaleMode={config.showcase.radar_scale_mode}
             radarScale={config.showcase.radar_scale}
             radarAxisScale={config.showcase.radar_axis_scale}
-            ratingVersion={draft.ratingVersion ?? "rating_2"}
-            showRatingWatermark={draft.showRatingWatermark ?? true}
+            ratingVersion={config.rating_version}
+            showRatingWatermark={config.show_rating_watermark}
+            fontScale={draft.fontScale}
           />
         </div>
       </main>
@@ -520,14 +523,21 @@ function OverlayEditor({
             />
           </Field>
         ))}
-        <RatingControls
-          version={draft.ratingVersion ?? "rating_2"}
-          watermark={draft.showRatingWatermark ?? true}
-          available={draft.entries.length > 0 && draft.entries.every((entry) => rating3Available(entry.radar))}
-          reason="队列中的部分比赛缺少源 DEM 或增强事件数据。"
-          onVersion={(ratingVersion) => setDraft({ ...draft, ratingVersion })}
-          onWatermark={(showRatingWatermark) => setDraft({ ...draft, showRatingWatermark })}
-          onShowMethodology={onShowMethodology}
+        {config.rating_version === "rating_3" && (
+          draft.entries.length === 0 || !draft.entries.every((entry) => rating3Available(entry.radar)) ? (
+            <div className="notice warning compact">
+              <AlertTriangle size={16} />
+              队列中的部分比赛缺少源 DEM 或增强事件数据，将以 Rating 2.0 数值渲染。
+            </div>
+          ) : null
+        )}
+        <Range
+          label="文字大小"
+          min={0.7}
+          max={1.5}
+          step={0.05}
+          value={draft.fontScale ?? 1}
+          onChange={(fontScale) => setDraft({ ...draft, fontScale })}
         />
         <SizePreset
           value={{ w: draft.width, h: draft.height }}
@@ -546,31 +556,7 @@ function OverlayEditor({
   );
 }
 
-export interface ShowcaseSlide {
-  id: string;
-  radar: RadarResponse;
-  title: string;
-  subtitle: string;
-  duration: number;
-  color: string;
-  imageUrl?: string;
-  backgroundUrl?: string;
-}
-interface ShowcaseLayoutDraft {
-  radarX: number;
-  radarY: number;
-  radarScale: number;
-  nameX: number;
-  nameY: number;
-  nameScale: number;
-  imageX: number;
-  imageY: number;
-  imageScale: number;
-  opacity: number;
-  layers: string[];
-  nameAlign: "left" | "center" | "right";
-  imageFit: "contain" | "cover";
-}
+export type { ShowcaseSlide } from "../../types";
 function ShowcaseEditor({
   seed,
   config,
@@ -594,11 +580,22 @@ function ShowcaseEditor({
         nameX: 73,
         nameY: 20,
         nameScale: 100,
+        titleX: 73,
+        titleY: 20,
+        titleScale: 100,
+        subtitleX: 73,
+        subtitleY: 24.5,
+        subtitleScale: 100,
         imageX: 73,
         imageY: 57,
         imageScale: 100,
+        swingX: 34,
+        swingY: 78,
+        swingScale: 100,
         opacity: 100,
-        layers: ["radar", "image", "name"],
+        layers: config.rating_version === "rating_3"
+          ? ["radar", "swing", "image", "name"]
+          : ["radar", "image", "name"],
         nameAlign: "center" as "left" | "center" | "right",
         imageFit: "contain" as "contain" | "cover",
       },
@@ -606,8 +603,7 @@ function ShowcaseEditor({
       width: config.export_width,
       height: config.export_height,
       audioOffsetMs: config.showcase.audio_offset_ms,
-      ratingVersion: "rating_2" as RatingVersion,
-      showRatingWatermark: true,
+      fontScale: 1,
     },
   );
   const [exportState, setExportState] = useState<{
@@ -623,6 +619,10 @@ function ShowcaseEditor({
   const [previewTime, setPreviewTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const playbackFrame = useRef(0);
+  const playbackStopAt = useRef<number | null>(null);
+  const previewTimeRef = useRef(0);
+  const lastSyncedActive = useRef(false);
+  const lastPreviewUiUpdate = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const timelineTrackRef = useRef<HTMLDivElement>(null);
   const slideResize = useRef<{
@@ -670,9 +670,7 @@ function ShowcaseEditor({
       ),
     [timelineSpanMs, timelineTickStepMs],
   );
-  const renderTime = playing
-    ? previewTime
-    : settledShowcasePreviewTime(draft.slides, previewTime);
+  const renderTime = previewTime;
   useEffect(() => {
     if (previewTime > totalDuration) setPreviewTime(totalDuration);
   }, [previewTime, totalDuration]);
@@ -689,16 +687,27 @@ function ShowcaseEditor({
     if (!playing || !totalDuration) return;
     let previous = performance.now();
     const tick = (now: number) => {
-      const delta = Math.min(50, now - previous);
+      const delta = Math.min(1000, now - previous);
       previous = now;
-      setPreviewTime((current) => {
-        const next = current + delta;
-        if (next >= totalDuration) {
-          setPlaying(false);
-          return totalDuration;
-        }
-        return next;
-      });
+      previewTimeRef.current = Math.min(previewTimeRef.current + delta, totalDuration);
+      const next = previewTimeRef.current;
+      // Throttle React state updates to ~30fps for UI elements
+      if (now - lastPreviewUiUpdate.current > 33) {
+        lastPreviewUiUpdate.current = now;
+        setPreviewTime(next);
+      }
+      if (playbackStopAt.current != null && next >= playbackStopAt.current) {
+        const stop = playbackStopAt.current;
+        playbackStopAt.current = null;
+        setPlaying(false);
+        setPreviewTime(stop);
+        return;
+      }
+      if (next >= totalDuration) {
+        setPlaying(false);
+        setPreviewTime(totalDuration);
+        return;
+      }
       playbackFrame.current = requestAnimationFrame(tick);
     };
     playbackFrame.current = requestAnimationFrame(tick);
@@ -764,18 +773,41 @@ function ShowcaseEditor({
         }),
       );
   }, [seed, draftReady]);
+  useEffect(() => {
+    if (!draftReady || !draft.slides.length) return;
+    if (lastSyncedActive.current) return;
+    lastSyncedActive.current = true;
+    const index = Math.max(
+      0,
+      Math.min(draft.slides.length - 1, draft.active),
+    );
+    seekPreview(showcaseSlideStart(draft.slides, index));
+  }, [draftReady, draft.slides]);
+  useEffect(() => {
+    if (!playing || !draft.slides.length) return;
+    setDraft((current) =>
+      current.active === previewIndex
+        ? current
+        : { ...current, active: previewIndex },
+    );
+  }, [playing, previewIndex]);
   const slide = draft.slides[draft.active];
   function seekPreview(time: number) {
-    setPreviewTime(Math.max(0, Math.min(time, totalDuration)));
+    const clamped = Math.max(0, Math.min(time, totalDuration));
+    previewTimeRef.current = clamped;
+    setPreviewTime(clamped);
   }
   function selectSlide(index: number) {
-    setPlaying(false);
     setDraft({ ...draft, active: index });
-    seekPreview(showcaseSlideStart(draft.slides, index));
+    const start = showcaseSlideStart(draft.slides, index);
+    seekPreview(start);
+    if (index > 0) { playbackStopAt.current = Math.min(totalDuration, start + SHOWCASE_TRANSITION_MS); setPlaying(true); }
+    else { playbackStopAt.current = null; setPlaying(false); }
   }
   function togglePlayback() {
     if (!draft.slides.length) return;
     if (!playing && previewTime >= totalDuration) setPreviewTime(0);
+    playbackStopAt.current = null;
     setPlaying((current) => !current);
   }
   function patchSlide(patch: Partial<ShowcaseSlide>) {
@@ -783,6 +815,15 @@ function ShowcaseEditor({
       ...draft,
       slides: draft.slides.map((item, index) =>
         index === draft.active ? { ...item, ...patch } : item,
+      ),
+    });
+  }
+  function patchSlideAt(index: number, patch: Partial<ShowcaseSlide>) {
+    if (index < 0 || index >= draft.slides.length) return;
+    setDraft({
+      ...draft,
+      slides: draft.slides.map((item, candidateIndex) =>
+        candidateIndex === index ? { ...item, ...patch } : item,
       ),
     });
   }
@@ -880,6 +921,7 @@ function ShowcaseEditor({
         progress: 0,
         message: "正在预加载人物资源…",
       });
+      await ensureShowcaseFonts();
       await Promise.all(
         draft.slides.flatMap((item) =>
           [item.imageUrl, item.backgroundUrl]
@@ -916,8 +958,9 @@ function ShowcaseEditor({
           config.showcase.radar_scale_mode,
           config.showcase.radar_scale,
           config.showcase.radar_axis_scale,
-          draft.ratingVersion ?? "rating_2",
-          draft.showRatingWatermark ?? true,
+          config.rating_version,
+          config.show_rating_watermark,
+          draft.fontScale ?? 1,
         );
         if (!batch.length) batchStart = frame;
         batch.push(frameCanvas.toDataURL("image/png"));
@@ -959,9 +1002,10 @@ function ShowcaseEditor({
       await bridge.cancelVideoExport(exportID.current).catch(() => undefined);
   }
   async function chooseMedia(kind: "image" | "background") {
-    if (!slide) return;
-    const media = await bridge.choosePlayerMedia(slide.id, kind);
-    patchSlide({
+    const target = draft.slides[previewIndex];
+    if (!target) return;
+    const media = await bridge.choosePlayerMedia(target.id, kind);
+    patchSlideAt(previewIndex, {
       imageUrl: media.image_url,
       backgroundUrl: media.background_url,
     });
@@ -972,11 +1016,15 @@ function ShowcaseEditor({
     setMusicDurationMs(music.duration_ms);
   }
   async function clearMusic() {
-    audioRef.current?.pause();
-    await bridge.clearShowcaseMusic();
-    setMusicURL("");
-    setMusicDurationMs(0);
-    setDraft((current) => ({ ...current, audioOffsetMs: 0 }));
+    try {
+      audioRef.current?.pause();
+      await bridge.clearShowcaseMusic();
+      setMusicURL("");
+      setMusicDurationMs(0);
+      setDraft((current) => ({ ...current, audioOffsetMs: 0 }));
+    } catch (e) {
+      console.error("Failed to clear music:", e);
+    }
   }
   function startAudioDrag(event: ReactPointerEvent<HTMLDivElement>) {
     const track = event.currentTarget.parentElement;
@@ -1009,7 +1057,6 @@ function ShowcaseEditor({
   }
   return (
     <div className="editor-layout showcase-editor">
-      {(draft.ratingVersion ?? "rating_2") === "rating_3" && <RatingReplicaNotice onShow={onShowMethodology} />}
       <aside className="card editor-queue">
         <div className="section-heading">
           <div>
@@ -1063,6 +1110,7 @@ function ShowcaseEditor({
                 }}
               >
                 <span>{String(index + 1).padStart(2, "0")}</span>
+                <PlayerAvatarView name={item.radar.player.name} steamId={item.radar.player.steam_id}/>
                 <span className="slide-copy">
                   <strong>{item.title}</strong>
                   <small>{item.duration.toFixed(1)}s</small>
@@ -1093,14 +1141,20 @@ function ShowcaseEditor({
           slides={draft.slides}
           layout={draft.layout}
           timeMs={renderTime}
+          playing={playing}
+          previewTimeRef={previewTimeRef}
           showBestMarkers={config.showcase.show_best_markers}
           radarScaleMode={config.showcase.radar_scale_mode}
           radarScale={config.showcase.radar_scale}
           radarAxisScale={config.showcase.radar_axis_scale}
-          ratingVersion={draft.ratingVersion ?? "rating_2"}
-          showRatingWatermark={draft.showRatingWatermark ?? true}
+          ratingVersion={config.rating_version}
+          showRatingWatermark={config.show_rating_watermark}
+          fontScale={draft.fontScale ?? 1}
           onLayoutChange={(layout) =>
             setDraft((current) => ({ ...current, layout }))
+          }
+          onImageTransformChange={(imageTransform) =>
+            patchSlideAt(previewIndex, { imageTransform })
           }
         />
         <div className="timeline">
@@ -1364,19 +1418,48 @@ function ShowcaseEditor({
                 />
               </Field>
             </div>
-            <RatingControls
-              version={draft.ratingVersion ?? "rating_2"}
-              watermark={draft.showRatingWatermark ?? true}
-              available={rating3Available(slide.radar)}
-              reason="当前玩家页缺少源 DEM 或增强事件数据。"
-              onVersion={(ratingVersion) => setDraft({ ...draft, ratingVersion })}
-              onWatermark={(showRatingWatermark) => setDraft({ ...draft, showRatingWatermark })}
-              onShowMethodology={onShowMethodology}
-            />
+            {config.rating_version === "rating_3" && !rating3Available(slide.radar) && (
+              <div className="notice warning compact">
+                <AlertTriangle size={16} />
+                当前玩家页缺少源 DEM 或增强事件数据，将以 Rating 2.0 数值渲染。
+              </div>
+            )}
             <div className="media-actions">
-              <button onClick={() => chooseMedia("image")}>人物图</button>
-              <button onClick={() => chooseMedia("background")}>背景图</button>
+              {slide.imageUrl ? (
+                <button
+                  className="danger-action"
+                  onClick={() =>
+                    patchSlideAt(previewIndex, { imageUrl: undefined })
+                  }
+                >
+                  清除人物图
+                </button>
+              ) : (
+                <button onClick={() => chooseMedia("image")}>人物图</button>
+              )}
+              {slide.backgroundUrl ? (
+                <button
+                  className="danger-action"
+                  onClick={() =>
+                    patchSlideAt(previewIndex, { backgroundUrl: undefined })
+                  }
+                >
+                  清除背景图
+                </button>
+              ) : (
+                <button onClick={() => chooseMedia("background")}>
+                  背景图
+                </button>
+              )}
             </div>
+            <Range
+              label="文字大小"
+              min={0.7}
+              max={1.5}
+              step={0.05}
+              value={draft.fontScale ?? 1}
+              onChange={(fontScale) => setDraft({ ...draft, fontScale })}
+            />
             <div className="two-fields">
               <Field label="文字对齐">
                 <select
@@ -1443,6 +1526,7 @@ function ShowcaseEditor({
                     (
                       {
                         radar: "雷达",
+                        swing: "Round Swing",
                         image: "人物图",
                         name: "姓名",
                       } as Record<string, string>
@@ -1515,32 +1599,48 @@ function ShowcasePreview({
   slides,
   layout,
   timeMs,
+  playing,
   showBestMarkers,
   radarScaleMode,
   radarScale,
   radarAxisScale,
   ratingVersion,
   showRatingWatermark,
+  fontScale,
   onLayoutChange,
+  onImageTransformChange,
+  previewTimeRef,
 }: {
   slides: ShowcaseSlide[];
   layout: ShowcaseLayoutDraft;
   timeMs: number;
+  playing: boolean;
   showBestMarkers: boolean;
   radarScaleMode: string;
   radarScale: number;
   radarAxisScale?: Record<string, number>;
   ratingVersion: RatingVersion;
   showRatingWatermark: boolean;
+  fontScale: number;
   onLayoutChange: (layout: ShowcaseLayoutDraft) => void;
+  onImageTransformChange: (transform: { x: number; y: number; scale: number }) => void;
+  previewTimeRef?: React.MutableRefObject<number>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [assetRevision, setAssetRevision] = useState(0);
-  const [dragTarget, setDragTarget] = useState<
-    "radar" | "name" | "image" | null
-  >(null);
-  const dragOffset = useRef({ x: 0, y: 0 });
+  const [fontState, setFontState] = useState<"loading" | "ready" | "error">("loading");
+  type Target = "radar" | "title" | "subtitle" | "image" | "swing";
+  const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
+  const selectionRef = useRef<Target | null>(null);
+  const setSelectedTargetRef = (target: Target | null) => {
+    selectionRef.current = target;
+    setSelectedTarget(target);
+  };
+  const drag = useRef<{ pointerId: number; target: Target; mode: "move" | "resize"; offsetX: number; offsetY: number; initialScale: number; initialDistance: number; initialTransform: ShowcaseTransform; pendingTransform: ShowcaseTransform | null } | null>(null);
+  const dragNeedsRedraw = useRef(false);
+  const drawRef = useRef<((forceTimeMs?: number) => void) | null>(null);
+  const sizeRef = useRef({ width: 0, height: 0 });
   useEffect(() => {
     const urls = slides.flatMap(
       (item) => [item.imageUrl, item.backgroundUrl].filter(Boolean) as string[],
@@ -1554,21 +1654,42 @@ function ShowcasePreview({
       active = false;
     };
   }, [slides]);
+  useEffect(() => { ensureShowcaseFonts().then(() => { setFontState("ready"); setAssetRevision((value) => value + 1); }).catch(() => setFontState("error")); }, []);
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
-    if (!container || !canvas) return;
-    const draw = () => {
-      const rect = container.getBoundingClientRect();
+    if (!container || !canvas || fontState !== "ready") return;
+    let rafId = 0;
+    const draw = (forceTimeMs?: number) => {
+      const drawTimeMs = forceTimeMs ?? (previewTimeRef ? previewTimeRef.current : timeMs);
       const density = Math.min(2, window.devicePixelRatio || 1);
-      const width = Math.max(640, Math.floor(rect.width * density));
+      const width = Math.max(640, Math.floor(sizeRef.current.width * density));
       const height = Math.floor((width * 9) / 16);
+      const effectiveLayout = { ...layout };
+      const dragState = drag.current;
+      if (dragState?.pendingTransform) {
+        const target = dragState.target;
+        if (target === "radar") { effectiveLayout.radarX = dragState.pendingTransform.x; effectiveLayout.radarY = dragState.pendingTransform.y; effectiveLayout.radarScale = dragState.pendingTransform.scale; }
+        else if (target === "swing") { effectiveLayout.swingX = dragState.pendingTransform.x; effectiveLayout.swingY = dragState.pendingTransform.y; effectiveLayout.swingScale = dragState.pendingTransform.scale; }
+        else if (target === "title") { effectiveLayout.titleX = dragState.pendingTransform.x; effectiveLayout.titleY = dragState.pendingTransform.y; effectiveLayout.titleScale = dragState.pendingTransform.scale; }
+        else if (target === "subtitle") { effectiveLayout.subtitleX = dragState.pendingTransform.x; effectiveLayout.subtitleY = dragState.pendingTransform.y; effectiveLayout.subtitleScale = dragState.pendingTransform.scale; }
+      }
+      const segmentIndex = showcaseSegment(slides, drawTimeMs).index;
+      const dragTransform =
+        dragState?.pendingTransform && dragState.target === "image"
+          ? dragState.pendingTransform
+          : null;
+      const effectiveSlides = dragTransform
+        ? slides.map((item, index) =>
+            index === segmentIndex ? { ...item, imageTransform: dragTransform } : item,
+          )
+        : slides;
       renderShowcaseFrame(
-        slides,
-        layout,
+        effectiveSlides,
+        effectiveLayout,
         width,
         height,
-        timeMs,
+        drawTimeMs,
         canvas,
         showBestMarkers,
         radarScaleMode,
@@ -1576,13 +1697,37 @@ function ShowcasePreview({
         radarAxisScale,
         ratingVersion,
         showRatingWatermark,
+        fontScale,
       );
+      const currentSelection = selectionRef.current;
+      if (currentSelection) {
+        const t = dragState?.pendingTransform && dragState.target === currentSelection ? dragState.pendingTransform : currentTransform(currentSelection);
+        drawShowcaseSelection(canvas, currentSelection, t, selectionBounds(currentSelection, t, canvas.width, canvas.height, effectiveLayout));
+      }
+      if (dragNeedsRedraw.current) {
+        dragNeedsRedraw.current = false;
+        rafId = requestAnimationFrame(() => draw());
+      }
+      // Continuous RAF loop only while playing (or while dragging, handled above).
+      if (playing) {
+        rafId = requestAnimationFrame(() => draw());
+      }
     };
+    drawRef.current = draw;
+    const measure = () => {
+      const rect = container.getBoundingClientRect();
+      sizeRef.current = { width: rect.width, height: rect.height };
+    };
+    measure();
     draw();
-    const observer = new ResizeObserver(draw);
+    const observer = new ResizeObserver(() => { measure(); draw(); });
     observer.observe(container);
-    return () => observer.disconnect();
-  }, [slides, layout, timeMs, assetRevision, showBestMarkers, radarScaleMode, radarScale, radarAxisScale, ratingVersion, showRatingWatermark]);
+    return () => { drawRef.current = null; observer.disconnect(); if (rafId) cancelAnimationFrame(rafId); };
+  }, [slides, layout, assetRevision, fontState, showBestMarkers, radarScaleMode, radarScale, radarAxisScale, ratingVersion, showRatingWatermark, fontScale, playing, previewTimeRef]);
+  useEffect(() => {
+    if (playing) return;
+    drawRef.current?.();
+  }, [timeMs, playing]);
   function pointerPercent(event: ReactPointerEvent<HTMLCanvasElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     return {
@@ -1590,75 +1735,145 @@ function ShowcasePreview({
       y: ((event.clientY - rect.top) / Math.max(1, rect.height)) * 100,
     };
   }
-  function hitTarget(point: { x: number; y: number }) {
-    const slide = slides[showcaseSegment(slides, timeMs).index];
-    const contains = (target: "radar" | "name" | "image") => {
-      if (target === "image" && !slide?.imageUrl) return false;
-      const x = layout[`${target}X`];
-      const y = layout[`${target}Y`];
-      const scale = layout[`${target}Scale`] / 100;
-      const radii = {
-        radar: { x: 23 * scale, y: 39 * scale },
-        name: { x: 18 * scale, y: 9 * scale },
-        image: { x: 14 * scale, y: 25 * scale },
-      }[target];
-      return (
-        ((point.x - x) / radii.x) ** 2 + ((point.y - y) / radii.y) ** 2 <= 1
-      );
-    };
-    return (
-      (layout.layers.find((layer) =>
-        contains(layer as "radar" | "name" | "image"),
-      ) as "radar" | "name" | "image" | undefined) ?? null
-    );
+  function currentSlide() { return slides[showcaseSegment(slides, timeMs).index]; }
+  function currentTransform(target: Target) {
+    if (target === "radar") return { x: layout.radarX, y: layout.radarY, scale: layout.radarScale };
+    if (target === "swing") {
+      const cw = canvasRef.current?.width ?? 1;
+      const ch = canvasRef.current?.height ?? 1;
+      const radarSize = (Math.min(cw * 0.48, ch * 0.78) * layout.radarScale) / 100;
+      return { x: layout.swingX ?? layout.radarX, y: layout.swingY ?? (layout.radarY + radarSize / 2 / ch * 100 + 8), scale: layout.swingScale ?? 100 };
+    }
+    if (target === "title") return { x: layout.titleX ?? layout.nameX, y: layout.titleY ?? layout.nameY, scale: layout.titleScale ?? layout.nameScale };
+    if (target === "subtitle") return { x: layout.subtitleX ?? layout.nameX, y: layout.subtitleY ?? layout.nameY + 4.5, scale: layout.subtitleScale ?? layout.nameScale };
+    return currentSlide()?.imageTransform ?? { x: layout.imageX, y: layout.imageY, scale: layout.imageScale };
+  }
+  function patchTransform(target: Target, transform: { x: number; y: number; scale: number }) {
+    if (target === "image") return onImageTransformChange(transform);
+    const keys = target === "radar" ? ["radarX","radarY","radarScale"] : target === "swing" ? ["swingX","swingY","swingScale"] : target === "title" ? ["titleX","titleY","titleScale"] : ["subtitleX","subtitleY","subtitleScale"];
+    onLayoutChange({ ...layout, [keys[0]]: transform.x, [keys[1]]: transform.y, [keys[2]]: transform.scale });
+  }
+  function hitTarget(point: { x: number; y: number }): Target | null {
+    const available: Target[] = [];
+    const baseLayers = layout.layers ?? ["radar","image","name"];
+    const layers = ratingVersion === "rating_3" && !baseLayers.includes("swing")
+      ? [...baseLayers, "swing"]
+      : baseLayers;
+    for (const layer of layers) layer === "name" ? available.push("subtitle","title") : available.push(layer as Target);
+    const canvasWidth = canvasRef.current?.width ?? 1;
+    const canvasHeight = canvasRef.current?.height ?? 1;
+    const swingIndex = available.indexOf("swing");
+    const swingSlide = currentSlide();
+    if (
+      swingIndex >= 0 &&
+      swingSlide &&
+      selectRatingProfile(swingSlide.radar, ratingVersion).radar.round_swing !=
+        null
+    ) {
+      const swing = currentTransform("swing");
+      const bounds = selectionBounds("swing", swing, canvasWidth, canvasHeight, layout);
+      if (point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom) return "swing";
+    }
+    return available.find((target) => {
+      if (target === "swing") return false;
+      if (target === "image" && !currentSlide()?.imageUrl) return false;
+      const bounds = selectionBounds(target, currentTransform(target), canvasWidth, canvasHeight, layout);
+      return point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
+    }) ?? null;
   }
   return (
     <div
-      className={`showcase-canvas ${dragTarget ? "dragging-element" : ""}`}
+      className={`showcase-canvas ${drag.current ? "dragging-element" : ""}`}
       ref={containerRef}
     >
       <canvas
         ref={canvasRef}
         role="img"
-        aria-label="轮播实时预览；可直接拖动雷达、文字和人物图"
+        tabIndex={0}
+        aria-label="轮播实时预览；可选择、移动并等比缩放雷达、Round Swing、主标题、副标题和人物图"
         onPointerDown={(event) => {
           const point = pointerPercent(event);
+          if (selectedTarget) {
+            const transform = currentTransform(selectedTarget);
+            const bounds = selectionBounds(selectedTarget, transform, event.currentTarget.width, event.currentTarget.height, layout);
+            if (nearestCornerDistance(point, bounds) <= 3) {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              drag.current = { pointerId: event.pointerId, target: selectedTarget, mode: "resize", offsetX: 0, offsetY: 0, initialScale: transform.scale, initialDistance: Math.max(1, Math.hypot(point.x-transform.x, point.y-transform.y)), initialTransform: transform, pendingTransform: null };
+              return;
+            }
+          }
           const target = hitTarget(point);
+          setSelectedTargetRef(target);
+          drawRef.current?.();
           if (!target) return;
           event.currentTarget.setPointerCapture(event.pointerId);
-          setDragTarget(target);
-          dragOffset.current = {
-            x: layout[`${target}X`] - point.x,
-            y: layout[`${target}Y`] - point.y,
-          };
+          const transform = currentTransform(target);
+          drag.current = { pointerId: event.pointerId, target, mode: "move", offsetX: transform.x-point.x, offsetY: transform.y-point.y, initialScale: transform.scale, initialDistance: 1, initialTransform: transform, pendingTransform: null };
         }}
         onPointerMove={(event) => {
-          if (
-            !dragTarget ||
-            !event.currentTarget.hasPointerCapture(event.pointerId)
-          )
-            return;
+          const state = drag.current;
+          if (!state || state.pointerId !== event.pointerId || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
           const point = pointerPercent(event);
           const rounded = (value: number) => Math.round(value * 10) / 10;
-          onLayoutChange({
-            ...layout,
-            [`${dragTarget}X`]: rounded(
-              Math.max(0, Math.min(100, point.x + dragOffset.current.x)),
-            ),
-            [`${dragTarget}Y`]: rounded(
-              Math.max(0, Math.min(100, point.y + dragOffset.current.y)),
-            ),
-          });
+          const current = state.initialTransform;
+          let next: ShowcaseTransform;
+          if (state.mode === "resize") {
+            const distance = Math.hypot(point.x-current.x, point.y-current.y);
+            next = clampShowcaseTransform(state.target, { ...current, scale: rounded(Math.max(35, Math.min(220, state.initialScale*distance/state.initialDistance))) });
+          } else {
+            next = clampShowcaseTransform(state.target, { ...current, x: rounded(point.x+state.offsetX), y: rounded(point.y+state.offsetY) });
+          }
+          state.pendingTransform = next;
+          dragNeedsRedraw.current = true;
+          drawRef.current?.();
         }}
         onPointerUp={(event) => {
           if (event.currentTarget.hasPointerCapture(event.pointerId))
             event.currentTarget.releasePointerCapture(event.pointerId);
-          setDragTarget(null);
+          const state = drag.current;
+          if (state?.pendingTransform) {
+            patchTransform(state.target, state.pendingTransform);
+          }
+          drag.current = null;
+          dragNeedsRedraw.current = false;
+          drawRef.current?.();
         }}
-        onPointerCancel={() => setDragTarget(null)}
+        onPointerCancel={() => { drag.current = null; dragNeedsRedraw.current = false; drawRef.current?.(); }}
+        onKeyDown={(event) => {
+          if (!selectedTarget) return;
+          const delta = event.shiftKey ? 2 : .5;
+          const transform = currentTransform(selectedTarget);
+          if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(event.key)) { event.preventDefault(); patchTransform(selectedTarget, clampShowcaseTransform(selectedTarget, { ...transform, x: transform.x+(event.key === "ArrowRight" ? delta : event.key === "ArrowLeft" ? -delta : 0), y: transform.y+(event.key === "ArrowDown" ? delta : event.key === "ArrowUp" ? -delta : 0) })); }
+          if (event.key === "+" || event.key === "=") { event.preventDefault(); patchTransform(selectedTarget, clampShowcaseTransform(selectedTarget, { ...transform, scale: Math.min(220, transform.scale+5) })); }
+          if (event.key === "-") { event.preventDefault(); patchTransform(selectedTarget, clampShowcaseTransform(selectedTarget, { ...transform, scale: Math.max(35, transform.scale-5) })); }
+        }}
       />
+      {fontState !== "ready" && <span className={`showcase-font-status ${fontState}`} role="status">{fontState === "loading" ? "正在载入离线字体…" : "离线字体加载失败，已暂停预览与导出"}</span>}
     </div>
   );
+}
+
+export type ShowcaseTarget = "radar" | "title" | "subtitle" | "image" | "swing";
+type ShowcaseTransform = { x: number; y: number; scale: number };
+function targetBaseBounds(target: ShowcaseTarget) { return target === "radar" ? { x: 18, y: 32 } : target === "image" ? { x: 10, y: 18 } : target === "title" ? { x: 15, y: 5 } : target === "subtitle" ? { x: 13, y: 3.5 } : { x: 17, y: 17 }; }
+function targetBounds(target: ShowcaseTarget, transform: ShowcaseTransform) {
+  const base = targetBaseBounds(target);
+  const halfX = base.x*transform.scale/100, halfY = base.y*transform.scale/100;
+  return { left: transform.x-halfX, right: transform.x+halfX, top: transform.y-halfY, bottom: transform.y+halfY };
+}
+function selectionBounds(target: ShowcaseTarget, transform: ShowcaseTransform, width: number, height: number, layout: ShowcaseLayoutDraft) {
+  if (target !== "swing") return targetBounds(target, transform);
+  const radarSize = (Math.min(width * 0.48, height * 0.78) * layout.radarScale) / 100;
+  const swingScale = transform.scale / 100;
+  const swingCanvasH = radarSize * 0.19 * swingScale;
+  const trackCenterY = transform.y + ((0.28 * swingCanvasH) / height) * 100;
+  const trackHalfX = Math.max(14, ((0.27 * radarSize * swingScale) / width) * 100);
+  return { left: transform.x-trackHalfX, right: transform.x+trackHalfX, top: trackCenterY-6, bottom: trackCenterY+6 };
+}
+function nearestCornerDistance(point: {x:number;y:number}, bounds: ReturnType<typeof targetBounds>) { return Math.min(...[[bounds.left,bounds.top],[bounds.right,bounds.top],[bounds.left,bounds.bottom],[bounds.right,bounds.bottom]].map(([x,y]) => Math.hypot(point.x-x,point.y-y))); }
+export function clampShowcaseTransform(target: ShowcaseTarget, transform: ShowcaseTransform) { const base=targetBaseBounds(target); const scale=Math.max(35,Math.min(220,50/base.x*100,50/base.y*100,transform.scale)); const bounds = targetBounds(target, { ...transform, x:0, y:0, scale }); const halfX=(bounds.right-bounds.left)/2, halfY=(bounds.bottom-bounds.top)/2; return { ...transform, scale, x:Math.max(halfX,Math.min(100-halfX,transform.x)), y:Math.max(halfY,Math.min(100-halfY,transform.y)) }; }
+function drawShowcaseSelection(canvas: HTMLCanvasElement, target: ShowcaseTarget, transform: ShowcaseTransform, bounds: ReturnType<typeof targetBounds>) {
+  const ctx=canvas.getContext("2d"); if(!ctx)return; const sx=canvas.width/100, sy=canvas.height/100; ctx.save(); ctx.strokeStyle="#f3f5f7"; ctx.lineWidth=Math.max(1,canvas.width/1200); ctx.setLineDash([6,5]); ctx.strokeRect(bounds.left*sx,bounds.top*sy,(bounds.right-bounds.left)*sx,(bounds.bottom-bounds.top)*sy); ctx.setLineDash([]); ctx.fillStyle="#f3f5f7"; ctx.strokeStyle="#111418"; const size=Math.max(5,canvas.width/240); for(const [x,y] of [[bounds.left,bounds.top],[bounds.right,bounds.top],[bounds.left,bounds.bottom],[bounds.right,bounds.bottom]]) { ctx.fillRect(x*sx-size/2,y*sy-size/2,size,size); ctx.strokeRect(x*sx-size/2,y*sy-size/2,size,size); } ctx.font=`600 ${Math.max(9,canvas.width/140)}px "Noto Sans SC",system-ui`; ctx.fillStyle="#f3f5f7"; ctx.fillText(({radar:"雷达",title:"主标题",subtitle:"副标题",image:"人物图",swing:"Round Swing"} as Record<string,string>)[target],bounds.left*sx,bounds.top*sy-size); ctx.restore(); void transform;
 }
 
 export function showcaseDuration(slides: ShowcaseSlide[]) {
@@ -1751,17 +1966,30 @@ export function interpolateRadarResponse(
     if (to == null) return from;
     return from + (to - from) * amount;
   });
+  const prevSwing = previous.radar.round_swing;
+  const nextSwing = next.radar.round_swing;
+  const roundSwing = prevSwing != null && nextSwing != null
+    ? prevSwing + (nextSwing - prevSwing) * amount
+    : (nextSwing ?? prevSwing);
   return {
     ...next,
     radar: {
       ...next.radar,
       values,
+      round_swing: roundSwing,
       metrics: next.radar.metrics.map((metric, index) => ({
         ...metric,
         value: values[index] ?? null,
       })),
     },
   };
+}
+export function stripRatingProfiles(
+  response: RadarResponse,
+): RadarResponse {
+  const { profiles, ...rest } = response;
+  void profiles;
+  return rest;
 }
 export function bestMetricIndexesForSlide(
   slides: ShowcaseSlide[],
@@ -1828,22 +2056,7 @@ export function averageRadar(entries: OverlayEntry[]): RadarResponse | null {
     rating_3_status: { available: Boolean(rating3), reason: rating3 ? undefined : "队列中的部分数据不支持 Rating 3.0。" },
   };
 }
-export function appendOverlayEntry(
-  entries: OverlayEntry[],
-  radar: RadarResponse,
-): OverlayEntry[] {
-  if (entries.some((entry) => entry.id === radar.player.steam_id))
-    return entries;
-  return [
-    ...entries,
-    {
-      id: radar.player.steam_id,
-      radar,
-      visible: true,
-      color: colors[entries.length % colors.length],
-    },
-  ];
-}
+export { appendOverlayEntry } from "./draftMutations";
 export function showcasePaintOrder(layers: string[]) {
   return [...layers].reverse();
 }
@@ -1906,6 +2119,28 @@ function easeInOut(progress: number) {
 function wrap(value: number, size: number) {
   return ((value % size) + size) % size;
 }
+const particleSpriteCache = new Map<string, HTMLCanvasElement>();
+function particleGlowSprite(color: string, bloom: number): HTMLCanvasElement {
+  const key = `${color}|${bloom}`;
+  const cached = particleSpriteCache.get(key);
+  if (cached) return cached;
+  const size = Math.ceil(bloom * 2) + 2;
+  const sprite = document.createElement("canvas");
+  sprite.width = size;
+  sprite.height = size;
+  const ctx = sprite.getContext("2d")!;
+  const cx = size / 2;
+  const glow = ctx.createRadialGradient(cx, cx, 0, cx, cx, bloom);
+  glow.addColorStop(0, colorAlpha(color, 1));
+  glow.addColorStop(0.3, colorAlpha(color, 0.35));
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cx, bloom, 0, Math.PI * 2);
+  ctx.fill();
+  particleSpriteCache.set(key, sprite);
+  return sprite;
+}
 function drawShowcaseParticles(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -1931,14 +2166,10 @@ function drawShowcaseParticles(
     const alpha =
       Math.max(0.05, Math.min(1, distance)) * (nebula ? 0.22 : 0.65);
     const bloom = size * (nebula ? 15 : 10);
-    const glow = ctx.createRadialGradient(x, y, 0, x, y, bloom);
-    glow.addColorStop(0, colorAlpha(color, alpha));
-    glow.addColorStop(0.3, colorAlpha(color, alpha * 0.35));
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(x, y, bloom, 0, Math.PI * 2);
-    ctx.fill();
+    const sprite = particleGlowSprite(color, bloom);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(sprite, x - sprite.width / 2, y - sprite.height / 2);
+    ctx.globalAlpha = 1;
     if (!nebula) {
       ctx.fillStyle = `rgba(255,255,255,${Math.min(0.75, alpha)})`;
       ctx.beginPath();
@@ -1961,6 +2192,7 @@ function renderShowcaseFrame(
   radarAxisScale?: Record<string, number>,
   ratingVersion: RatingVersion = "rating_2",
   showRatingWatermark = true,
+  fontScale = 1,
 ) {
   const ratedSlides = slides.map((item) => ({ ...item, radar: selectRatingProfile(item.radar, ratingVersion) }));
   const segment = showcaseSegment(ratedSlides, timeMs);
@@ -2002,37 +2234,29 @@ function renderShowcaseFrame(
     ctx.fillRect(0, 0, width, height);
   }
   drawShowcaseParticles(ctx, width, height, accent, timeMs);
-  ctx.save();
-  ctx.strokeStyle = colorAlpha(accent, 0.12);
-  ctx.lineWidth = Math.max(1, width / 1600);
-  for (let x = -width * 0.08; x < width; x += width / 16) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x + width * 0.08, height);
-    ctx.stroke();
-  }
-  ctx.restore();
   if (!slide) {
     ctx.fillStyle = "#88a0ad";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `700 ${Math.max(18, width / 48)}px Inter,system-ui`;
+    ctx.font = `700 ${Math.max(18, width / 48)}px "Noto Sans SC",system-ui`;
     ctx.fillText("从资料库添加玩家后预览轮播", width / 2, height / 2);
     return canvas;
   }
-  const renderedRadar = previousSlide
+  const renderedRadar = (previousSlide
     ? interpolateRadarResponse(previousSlide.radar, slide.radar, morphProgress)
-    : slide.radar;
+    : slide.radar);
+  const profilelessRadar = stripRatingProfiles(renderedRadar);
   const radarSize =
     (Math.min(width * 0.48, height * 0.78) * layout.radarScale) / 100;
   const radar = document.createElement("canvas");
   renderRadarCanvas(
     radar,
     {
-      radar: renderedRadar,
+      radar: profilelessRadar,
       color: accent,
       compact: true,
       transparent: true,
+      hideSwing: true,
       bestMetricIndexes:
         morphProgress > 0.65
           ? bestMetricIndexesForSlide(ratedSlides, segment.index)
@@ -2043,10 +2267,22 @@ function renderShowcaseFrame(
       radarAxisScale,
       ratingVersion,
       showRatingWatermark: false,
+      fontScale,
     },
     Math.round(radarSize),
     Math.round(radarSize),
   );
+  // Render swing separately
+  const swingSize = Math.round(radarSize);
+  const swingCanvas = ratingVersion === "rating_3" && renderedRadar.radar.round_swing != null
+    ? renderSwingCanvas(
+        { id: slide.id, radar: renderedRadar, color: accent },
+        swingSize,
+        Math.round(radarSize * 0.19),
+        Math.round(radarSize * 0.27),
+        fontScale,
+      )
+    : null;
   const drawRadar = () => {
     ctx.save();
     ctx.globalAlpha = layout.opacity / 100;
@@ -2057,20 +2293,33 @@ function renderShowcaseFrame(
     ctx.drawImage(radar, -radarSize / 2, -radarSize / 2, radarSize, radarSize);
     ctx.restore();
   };
+  const drawSwing = () => {
+    if (!swingCanvas) return;
+    ctx.save();
+    ctx.globalAlpha = layout.opacity / 100;
+    const swingX = width * (layout.swingX ?? layout.radarX) / 100;
+    const swingY = height * (layout.swingY ?? (layout.radarY + radarSize / 2 / height * 100 + 8)) / 100;
+    const scale = (layout.swingScale ?? 100) / 100;
+    const sw = swingCanvas.width * scale;
+    const sh = swingCanvas.height * scale;
+    ctx.drawImage(swingCanvas, swingX - sw / 2, swingY - sh / 2, sw, sh);
+    ctx.restore();
+  };
   const drawImageFor = (item: ShowcaseSlide, opacity: number) => {
     if (!item.imageUrl || opacity <= 0) return;
     const image = showcaseImageCache.get(item.imageUrl);
     if (!image) return;
-    const boxW = (width * 0.28 * layout.imageScale) / 100;
-    const boxH = (height * 0.5 * layout.imageScale) / 100;
+    const transform = item.imageTransform ?? { x: layout.imageX, y: layout.imageY, scale: layout.imageScale };
+    const boxW = (width * 0.28 * transform.scale) / 100;
+    const boxH = (height * 0.5 * transform.scale) / 100;
     const scale =
       (layout.imageFit ?? "contain") === "cover"
         ? Math.max(boxW / image.naturalWidth, boxH / image.naturalHeight)
         : Math.min(boxW / image.naturalWidth, boxH / image.naturalHeight);
     const w = image.naturalWidth * scale;
     const h = image.naturalHeight * scale;
-    const x = (width * layout.imageX) / 100;
-    const y = (height * layout.imageY) / 100;
+    const x = (width * transform.x) / 100;
+    const y = (height * transform.y) / 100;
     ctx.save();
     ctx.globalAlpha = opacity;
     if ((layout.imageFit ?? "contain") === "cover") {
@@ -2086,40 +2335,54 @@ function renderShowcaseFrame(
       drawImageFor(previousSlide, 1 - morphProgress);
     drawImageFor(slide, previousSlide ? morphProgress : 1);
   };
-  const drawNameFor = (item: ShowcaseSlide, opacity: number) => {
+  const drawTitleFor = (item: ShowcaseSlide, opacity: number) => {
     ctx.save();
     ctx.globalAlpha = opacity;
-    ctx.translate((width * layout.nameX) / 100, (height * layout.nameY) / 100);
-    ctx.scale(layout.nameScale / 100, layout.nameScale / 100);
+    ctx.translate((width * (layout.titleX ?? layout.nameX)) / 100, (height * (layout.titleY ?? layout.nameY)) / 100);
+    ctx.scale((layout.titleScale ?? layout.nameScale) / 100, (layout.titleScale ?? layout.nameScale) / 100);
     ctx.textAlign = showcaseCanvasTextAlign(layout.nameAlign);
     ctx.fillStyle = "#f4f6f8";
-    ctx.font = `800 ${Math.max(28, width * 0.035)}px Inter,system-ui`;
+    ctx.font = `800 ${Math.max(28, width * 0.035)}px "Noto Sans SC",system-ui`;
     ctx.fillText(item.title, 0, 0);
+    ctx.restore();
+  };
+  const drawSubtitleFor = (item: ShowcaseSlide, opacity: number) => {
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate((width * (layout.subtitleX ?? layout.nameX)) / 100, (height * (layout.subtitleY ?? layout.nameY + 4.5)) / 100);
+    ctx.scale((layout.subtitleScale ?? layout.nameScale) / 100, (layout.subtitleScale ?? layout.nameScale) / 100);
+    ctx.textAlign = showcaseCanvasTextAlign(layout.nameAlign);
     ctx.fillStyle = "#aab3bc";
-    ctx.font = `500 ${Math.max(13, width * 0.013)}px Inter,system-ui`;
-    ctx.fillText(item.subtitle, 0, height * 0.045);
+    ctx.font = `500 ${Math.max(13, width * 0.013)}px "Noto Sans SC",system-ui`;
+    ctx.fillText(item.subtitle, 0, 0);
     ctx.restore();
   };
   const drawName = () => {
-    if (previousSlide && morphProgress < 1)
-      drawNameFor(previousSlide, 1 - morphProgress);
-    drawNameFor(slide, previousSlide ? morphProgress : 1);
+    if (previousSlide && morphProgress < 1) { drawTitleFor(previousSlide, 1 - morphProgress); drawSubtitleFor(previousSlide, 1 - morphProgress); }
+    drawTitleFor(slide, previousSlide ? morphProgress : 1);
+    drawSubtitleFor(slide, previousSlide ? morphProgress : 1);
   };
   const renderers: Record<string, () => void> = {
     radar: drawRadar,
+    swing: drawSwing,
     image: drawImage,
     name: drawName,
   };
-  for (const layer of showcasePaintOrder(
-    layout.layers ?? ["radar", "image", "name"],
-  ))
+  const defaultLayers = ratingVersion === "rating_3" ? ["radar", "swing", "image", "name"] : ["radar", "image", "name"];
+  const effectiveLayers =
+    ratingVersion === "rating_3"
+      ? (layout.layers ?? defaultLayers).includes("swing")
+        ? layout.layers!
+        : [...(layout.layers ?? defaultLayers), "swing"]
+      : (layout.layers ?? defaultLayers).filter((layer) => layer !== "swing");
+  for (const layer of showcasePaintOrder(effectiveLayers))
     renderers[layer]?.();
   if (ratingVersion === "rating_3" && showRatingWatermark) {
     ctx.save();
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "rgba(245,158,11,.78)";
-    ctx.font = `650 ${Math.max(11, width * 0.009)}px Inter,system-ui`;
+    ctx.font = `650 ${Math.max(11, width * 0.009)}px "Noto Sans SC",system-ui`;
     ctx.fillText(
       "Rating 3.0 本地近似 · 非 HLTV 官方",
       width * 0.022,
@@ -2129,38 +2392,10 @@ function renderShowcaseFrame(
   }
   return canvas;
 }
-let ratingNoticeDismissedForSession = false;
-
-function RatingReplicaNotice({ onShow }: { onShow: () => void }) {
-  const [dismissed, setDismissed] = useState(ratingNoticeDismissedForSession);
-  if (dismissed) return null;
-  return <div className="rating-replica-notice" role="status">
-    <AlertTriangle size={18} />
-    <p><strong>Rating 3.0 本地近似</strong>Rating 3.0 与 Round Swing 为基于 DEM 事件的本地近似复刻，并非 HLTV 官方公式；不同比赛平台和算法版本可能产生差异。</p>
-    <button className="quiet" onClick={onShow}>查看计算方式</button>
-    <button className="icon-button" aria-label="关闭 Rating 3.0 提示" onClick={() => { ratingNoticeDismissedForSession = true; setDismissed(true); }}><X size={16} /></button>
-  </div>;
-}
-
-function RatingControls({ version, watermark, available, reason, onVersion, onWatermark, onShowMethodology }: {
-  version: RatingVersion;
-  watermark: boolean;
-  available: boolean;
-  reason?: string;
-  onVersion: (version: RatingVersion) => void;
-  onWatermark: (value: boolean) => void;
-  onShowMethodology: () => void;
-}) {
-  return <section className="rating-controls" aria-label="评分版本">
-    <span>评分公式</span>
-    <div className="rating-segmented">
-      <button className={version === "rating_2" ? "active" : ""} aria-pressed={version === "rating_2"} onClick={() => onVersion("rating_2")}>Rating 2.0</button>
-      <button className={version === "rating_3" ? "active" : ""} aria-pressed={version === "rating_3"} disabled={!available} title={!available ? reason : undefined} onClick={() => onVersion("rating_3")}>Rating 3.0</button>
-    </div>
-    {!available && <small>{reason ?? "此素材缺少 Rating 3.0 增强事件数据。"}</small>}
-    {version === "rating_3" && <label className="rating-watermark-toggle"><input type="checkbox" checked={watermark} onChange={(event) => onWatermark(event.target.checked)} />显示 3.0 近似水印</label>}
-    <button className="formula-link" onClick={onShowMethodology}>查看公式与枪械权重</button>
-  </section>;
+async function ensureShowcaseFonts() {
+  if (!document.fonts) throw new Error("当前运行环境不支持字体加载检测。");
+  const [radarFont, bestFont] = await Promise.all([document.fonts.load('700 32px "Noto Sans SC"'), document.fonts.load('400 24px "Bangers"')]);
+  if (!radarFont.length || !bestFont.length || !document.fonts.check('700 32px "Noto Sans SC"') || !document.fonts.check('400 24px "Bangers"')) throw new Error("离线字体加载失败，已取消渲染以避免系统字体回退。");
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -2177,12 +2412,14 @@ function Range({
   onChange,
   min = 0,
   max = 100,
+  step = 1,
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
   min?: number;
   max?: number;
+  step?: number;
 }) {
   return (
     <label className="range-field">
@@ -2194,6 +2431,7 @@ function Range({
         type="range"
         min={min}
         max={max}
+        step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
       />

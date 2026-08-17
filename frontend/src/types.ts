@@ -1,4 +1,4 @@
-export type Page = "library" | "import" | "studio" | "settings";
+export type Page = "library" | "import" | "analysis" | "studio" | "settings";
 export type StudioKind = "radar" | "overlay" | "showcase";
 export type RatingVersion = "rating_2" | "rating_3";
 
@@ -24,6 +24,8 @@ export interface AppConfig {
   import_sources?: ImportSource[];
   video_fps: 30 | 60;
   reduce_motion: boolean;
+  rating_version: RatingVersion;
+  show_rating_watermark: boolean;
   showcase: {
     ffmpeg_path?: string;
     default_duration_ms: number;
@@ -86,6 +88,44 @@ export interface MatchRecord {
   impact: number | null;
   rating: number | null;
 }
+export interface DemoRecord {
+  demo_record_id: string;
+  file_name: string;
+  match_time: string;
+  match_time_source: "demo" | "file_mtime" | "legacy_import_time" | string;
+  imported_at: string;
+  map_name: string;
+  source_path?: string;
+  note?: string;
+  analysis_version?: string;
+  participants?: Player[];
+  rounds: number;
+  score_a: number;
+  score_b: number;
+  analysis_ready: boolean;
+}
+export interface DemoTeam {
+  id: "A" | "B";
+  name: string;
+  score: number;
+  players: Player[];
+}
+export interface SwingEventContribution { kind: string; value: number }
+export interface SwingEvent {
+  id: string; round_number: number; tick: number; type: string; label: string;
+  actor?: string; target?: string; weapon?: string; contribution: number;
+  breakdown?: SwingEventContribution[];
+}
+export interface PlayerRoundMetric {
+  round_number: number; won: boolean; score_a: number; score_b: number;
+  kills: number; deaths: number; assists: number; damage: number; kast: boolean;
+  cumulative_rating?: number; round_swing: number; events: SwingEvent[];
+}
+export interface DemoPlayerAnalysis { player: Player; team_id: "A" | "B"; rounds: PlayerRoundMetric[] }
+export interface DemoAnalysis {
+  demo_id: string; version: string; map_name: string; rounds: number;
+  teams: DemoTeam[]; players: DemoPlayerAnalysis[]; generated_at: string;
+}
 export interface ImportItem {
   path: string;
   file_name: string;
@@ -138,6 +178,50 @@ export interface PlayerMedia {
   background_url?: string;
 }
 
+export interface ShowcaseSlide {
+  id: string;
+  radar: RadarResponse;
+  title: string;
+  subtitle: string;
+  duration: number;
+  color: string;
+  imageUrl?: string;
+  backgroundUrl?: string;
+  imageTransform?: { x: number; y: number; scale: number };
+}
+
+export interface ShowcaseLayoutDraft {
+  radarX: number;
+  radarY: number;
+  radarScale: number;
+  nameX: number;
+  nameY: number;
+  nameScale: number;
+  titleX: number;
+  titleY: number;
+  titleScale: number;
+  subtitleX: number;
+  subtitleY: number;
+  subtitleScale: number;
+  imageX: number;
+  imageY: number;
+  imageScale: number;
+  swingX: number;
+  swingY: number;
+  swingScale: number;
+  opacity: number;
+  layers: string[];
+  nameAlign: "left" | "center" | "right";
+  imageFit: "contain" | "cover";
+}
+
+export interface PlayerAvatar {
+  steam_id: string;
+  data_url?: string;
+  status: "ready" | "fallback" | string;
+  updated_at?: string;
+}
+
 export interface ShowcaseMusicInfo {
   url: string;
   duration_ms: number;
@@ -174,6 +258,8 @@ export const defaultConfig: AppConfig = {
   database_path: "",
   video_fps: 60,
   reduce_motion: false,
+  rating_version: "rating_2",
+  show_rating_watermark: true,
   showcase: {
     default_duration_ms: 4000,
     show_best_markers: true,

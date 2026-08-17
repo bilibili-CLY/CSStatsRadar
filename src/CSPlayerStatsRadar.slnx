@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="Radar.App/Radar.App.csproj" />
+  <Project Path="Radar.Api/Radar.Api.csproj" />
+  <Project Path="Radar.Application/Radar.Application.csproj" />
+  <Project Path="Radar.Domain/Radar.Domain.csproj" />
+  <Project Path="Radar.Infrastructure/Radar.Infrastructure.csproj" />
+  <Project Path="Radar.Parser/Radar.Parser.csproj" />
+  <Project Path="Radar.Tests/Radar.Tests.csproj" />
+  <Project Path="Radar.Tools.Compare/Radar.Tools.Compare.csproj" />
+</Solution>

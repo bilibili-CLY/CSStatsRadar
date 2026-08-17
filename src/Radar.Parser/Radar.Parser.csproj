@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DemoFile.Game.Cs" Version="0.43.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Radar.Domain\Radar.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

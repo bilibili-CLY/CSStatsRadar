@@ -6,11 +6,11 @@ import {
   Search,
   Star,
   StarOff,
-  Tags,
   Video,
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { BusyMessage, Spinner } from "../../components/Busy";
+import { PlayerAvatarView } from "../../components/PlayerAvatar";
 import type {
   MatchRecord,
   SavedPlayer,
@@ -34,11 +34,7 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
   const [recentN, setRecentN] = useState(5);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [mapFilter, setMapFilter] = useState("all");
-  const [tagFilter, setTagFilter] = useState("");
   const [error, setError] = useState("");
-  const [metadataOpen, setMetadataOpen] = useState(false);
-  const [metadataTime, setMetadataTime] = useState("");
-  const [metadataTags, setMetadataTags] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const visiblePlayers = useMemo(
     () =>
@@ -59,8 +55,8 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
     [matches],
   );
   const filtered = useMemo(
-    () => filterMatches(matches, mapFilter, tagFilter),
-    [matches, mapFilter, tagFilter],
+    () => filterMatches(matches, mapFilter, ""),
+    [matches, mapFilter],
   );
   const activeIds =
     mode === "recent" ? recentMatchIDs(filtered, recentN) : Array.from(chosen);
@@ -99,26 +95,6 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
       await refresh();
       if (selected?.steam_id === player.steam_id)
         setSelected({ ...player, followed: !player.followed });
-    } finally {
-      setBusyAction("");
-    }
-  }
-  async function saveMetadata() {
-    if (!selected || !chosen.size) return;
-    try {
-      setBusyAction("metadata");
-      setError("");
-      const time = metadataTime ? new Date(metadataTime).toISOString() : "";
-      const tags = metadataTags
-        .split(/[,，]/)
-        .map((value) => value.trim())
-        .filter(Boolean);
-      for (const id of chosen) await bridge.updateMatch(id, time, tags);
-      setMatches(await bridge.getMatches(selected.steam_id));
-      setMetadataTags("");
-      setMetadataOpen(false);
-    } catch (value) {
-      setError(value instanceof Error ? value.message : String(value));
     } finally {
       setBusyAction("");
     }
@@ -188,9 +164,7 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
                 className={`player-item ${selected?.steam_id === player.steam_id ? "active" : ""}`}
                 onClick={() => setSelected(player)}
               >
-                <span className="avatar">
-                  {player.name.slice(0, 1).toUpperCase()}
-                </span>
+                <PlayerAvatarView name={player.name} steamId={player.steam_id}/>
                 <span>
                   <strong>{player.name}</strong>
                   <small>
@@ -211,9 +185,7 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
             <>
               <div className="player-detail-head">
                 <div>
-                  <span className="avatar large">
-                    {selected.name.slice(0, 1)}
-                  </span>
+                  <PlayerAvatarView name={selected.name} steamId={selected.steam_id} large/>
                   <div>
                     <h2>{selected.name}</h2>
                     <p>{selected.steam_id}</p>
@@ -281,15 +253,6 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
                     <option key={map}>{map}</option>
                   ))}
                 </select>
-                <div className="search-box compact">
-                  <Tags size={16} />
-                  <input
-                    aria-label="筛选标签"
-                    value={tagFilter}
-                    onChange={(event) => setTagFilter(event.target.value)}
-                    placeholder="筛选标签"
-                  />
-                </div>
               </div>
               {error && (
                 <div className="notice danger" role="alert">
@@ -304,14 +267,13 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
                       <th>比赛时间</th>
                       <th>地图</th>
                       <th>数据</th>
-                      <th>标签</th>
                       <th>来源</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={6} className="table-loading-cell">
+                        <td colSpan={5} className="table-loading-cell">
                           <BusyMessage>正在读取比赛记录…</BusyMessage>
                         </td>
                       </tr>
@@ -369,13 +331,6 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
                               </span>
                               <small>ADR {number(match.adr)}</small>
                             </td>
-                            <td>
-                              <div className="tag-list">
-                                {match.tags?.map((tag) => (
-                                  <span key={tag}>{tag}</span>
-                                )) || "—"}
-                              </div>
-                            </td>
                             <td title={match.source_path}>{match.file_name}</td>
                           </tr>
                         );
@@ -384,37 +339,6 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
                   </tbody>
                 </table>
               </div>
-              {metadataOpen && (
-                <div className="metadata-editor">
-                  <label className="field">
-                    <span>比赛时间（留空则不修改）</span>
-                    <input
-                      type="datetime-local"
-                      value={metadataTime}
-                      onChange={(e) => setMetadataTime(e.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>标签（逗号分隔，将替换所选比赛标签）</span>
-                    <input
-                      value={metadataTags}
-                      onChange={(e) => setMetadataTags(e.target.value)}
-                      placeholder="赛事 A，半决赛"
-                    />
-                  </label>
-                  <button onClick={() => setMetadataOpen(false)}>取消</button>
-                  <button
-                    className="primary"
-                    disabled={busyAction === "metadata"}
-                    onClick={saveMetadata}
-                  >
-                    {busyAction === "metadata" && <Spinner />}
-                    {busyAction === "metadata"
-                      ? "正在应用"
-                      : `应用到 ${chosen.size} 场`}
-                  </button>
-                </div>
-              )}
               <div className="selection-bar">
                 <div>
                   <strong>已选 {activeIds.length} 场</strong>
@@ -426,13 +350,6 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
                 </div>
                 {mode === "custom" && (
                   <>
-                    <button
-                      onClick={() => setMetadataOpen(true)}
-                      disabled={!chosen.size}
-                    >
-                      <Tags size={17} />
-                      时间与标签
-                    </button>
                     <button
                       className="danger-action"
                       onClick={deleteSelectedMatches}

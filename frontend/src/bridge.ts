@@ -2,10 +2,13 @@ import type {
   AppConfig,
   BootstrapState,
   EditorDraft,
+  DemoAnalysis,
+  DemoRecord,
   ImportSource,
   ImportSummary,
   MatchRecord,
   Player,
+  PlayerAvatar,
   PlayerMedia,
   RadarResponse,
   RatingMethodology,
@@ -23,9 +26,6 @@ declare global {
         name: string,
         callback: (payload: unknown) => void,
       ) => () => void;
-      WindowFullscreen?: () => void;
-      WindowUnfullscreen?: () => void;
-      WindowIsFullscreen?: () => Promise<boolean>;
     };
     __studioBridge?: Record<string, Method>;
   }
@@ -50,13 +50,19 @@ export const bridge = {
   cancelImport: (jobId: string) => call<void>("CancelImport", jobId),
   followAndBackfill: (jobId: string, path: string, players: Player[]) =>
     call<ImportSummary>("FollowAndBackfill", jobId, path, players),
+  listDemos: async () => (await call<DemoRecord[] | null>("ListDemos")) ?? [],
+  updateDemoNote: (demoId: string, note: string) => call<void>("UpdateDemoNote", demoId, note),
+  deleteDemos: (demoIds: string[]) => call<void>("DeleteDemos", demoIds),
+  getDemoAnalysis: (demoId: string) => call<DemoAnalysis>("GetDemoAnalysis", demoId),
+  reparseDemoAnalysis: (demoId: string) => call<DemoAnalysis>("ReparseDemoAnalysis", demoId),
+  chooseReplacementDemo: (demoId: string) => call<DemoAnalysis>("ChooseReplacementDemo", demoId),
+  getPlayerAvatars: (steamIds: string[]) => call<PlayerAvatar[]>("GetPlayerAvatars", steamIds),
+  followDemoPlayers: (demoId: string, steamIds: string[]) => call<void>("FollowDemoPlayers", demoId, steamIds),
   listPlayers: () => call<SavedPlayer[]>("ListPlayers"),
   getMatches: (steamId: string) =>
     call<MatchRecord[]>("GetPlayerMatches", steamId),
   setFollowed: (player: Player, followed: boolean) =>
     call<void>("SetPlayerFollowed", player, followed),
-  updateMatch: (id: string, time: string, tags: string[]) =>
-    call<void>("UpdateMatchMetadata", id, time, tags),
   deletePlayerData: (steamId: string) =>
     call<void>("DeletePlayerData", steamId),
   deletePlayerMatches: (steamId: string, ids: string[]) =>
@@ -81,6 +87,8 @@ export const bridge = {
     radarScaleMode: string,
     radarScale: number,
     radarAxisScale: Record<string, number>,
+    ratingVersion: string,
+    showRatingWatermark: boolean,
   ) =>
     call<AppConfig>(
       "SavePreferences",
@@ -94,6 +102,8 @@ export const bridge = {
       radarScaleMode,
       radarScale,
       radarAxisScale,
+      ratingVersion,
+      showRatingWatermark,
     ),
   chooseFFmpeg: () => call<string>("ChooseFFmpeg"),
   exportPNG: (dataURL: string, name: string) =>
@@ -131,13 +141,6 @@ export const bridge = {
     call<void>("AppendVideoFrames", id, start, frames),
   finishVideoExport: (id: string) => call<string>("FinishVideoExport", id),
   cancelVideoExport: (id: string) => call<void>("CancelVideoExport", id),
-  async toggleFullscreen() {
-    const isFullscreen = await (window.runtime?.WindowIsFullscreen?.() ??
-      false);
-    if (isFullscreen) window.runtime?.WindowUnfullscreen?.();
-    else window.runtime?.WindowFullscreen?.();
-    return !isFullscreen;
-  },
   onImportProgress(callback: (summary: ImportSummary) => void) {
     return (
       window.runtime?.EventsOn?.("import:progress", (payload) =>

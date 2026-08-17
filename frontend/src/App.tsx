@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Database,
+  ChartNoAxesCombined,
   DownloadCloud,
   FolderInput,
   Library,
-  Maximize2,
-  Minimize2,
   Settings,
   Sparkles,
 } from "lucide-react";
 import { bridge } from "./bridge";
 import { ImportView } from "./features/import/ImportView";
+import { AnalysisView } from "./features/analysis/AnalysisView";
 import { RatingMethodologyDialog } from "./components/RatingMethodologyDialog";
 import { LibraryView } from "./features/library/LibraryView";
 import { SettingsView } from "./features/settings/SettingsView";
@@ -18,6 +18,7 @@ import { StudioView } from "./features/studio/StudioView";
 import type {
   AppConfig,
   BootstrapState,
+  DemoRecord,
   ImportSource,
   Page,
   SavedPlayer,
@@ -25,18 +26,34 @@ import type {
   StudioSeed,
 } from "./types";
 import { defaultConfig } from "./types";
+import {
+  makeInitialDraft,
+  mergeOverlaySeed,
+  mergeRadarSeed,
+  mergeShowcaseSeed,
+  stripLegacyDraftFields,
+} from "./features/studio/draftMutations";
+
+const toastLabels: Record<StudioKind, string> = {
+  radar: "已保存到雷达制作",
+  overlay: "已加入叠图队列",
+  showcase: "已加入轮播",
+};
 
 export default function App() {
   const [page, setPage] = useState<Page>("library");
   const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null);
   const [players, setPlayers] = useState<SavedPlayer[]>([]);
   const [sources, setSources] = useState<ImportSource[]>([]);
+  const [demos, setDemos] = useState<DemoRecord[]>([]);
+  const [analysisDemoId, setAnalysisDemoId] = useState("");
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [seed, setSeed] = useState<StudioSeed | null>(null);
   const [studioKind, setStudioKind] = useState<StudioKind>("radar");
   const [error, setError] = useState("");
-  const [fullscreen, setFullscreen] = useState(false);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef<number | null>(null);
   const refreshPlayers = useCallback(async () => {
     const values = await bridge.listPlayers();
     setPlayers(values);
@@ -49,16 +66,32 @@ export default function App() {
         setPlayers(value.players ?? []);
         setSources(value.config.import_sources ?? []);
         setConfig(value.config);
+        bridge.listDemos().then((values) => setDemos(values ?? [])).catch(() => setDemos([]));
         if (!value.players?.length) setPage("import");
       })
       .catch((value) =>
         setError(value instanceof Error ? value.message : String(value)),
       );
   }, []);
-  function create(kind: StudioKind, nextSeed: StudioSeed) {
-    setSeed(nextSeed);
-    setStudioKind(kind);
-    setPage("studio");
+  function showToast(message: string) {
+    setToast(message);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 2400);
+  }
+  async function create(kind: StudioKind, nextSeed: StudioSeed) {
+    try {
+      const existing = await bridge.loadDraft(kind);
+      let draft = existing
+        ? stripLegacyDraftFields(JSON.parse(existing.payload))
+        : makeInitialDraft(kind, config);
+      if (kind === "radar") draft = mergeRadarSeed(draft, nextSeed);
+      else if (kind === "overlay") draft = mergeOverlaySeed(draft, nextSeed);
+      else draft = await mergeShowcaseSeed(draft, nextSeed);
+      await bridge.saveDraft(kind, JSON.stringify(draft));
+      showToast(`${toastLabels[kind]}：${nextSeed.player.name}`);
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+    }
   }
   if (error && !bootstrap)
     return (
@@ -80,6 +113,7 @@ export default function App() {
   const nav = [
     { id: "library" as Page, label: "资料库", icon: Library },
     { id: "import" as Page, label: "导入", icon: FolderInput },
+    { id: "analysis" as Page, label: "比赛分析", icon: ChartNoAxesCombined },
     { id: "studio" as Page, label: "制作", icon: Sparkles },
     { id: "settings" as Page, label: "设置", icon: Settings },
   ];
@@ -111,14 +145,6 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <button
-            className="fullscreen-button"
-            onClick={() => bridge.toggleFullscreen().then(setFullscreen)}
-          >
-            {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-            {fullscreen ? "退出全屏" : "全屏工作"}
-            <kbd>⌃⌘F</kbd>
-          </button>
           <div className="storage-status">
             <Database size={15} />
             <span>
@@ -149,7 +175,13 @@ export default function App() {
               setConfig({ ...config, import_sources: next });
             }}
             onImported={refreshPlayers}
+            demos={demos}
+            onDemosChange={setDemos}
+            onAnalyze={(demoId) => { setAnalysisDemoId(demoId); setPage("analysis"); }}
           />
+        )}{" "}
+        {page === "analysis" && (
+          <AnalysisView demos={demos} initialDemoId={analysisDemoId} onDemosChange={setDemos} />
         )}{" "}
         {page === "studio" && (
           <StudioView
@@ -175,6 +207,11 @@ export default function App() {
         )}
       </main>
       <RatingMethodologyDialog open={methodologyOpen} onClose={() => setMethodologyOpen(false)} />
+      {toast && (
+        <div className="app-toast" role="status">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

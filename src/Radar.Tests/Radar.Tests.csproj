@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Radar.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="TestData/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <ProjectReference Include="..\Radar.Application\Radar.Application.csproj" />
+    <ProjectReference Include="..\Radar.Domain\Radar.Domain.csproj" />
+    <ProjectReference Include="..\Radar.Infrastructure\Radar.Infrastructure.csproj" />
+    <ProjectReference Include="..\Radar.Api\Radar.Api.csproj" />
+  </ItemGroup>
+
+</Project>

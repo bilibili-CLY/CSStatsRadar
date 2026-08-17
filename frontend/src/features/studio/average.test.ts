@@ -8,6 +8,7 @@ import {
   averageRadar,
   bestMetricIndexesForSlide,
   interpolateRadarResponse,
+  clampShowcaseTransform,
   rating3Available,
   resizedShowcaseDuration,
   showcaseCanvasTextAlign,
@@ -159,6 +160,12 @@ describe("showcase timeline", () => {
     expect(resizedShowcaseDuration(4, 100, 500, 5000, "end")).toBe(5);
     expect(resizedShowcaseDuration(4, 100, 500, 5000, "start")).toBe(3);
     expect(resizedShowcaseDuration(1, 1000, 500, 5000, "start")).toBe(0.5);
+  });
+
+  it("keeps transformed showcase elements inside their natural safe bounds", () => {
+    expect(clampShowcaseTransform("radar", { x: 0, y: 0, scale: 100 })).toEqual({ x: 18, y: 32, scale: 100 });
+    expect(clampShowcaseTransform("image", { x: 99, y: 99, scale: 100 })).toEqual({ x: 90, y: 82, scale: 100 });
+    expect(clampShowcaseTransform("radar", { x: 50, y: 50, scale: 220 }).scale).toBeCloseTo(156.25, 1);
   });
 
   it("enables Rating 3.0 whenever the actual profile is present", () => {

@@ -18,6 +18,7 @@ export interface RadarCanvasProps {
   subtitle?: string;
   transparent?: boolean;
   compact?: boolean;
+  hideSwing?: boolean;
   previewWidth?: number;
   previewHeight?: number;
   highlightedOverlayId?: string | null;
@@ -28,6 +29,7 @@ export interface RadarCanvasProps {
   radarAxisScale?: Record<string, number>;
   ratingVersion?: RatingVersion;
   showRatingWatermark?: boolean;
+  fontScale?: number;
 }
 
 interface Point {
@@ -55,25 +57,21 @@ function polygon(ctx: CanvasRenderingContext2D, points: Point[]) {
 }
 
 function geometry(props: RadarCanvasProps, width: number, height: number) {
-  const showSwing = props.ratingVersion === "rating_3";
+  const showSwing = !props.hideSwing && props.ratingVersion === "rating_3";
   return {
     cx: width / 2,
     cy: props.compact
-      ? height * (showSwing ? 0.38 : 0.5)
-      : height * (showSwing ? 0.42 : 0.52),
+      ? height * (showSwing ? 0.42 : 0.5)
+      : height * (showSwing ? 0.45 : 0.52),
     radius:
       Math.min(width, height) *
       (props.compact
         ? showSwing
-          ? 0.18
+          ? 0.19
           : 0.27
-        : props.overlays?.length
-          ? showSwing
-            ? 0.225
-            : 0.25
-          : showSwing
-            ? 0.235
-            : 0.27),
+        : showSwing
+          ? 0.235
+          : 0.27),
   };
 }
 
@@ -92,12 +90,12 @@ function pointAt(
 }
 
 function labelBounds(props: RadarCanvasProps, width: number, height: number): Bounds {
-  const showSwing = props.ratingVersion === "rating_3";
+  const showSwing = !props.hideSwing && props.ratingVersion === "rating_3";
   return {
     left: width * 0.035,
     right: width * 0.965,
     top: height * 0.035,
-    bottom: height * (showSwing ? (props.compact ? 0.76 : 0.78) : 0.95),
+    bottom: height * (showSwing ? (props.compact ? 0.82 : 0.82) : 0.95),
   };
 }
 
@@ -253,7 +251,7 @@ export function renderRadarCanvas(
   if (!props.compact) {
     ctx.fillStyle = "#f4f6f8";
     ctx.textAlign = "left";
-    ctx.font = `700 ${Math.max(22, width * 0.026)}px Inter, system-ui`;
+    ctx.font = `700 ${Math.max(22, width * 0.026)}px "Noto Sans SC", system-ui`;
     ctx.fillText(
       props.title || (datasets[0]?.radar.player.name ?? "选择玩家和比赛"),
       width * 0.035,
@@ -261,14 +259,14 @@ export function renderRadarCanvas(
     );
     if (props.subtitle) {
       ctx.fillStyle = "#9aa3ad";
-      ctx.font = `500 ${Math.max(13, width * 0.012)}px Inter, system-ui`;
+      ctx.font = `500 ${Math.max(13, width * 0.012)}px "Noto Sans SC", system-ui`;
       ctx.fillText(props.subtitle, width * 0.035, height * 0.1);
     }
   }
   if (!datasets.length) {
     ctx.fillStyle = "#727b86";
     ctx.textAlign = "center";
-    ctx.font = `500 ${Math.max(16, width * 0.016)}px Inter, system-ui`;
+    ctx.font = `500 ${Math.max(16, width * 0.016)}px "Noto Sans SC", system-ui`;
     ctx.fillText("从资料库选择素材后开始制作", width / 2, height / 2);
     return;
   }
@@ -299,7 +297,7 @@ export function renderRadarCanvas(
     : undefined;
   const valueDataset =
     highlighted ??
-    datasets.find((dataset) => dataset.id === "average") ??
+    datasets.find((dataset) => dataset.id !== "average") ??
     datasets[0];
 
   datasets.forEach((dataset) => {
@@ -369,14 +367,14 @@ export function renderRadarCanvas(
       0,
       (value ?? 0) / Math.max(Number.EPSILON, valueLimit),
     );
-    const labelSize = Math.max(12, width * (props.compact ? 0.018 : 0.012));
-    const valueSize = Math.max(11, width * (props.compact ? 0.015 : 0.011));
+    const fontScale = props.fontScale ?? 1;
+    const labelSize =
+      Math.max(12, width * (props.compact ? 0.018 : 0.012)) * fontScale;
+    const valueSize =
+      Math.max(11, width * (props.compact ? 0.015 : 0.011)) * fontScale;
     const line = Math.max(14, labelSize * 1.05);
-    const hasBest = Boolean(
-      props.showBestMarkers && props.bestMetricIndexes?.includes(index),
-    );
     const clearance = Math.max(
-      line * (hasBest ? 2.55 : 2.05),
+      line * 2.05,
       width * (props.compact ? 0.055 : 0.038),
     );
     const { labelDistance } = metricDistances(
@@ -394,33 +392,133 @@ export function renderRadarCanvas(
     const text = pointAt(cx, cy, dimensions.length, index, labelDistance);
     ctx.textAlign = "center";
     ctx.fillStyle = "#d7dde3";
-    ctx.font = `700 ${labelSize}px Inter, system-ui`;
+    ctx.font = `700 ${labelSize}px "Noto Sans SC", system-ui`;
     ctx.fillText(label, text.x, text.y - line * 0.48);
     ctx.fillStyle = valueDataset.color;
     ctx.font = `750 ${valueSize}px ui-monospace, SFMono-Regular, monospace`;
     ctx.fillText(formatValue(value, displayType), text.x, text.y + line * 0.65);
-    if (hasBest) {
-      ctx.save();
-      ctx.fillStyle = "#ffd76a";
-      ctx.shadowColor = "#ffd76a";
-      ctx.shadowBlur = Math.max(10, width / 55);
-      ctx.font = `900 ${Math.max(10, valueSize * 0.82)}px Inter, system-ui`;
-      ctx.fillText("BEST", text.x, text.y + line * 1.7);
-      ctx.restore();
-    }
   });
 
-  if (props.overlays?.length && !props.compact) {
-    drawOverlayLegend(ctx, datasets, width, height, props.highlightedOverlayId, props.ratingVersion === "rating_3");
-  } else if (props.ratingVersion === "rating_3") {
-    drawSwingRows(ctx, datasets, width, height, props.compact ?? false);
+  if (props.showBestMarkers && props.bestMetricIndexes?.length) {
+    drawBestMarkers(
+      ctx,
+      props,
+      dimensions,
+      width,
+      height,
+      props.fontScale ?? 1,
+    );
+  }
+
+  if (!props.hideSwing) {
+    if (props.overlays?.length && !props.compact) {
+      drawOverlayLegend(
+        ctx,
+        datasets,
+        width,
+        height,
+        props.highlightedOverlayId,
+        props.ratingVersion === "rating_3",
+        radius,
+        props.fontScale,
+      );
+    } else if (props.ratingVersion === "rating_3") {
+      drawSwingRows(
+        ctx,
+        datasets,
+        width,
+        height,
+        props.compact ?? false,
+        radius,
+        props.fontScale,
+      );
+    }
   }
   if (props.ratingVersion === "rating_3" && props.showRatingWatermark) {
     ctx.textAlign = "left";
     ctx.fillStyle = "rgba(245,158,11,.72)";
-    ctx.font = `650 ${Math.max(10, width * 0.0085)}px Inter, system-ui`;
+    ctx.font = `650 ${Math.max(10, width * 0.0085)}px "Noto Sans SC", system-ui`;
     ctx.fillText("Rating 3.0 本地近似 · 非 HLTV 官方", width * 0.022, height * 0.972);
   }
+}
+
+function drawBestMarkers(
+  ctx: CanvasRenderingContext2D,
+  props: RadarCanvasProps,
+  dimensions: string[],
+  width: number,
+  height: number,
+  fontScale: number,
+) {
+  const best = (props.bestMetricIndexes ?? []).filter(
+    (index) => index >= 0 && index < dimensions.length,
+  );
+  if (!best.length) return;
+  const datasets = datasetsFor(props);
+  const highlighted = props.highlightedOverlayId
+    ? datasets.find((dataset) => dataset.id === props.highlightedOverlayId)
+    : undefined;
+  const valueDataset =
+    highlighted ??
+    datasets.find((dataset) => dataset.id !== "average") ??
+    datasets[0];
+  const count = dimensions.length;
+  const { cx, cy, radius } = geometry(props, width, height);
+  const bounds = labelBounds(props, width, height);
+  const size = Math.max(15, width * 0.022) * fontScale;
+  const half = size / 2;
+  const labelSize =
+    Math.max(12, width * (props.compact ? 0.018 : 0.012)) * fontScale;
+  const line = Math.max(14, labelSize * 1.05);
+  const clearance = Math.max(
+    line * 2.05,
+    width * (props.compact ? 0.055 : 0.038),
+  );
+  const clamp = (point: Point) => ({
+    x: Math.max(bounds.left + half, Math.min(bounds.right - half, point.x)),
+    y: Math.max(bounds.top + half, Math.min(bounds.bottom - half, point.y)),
+  });
+  ctx.save();
+  ctx.fillStyle = "#ffd76a";
+  ctx.shadowColor = "#ffd76a";
+  ctx.shadowBlur = Math.max(10, width / 55);
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.font = `400 ${size}px "Bangers", "Noto Sans SC", system-ui`;
+  best.forEach((index) => {
+    const dimension = dimensions[index] ?? "";
+    const sourceIndex = valueDataset?.radar.radar.dimensions.indexOf(dimension) ?? -1;
+    const value = sourceIndex >= 0 ? valueDataset?.radar.radar.values[sourceIndex] : null;
+    const maximum = sourceIndex >= 0 ? valueDataset?.radar.radar.max_values[sourceIndex] || 1 : 1;
+    const limit =
+      props.radarScaleMode === "axis"
+        ? props.radarAxisScale?.[dimension] ?? maximum
+        : maximum * (props.radarScale ?? 1);
+    const normalized = Math.max(
+      0,
+      (value ?? 0) / Math.max(Number.EPSILON, limit),
+    );
+    const { labelDistance } = metricDistances(
+      props,
+      width,
+      height,
+      cx,
+      cy,
+      radius,
+      count,
+      index,
+      normalized,
+      clearance,
+    );
+    const text = pointAt(cx, cy, count, index, labelDistance);
+    const isBottom = index === Math.floor(count / 2);
+    const point = clamp({
+      x: isBottom ? text.x + Math.max(size * 1.5, line * 2) : text.x,
+      y: isBottom ? text.y + line * 0.65 : text.y + line * 2,
+    });
+    ctx.fillText("BEST", point.x, point.y);
+  });
+  ctx.restore();
 }
 
 function drawOverlayLegend(
@@ -430,14 +528,16 @@ function drawOverlayLegend(
   height: number,
   highlightedId?: string | null,
   showSwing = false,
+  halfWidth?: number,
+  fontScale = 1,
 ) {
   if (showSwing) {
-    drawSwingRows(ctx, datasets, width, height, true);
+    drawSwingRows(ctx, datasets, width, height, true, halfWidth, fontScale);
     return;
   }
   const gap = Math.max(16, width * 0.018);
-  const fontSize = Math.max(11, width * 0.0095);
-  ctx.font = `650 ${fontSize}px Inter, system-ui`;
+  const fontSize = Math.max(11, width * 0.0095) * fontScale;
+  ctx.font = `650 ${fontSize}px "Noto Sans SC", system-ui`;
   const items = datasets.map((dataset) => ({
     ...dataset,
     label: dataset.id === "average" ? "队列平均" : dataset.radar.player.name,
@@ -466,28 +566,63 @@ function drawOverlayLegend(
   });
 }
 
-function drawSwingRows(ctx: CanvasRenderingContext2D, datasets: RadarDataset[], width: number, height: number, compact: boolean) {
+function drawSwingRows(
+  ctx: CanvasRenderingContext2D,
+  datasets: RadarDataset[],
+  width: number,
+  height: number,
+  compact: boolean,
+  halfWidth?: number,
+  fontScale = 1,
+) {
   const rows = datasets.filter((dataset) => dataset.radar.radar.round_swing != null);
   if (!rows.length) return;
-  const rowHeight = Math.max(22, height * (compact ? 0.026 : 0.034));
+  const rowHeight = Math.max(24, height * (compact ? 0.036 : 0.034));
   const totalHeight = rows.length * rowHeight;
-  const startY = height * (compact ? 0.91 : 0.84) - totalHeight / 2;
+  const startY = height * (compact ? 0.78 : 0.84) - totalHeight / 2;
   const centerX = width / 2;
-  const halfWidth = width * (compact ? 0.27 : 0.27);
-  const fontSize = Math.max(11, width * 0.009);
+  const trackHalfWidth = halfWidth ?? width * (compact ? 0.22 : 0.27);
+  const fontSize = Math.max(11, width * 0.0095) * fontScale;
+  const tickSize = Math.max(9, width * 0.007) * fontScale;
+  const barRadius = Math.max(2, rowHeight * 0.06);
   rows.forEach((dataset, index) => {
     const value = dataset.radar.radar.round_swing ?? 0;
-    const normalized = Math.min(1, Math.abs(value) / 10);
+    const normalized = Math.abs(value) / 5;
     const y = startY + index * rowHeight;
-    const color = value > 0 ? "#35d07f" : value < 0 ? "#f05252" : "#8b949e";
-    ctx.fillStyle = "rgba(255,255,255,.08)";
-    ctx.fillRect(centerX - halfWidth, y, halfWidth * 2, Math.max(7, rowHeight * 0.32));
-    ctx.fillStyle = color;
-    const barWidth = halfWidth * normalized;
-    ctx.fillRect(value < 0 ? centerX - barWidth : centerX, y, barWidth, Math.max(7, rowHeight * 0.32));
-    ctx.fillStyle = "rgba(255,255,255,.8)";
-    ctx.fillRect(centerX - 1, y - 3, 2, Math.max(13, rowHeight * 0.5));
-    ctx.font = `700 ${fontSize}px Inter, system-ui`;
+    const isPositive = value > 0;
+    const isNegative = value < 0;
+    const color = isPositive ? "#35d07f" : isNegative ? "#f05252" : "#8b949e";
+    // Background track
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,.06)";
+    ctx.beginPath();
+    ctx.roundRect(centerX - trackHalfWidth, y, trackHalfWidth * 2, Math.max(10, rowHeight * 0.5), barRadius);
+    ctx.fill();
+    // Filled bar with gradient
+    const barWidth = trackHalfWidth * normalized;
+    if (barWidth > 1) {
+      const barX = isNegative ? centerX - barWidth : centerX;
+      const barY = y + 1;
+      const barH = Math.max(8, rowHeight * 0.5) - 2;
+      const grad = ctx.createLinearGradient(barX, barY, barX + (isNegative ? -barWidth : barWidth), barY);
+      grad.addColorStop(0, color + "88");
+      grad.addColorStop(1, color);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.roundRect(barX, barY, Math.max(barRadius, barWidth), barH, Math.min(barRadius, barWidth / 2));
+      ctx.fill();
+    }
+    // Center line
+    ctx.fillStyle = "rgba(255,255,255,.6)";
+    ctx.fillRect(centerX - 1, y - 2, 2, Math.max(12, rowHeight * 0.55));
+    // Scale ticks at the outer edges (±5%)
+    ctx.font = `650 ${tickSize}px "Noto Sans SC", system-ui`;
+    ctx.fillStyle = "rgba(190,200,210,.72)";
+    ctx.textAlign = "center";
+    ctx.fillText("-5%", centerX - trackHalfWidth, y + rowHeight * 0.42);
+    ctx.fillText("+5%", centerX + trackHalfWidth, y + rowHeight * 0.42);
+    // Label
+    ctx.font = `700 ${fontSize}px "Noto Sans SC", system-ui`;
     ctx.textAlign = "left";
     ctx.fillStyle = dataset.color;
     const label = datasets.length > 1
@@ -495,11 +630,31 @@ function drawSwingRows(ctx: CanvasRenderingContext2D, datasets: RadarDataset[], 
       : compact
         ? "Round Swing"
         : "Round Swing（回合影响）";
-    ctx.fillText(label, centerX - halfWidth, y - fontSize * 0.65);
+    ctx.fillText(label, centerX - trackHalfWidth, y - fontSize * 0.5);
+    // Value
     ctx.textAlign = "right";
     ctx.fillStyle = color;
-    ctx.fillText(`${value > 0 ? "+" : ""}${value.toFixed(2)}%`, centerX + halfWidth, y - fontSize * 0.65);
+    ctx.font = `750 ${fontSize}px ui-monospace, monospace`;
+    ctx.fillText(`${value > 0 ? "+" : ""}${value.toFixed(2)}%`, centerX + trackHalfWidth, y - fontSize * 0.5);
+    ctx.restore();
   });
+}
+
+export function renderSwingCanvas(
+  dataset: { id: string; radar: RadarResponse; color: string },
+  width: number,
+  height: number,
+  halfWidth?: number,
+  fontScale = 1,
+) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.clearRect(0, 0, width, height);
+  drawSwingRows(ctx, [dataset], width, height, true, halfWidth, fontScale);
+  return canvas;
 }
 
 export function formatRadarValue(value: number | null, type: string) {

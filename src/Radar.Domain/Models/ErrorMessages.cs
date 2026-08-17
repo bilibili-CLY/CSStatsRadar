@@ -1,0 +1,32 @@
+namespace Radar.Domain.Models;
+
+public static class ErrorMessages
+{
+    public static readonly Dictionary<string, string> Messages = new()
+    {
+        ["invalid_file_type"] = "仅支持已解压的 .dem 文件。",
+        ["demo_parse_failed"] = "Demo 解析失败。",
+        ["demo_not_found"] = "未找到该 Demo 会话，请重新上传。",
+        ["player_not_found"] = "未在 Demo 中找到该玩家。",
+        ["player_ambiguous"] = "玩家名匹配到多个候选，请选择明确的玩家。",
+        ["metric_unavailable"] = "部分指标无法计算。",
+        ["invalid_export_size"] = "导出尺寸必须是合法正整数。",
+        ["config_read_failed"] = "配置读取失败，已回退默认配置。",
+        ["config_write_failed"] = "配置保存失败。",
+        ["demo_fingerprint_missing"] = "Demo 缺少可用于去重的文件指纹，无法保存历史记录。",
+        ["demo_duplicate"] = "Demo 已存在，未重复保存。",
+        ["database_open_failed"] = "数据库打开或初始化失败。",
+        ["player_record_not_found"] = "未找到已保存玩家。",
+        ["match_record_not_found"] = "未找到比赛记录。",
+        ["aggregate_radar_unavailable"] = "所选比赛无法生成综合雷达。",
+        ["invalid_aggregate_request"] = "综合雷达请求无效。",
+        ["invalid_player_image"] = "玩家图片请求无效。",
+        ["player_image_save_failed"] = "玩家图片保存失败。",
+        ["invalid_showcase_video"] = "展示视频导出请求无效。",
+        ["showcase_video_unavailable"] = "展示视频导出不可用。",
+        ["showcase_video_failed"] = "展示视频导出失败。",
+    };
+
+    public static string GetValueOrDefault(string code, string fallback = "")
+        => Messages.TryGetValue(code, out var value) ? value : fallback;
+}

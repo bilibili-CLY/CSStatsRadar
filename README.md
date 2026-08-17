@@ -14,40 +14,60 @@ CSPlayerStatsRadar 是面向 CS2 内容制作人员的本地桌面工作台。�
 
 ## 技术栈
 
-- Wails v2 桌面壳，支持 macOS 和 Windows 原生文件/目录对话框。
-- React、TypeScript、Vite 前端。
-- Go Demo 解析、SQLite 本地资料库。
+- Photino.NET 桌面壳，基于系统 WebView，支持 macOS 和 Windows 原生文件/目录对话框。
+- React、TypeScript、Vite 前端，通过本地 HTTP 桥接与后端通信。
+- .NET 8 + C#，DemoFile.Net 解析 Demo，SQLite 本地资料库。
 - FFmpeg MP4 导出；应用会自动检测，也可在设置中选择可执行文件。
+
+## 项目结构
+
+```text
+src/
+├── Radar.Domain           领域模型（Demo 数据、雷达、玩家统计）
+├── Radar.Parser           DemoFile.Net 解析（产生 DemoData）
+├── Radar.Application      核心算法：统计、Rating 3.0、Swing、叠图、导入服务
+├── Radar.Infrastructure   SQLite 资料库、配置管理
+├── Radar.Api              DesktopApp 门面、HTTP 桥接服务、对话框/媒体/视频导出
+├── Radar.App              Photino 桌面宿主（入口）
+├── Radar.Tools.Compare    解析结果与黄金数据逐字段对比
+├── Radar.Tools.DebugEco   Demo 事件调试工具
+└── Radar.Tests            xUnit 测试（算法一致性、桥接、导入、端到端）
+```
+
+桥接协议与迁移说明见 `docs/MIGRATION-HTTP-API.md`。
 
 ## 开发
 
-要求 Go 1.23+、Node.js 18+，并建议安装 Wails v2.12 CLI。
+要求 .NET SDK 8+、Node.js 18+。由于只安装更高版本运行时（如 .NET 10）时，`Radar.App` 已配置 `<RollForward>LatestMajor</RollForward>` 以便直接运行。
 
 ```bash
+# 后端测试与构建
+dotnet build src/CSPlayerStatsRadar.slnx
+dotnet test src/Radar.Tests
+
+# 前端
 cd frontend
 npm install
-npm test
 npm run build
-
-cd ../
-go test ./...
 ```
 
-启动 Wails 开发模式：
+启动桌面应用（需先构建前端）：
 
 ```bash
-cd cmd/cs-radar-studio
-wails dev
+dotnet run --project src/Radar.App
 ```
 
-生成当前平台安装包：
+生产前端已提交到 `frontend/dist`，因此 `Radar.App` 可以直接嵌入使用。
+
+### 解析一致性校验
+
+`src/Radar.Tests/TestData/` 提交了黄金数据（`golden_stats_*.json`、`legacy_*.json`），
+`dotnet test` 会将其与 C# 算法输出逐字段对比。需要用新的 Demo 重新生成黄金数据时，
+先解析出 JSON fixture，再用 `Radar.Tools.Compare` 校验：
 
 ```bash
-cd cmd/cs-radar-studio
-wails build -clean
+dotnet run --project src/Radar.Tools.Compare -- <demo.dem> <golden.json> [--detail]
 ```
-
-生产前端已提交到 `frontend/dist`，因此普通 `go test ./...` 在没有 Node.js 的环境中也能编译嵌入资源。
 
 ## 数据与迁移
 

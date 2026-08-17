@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Radar.Api</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Radar.Application\Radar.Application.csproj" />
+    <ProjectReference Include="..\Radar.Domain\Radar.Domain.csproj" />
+    <ProjectReference Include="..\Radar.Infrastructure\Radar.Infrastructure.csproj" />
+    <ProjectReference Include="..\Radar.Parser\Radar.Parser.csproj" />
+  </ItemGroup>
+
+</Project>

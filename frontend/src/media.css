@@ -5,6 +5,7 @@
   height: 100%;
   object-fit: cover;
   opacity: 0.48;
+  transition: opacity var(--transition-base);
 }
 .showcase-player-image {
   position: absolute;
@@ -13,6 +14,7 @@
   max-height: 56%;
   object-fit: contain;
   filter: drop-shadow(0 16px 24px rgba(0, 0, 0, 0.55));
+  transition: opacity var(--transition-base);
 }
 .media-actions {
   display: grid;

@@ -65,6 +65,8 @@ export function SettingsView({
         draft.showcase.radar_scale_mode,
         draft.showcase.radar_scale,
         draft.showcase.radar_axis_scale ?? {},
+        draft.rating_version,
+        draft.show_rating_watermark,
       );
       setDraft(next);
       onChange(next);
@@ -146,7 +148,40 @@ export function SettingsView({
           <div className="settings-icon"><BookOpen /></div>
           <div>
             <h2>评分算法与透明度</h2>
-            <p>Rating 3.0 使用透明的本地近似算法，当前版本 <code>local-r3-2025.10-v1</code>。</p>
+            <p>Rating 3.0 使用透明的本地近似算法，当前版本 <code>local-r3-2025.10-v1</code>。三处制作器共用此全局设置。</p>
+            <div className="segmented">
+              <button
+                className={draft.rating_version === "rating_2" ? "active" : ""}
+                onClick={() =>
+                  setDraft({ ...draft, rating_version: "rating_2" })
+                }
+              >
+                Rating 2.0
+              </button>
+              <button
+                className={draft.rating_version === "rating_3" ? "active" : ""}
+                onClick={() =>
+                  setDraft({ ...draft, rating_version: "rating_3" })
+                }
+              >
+                Rating 3.0
+              </button>
+            </div>
+            {draft.rating_version === "rating_3" && (
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={draft.show_rating_watermark}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      show_rating_watermark: event.target.checked,
+                    })
+                  }
+                />
+                <span>显示 3.0 近似水印</span>
+              </label>
+            )}
             <button className="quiet" onClick={onShowMethodology}>查看 Rating 与 Swing 公式</button>
           </div>
         </section>
