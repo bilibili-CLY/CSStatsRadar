@@ -139,7 +139,8 @@ export const bridge = {
     ),
   appendVideoFrames: (id: string, start: number, frames: string[]) =>
     call<void>("AppendVideoFrames", id, start, frames),
-  finishVideoExport: (id: string) => call<string>("FinishVideoExport", id),
+  finishVideoExport: (id: string) =>
+    call<{ url: string; name: string }>("FinishVideoExport", id),
   cancelVideoExport: (id: string) => call<void>("CancelVideoExport", id),
   onImportProgress(callback: (summary: ImportSummary) => void) {
     return (

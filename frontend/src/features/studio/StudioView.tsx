@@ -974,12 +974,13 @@ function ShowcaseEditor({
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
       }
-      const path = await bridge.finishVideoExport(exportId);
+      const result = await bridge.finishVideoExport(exportId);
       exportID.current = "";
+      window.location.href = result.url;
       setExportState({
         running: false,
         progress: 1,
-        message: `已导出到 ${path}`,
+        message: `已导出 ${result.name}，浏览器正在下载…`,
       });
     } catch (value) {
       if (exportId)

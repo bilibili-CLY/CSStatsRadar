@@ -21,6 +21,13 @@ public class VideoExportSession
     public bool Finishing { get; set; }
 }
 
+public class VideoDownload
+{
+    public string Path { get; init; } = "";
+    public string Name { get; init; } = "";
+    public DateTime ExpiresUtc { get; init; }
+}
+
 public static class ShowcaseVideo
 {
     public const int MaxShowcaseVideoFrames = 7200;

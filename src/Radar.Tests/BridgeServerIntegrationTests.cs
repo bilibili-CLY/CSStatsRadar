@@ -20,19 +20,8 @@ public class BridgeServerIntegrationTests
         var dbPath = Path.Combine(dir, "test.db");
         var app = new DesktopApp(Path.Combine(dir, "config.json"), dbPath);
         var server = new BridgeServer(app, Path.Combine(dir, "frontend"), 0);
-        // BridgeServer needs a concrete port; rebuild with a chosen port
-        server = new BridgeServer(app, Path.Combine(dir, "frontend"), GetFreePort());
         server.Start();
         return (server, dir, dbPath);
-    }
-
-    private static int GetFreePort()
-    {
-        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     private static async Task<string> Call(BridgeServer server, string method, params object?[] args)
@@ -109,6 +98,25 @@ public class BridgeServerIntegrationTests
             var script = await client.GetStringAsync(server.BaseUrl + "/studio-bridge.js");
             Assert.Contains("window.__studioBridge", script);
             Assert.Contains("BuildRadar", script);
+        }
+        finally
+        {
+            server.Stop();
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public async Task VideoDownload_Endpoint_Requires_Valid_Token()
+    {
+        var (server, dir, _) = StartServer();
+        try
+        {
+            using var client = new HttpClient();
+            var missing = await client.GetAsync(server.BaseUrl + "/video-download?token=bogus");
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            var noToken = await client.GetAsync(server.BaseUrl + "/video-download");
+            Assert.Equal(HttpStatusCode.BadRequest, noToken.StatusCode);
         }
         finally
         {

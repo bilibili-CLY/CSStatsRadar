@@ -95,7 +95,21 @@ public class ImportService
                 foreach (var path in queue.GetConsumingEnumerable())
                 {
                     if (job.Cts.IsCancellationRequested) break;
-                    var result = ProcessPath(job.Cts.Token, path, null);
+                    ImportItemResult result;
+                    try
+                    {
+                        result = ProcessPath(job.Cts.Token, path, null);
+                    }
+                    catch (Exception ex)
+                    {
+                        result = new ImportItemResult
+                        {
+                            Path = path,
+                            FileName = Path.GetFileName(path),
+                            Status = "failed",
+                            Message = "导入异常：" + ex.Message,
+                        };
+                    }
                     lock (job.Lock)
                     {
                         job.Summary.Items.Add(result);
@@ -120,13 +134,22 @@ public class ImportService
             queue.Add(path);
         }
         queue.CompleteAdding();
-        Task.WaitAll(tasks.ToArray());
-        lock (job.Lock)
+        try
         {
-            job.Summary.Status = job.Cts.IsCancellationRequested ? "cancelled" : "completed";
-            job.Summary.CompletedAt = DateTime.UtcNow.ToString("o");
-            var snapshot = job.Summary;
-            Emit(snapshot);
+            Task.WaitAll(tasks.ToArray());
+        }
+        catch (AggregateException)
+        {
+        }
+        finally
+        {
+            lock (job.Lock)
+            {
+                job.Summary.Status = job.Cts.IsCancellationRequested ? "cancelled" : "completed";
+                job.Summary.CompletedAt = DateTime.UtcNow.ToString("o");
+                var snapshot = job.Summary;
+                Emit(snapshot);
+            }
         }
     }
 

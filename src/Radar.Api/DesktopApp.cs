@@ -17,6 +17,8 @@ public class DesktopApp : IDisposable
     private readonly object cfgLock = new();
     private readonly object videoLock = new();
     private readonly Dictionary<string, VideoExportSession> videoExports = new();
+    private readonly object downloadLock = new();
+    private readonly Dictionary<string, VideoDownload> videoDownloads = new();
 
     public DesktopApp(string? configPath = null, string? databasePath = null)
     {
@@ -470,15 +472,13 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         var validateErr = ShowcaseVideo.Validate(request);
         if (validateErr != null) throw AppErrors.New(validateErr, AppErrors.StatusBadRequest);
         if (!suggestedName.ToLowerInvariant().EndsWith(".mp4")) suggestedName += ".mp4";
-        var outputPath = NativeDialogs.SaveFile("导出 MP4", suggestedName, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".mp4");
-        if (string.IsNullOrEmpty(outputPath)) return "";
         var tempDir = Path.Combine(Path.GetTempPath(), "cs-radar-video-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
         var id = "video_" + HistoryService.RandomHex(8);
         var session = new VideoExportSession
         {
             TempDir = tempDir,
-            OutputPath = outputPath,
+            OutputPath = Path.Combine(tempDir, suggestedName),
             Request = request,
         };
         lock (videoLock) videoExports[id] = session;
@@ -505,7 +505,7 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         }
     }
 
-    public string FinishVideoExport(string exportID)
+    public object FinishVideoExport(string exportID)
     {
         VideoExportSession session;
         lock (videoLock) videoExports.TryGetValue(exportID, out session!);
@@ -524,13 +524,25 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
             {
                 throw AppErrors.New("video_export_cancelled", AppErrors.StatusBadRequest, "视频导出已取消。");
             }
-            return session.OutputPath;
+            var token = "dl_" + HistoryService.RandomHex(16);
+            var name = Path.GetFileName(session.OutputPath);
+            lock (downloadLock) videoDownloads[token] = new VideoDownload
+            {
+                Path = session.OutputPath,
+                Name = name,
+                ExpiresUtc = DateTime.UtcNow.AddHours(1),
+            };
+            return new { url = $"/video-download?token={token}", name };
+        }
+        catch
+        {
+            try { Directory.Delete(session.TempDir, true); } catch { /* ignore */ }
+            throw;
         }
         finally
         {
             session.Cts.Cancel();
             lock (videoLock) videoExports.Remove(exportID);
-            try { Directory.Delete(session.TempDir, true); } catch { /* ignore */ }
         }
     }
 
@@ -547,6 +559,18 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
                 videoExports.Remove(exportID);
                 try { Directory.Delete(session.TempDir, true); } catch { /* ignore */ }
             }
+        }
+    }
+
+    /// <summary>消耗一次性的视频下载令牌；返回后由调用方负责流式输出与清理临时目录。</summary>
+    public VideoDownload? ConsumeVideoDownload(string token)
+    {
+        lock (downloadLock)
+        {
+            if (!videoDownloads.TryGetValue(token, out var download)) return null;
+            videoDownloads.Remove(token);
+            if (download.ExpiresUtc < DateTime.UtcNow) return null;
+            return download;
         }
     }
 

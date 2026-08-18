@@ -212,6 +212,39 @@ public class ImportServiceTests
         }
     }
 
+    [Fact]
+    public void ConcurrentImport_Multiple_Demos_Completes_Job()
+    {
+        if (!File.Exists(DemoPath)) return;
+        var dir = CreateTempDir();
+        try
+        {
+            var demos = new List<string>();
+            for (var i = 0; i < 3; i++)
+            {
+                var demo = Path.Combine(dir, $"dust2_{i}.dem");
+                CopyG163(demo);
+                demos.Add(demo);
+            }
+            using var app = new DesktopApp(Path.Combine(dir, "config.json"), Path.Combine(dir, "test.db"));
+            var jobID = app.StartFileImport(demos);
+            var summary = WaitForJob(app, jobID);
+
+            Assert.Equal("completed", summary.Status);
+            Assert.Equal(3, summary.Total);
+            Assert.Equal(3, summary.Processed);
+            Assert.Equal(3, summary.Items.Count);
+            Assert.Equal(3, summary.Imported);
+            Assert.Equal(0, summary.Duplicates);
+            Assert.All(summary.Items, item => Assert.Equal("imported", item.Status));
+            Assert.Single(app.ListDemos());
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     private static ImportSummary WaitForJob(DesktopApp app, string jobID)
     {
         var deadline = DateTime.UtcNow.AddSeconds(30);

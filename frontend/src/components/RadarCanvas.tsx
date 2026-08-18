@@ -395,7 +395,7 @@ export function renderRadarCanvas(
     ctx.font = `700 ${labelSize}px "Noto Sans SC", system-ui`;
     ctx.fillText(label, text.x, text.y - line * 0.48);
     ctx.fillStyle = valueDataset.color;
-    ctx.font = `750 ${valueSize}px ui-monospace, SFMono-Regular, monospace`;
+    ctx.font = `400 ${valueSize}px "Bangers", "Noto Sans SC", system-ui`;
     ctx.fillText(formatValue(value, displayType), text.x, text.y + line * 0.65);
   });
 

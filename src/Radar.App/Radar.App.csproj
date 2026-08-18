@@ -6,12 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Radar.App</RootNamespace>
+    <AssemblyName>CSStatsRadar</AssemblyName>
     <PublishSingleFile>false</PublishSingleFile>
     <RollForward>LatestMajor</RollForward>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Photino.NET" Version="2.6.0" />
     <ProjectReference Include="..\Radar.Api\Radar.Api.csproj" />
   </ItemGroup>
 

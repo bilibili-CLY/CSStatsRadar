@@ -9,6 +9,16 @@ These rules are product requirements. Preserve them in every UI, rendering, and 
 - Radar polygons, point markers, the six metric names, their values, `BEST` markers, and the Rating 3.0 Swing track must not overlap. Reserve separate label and Swing regions when calculating geometry.
 - In showcase exports, `Rating 3.0 本地近似 · 非 HLTV 官方` belongs at the bottom-left of the complete composition, not inside the movable radar sub-canvas.
 
+## Bridge server (desktop app)
+
+- The desktop app runs headless in browser mode: it starts the embedded bridge server and opens `BaseUrl` in the system default browser. Do not reintroduce Photino/WebView2 — the embedded control silently white-screens on machines with a broken WebView2 runtime while the normal browser works.
+- The embedded bridge server must bind a loopback `TcpListener` (raw HTTP) and never `HttpListener`/http.sys — the latter requires admin or a URL ACL and hard-crashes on normal Windows accounts.
+- Never require elevation or OS-level port permissions. Port fallback (walk up to 50 ports from the preferred one) must stay in place so a busy port degrades gracefully instead of aborting startup.
+- The bridge runs inside the user's real browser, so it MUST protect against CSRF/DNS-rebinding: reject `POST /__bridge` unless the `Host` header is `127.0.0.1:port`/`localhost:port` and, when present, the `Origin` header matches `http://127.0.0.1:port`/`http://localhost:port`.
+- App lifecycle: the page beacon pings `Ping` every 5s; the host exits when heartbeats stop for 120s (or after 90s if never loaded), or immediately on the `QuitApp` bridge call. Never leave orphaned background processes.
+- Startup must surface fatal errors (missing `frontend/dist`, failed bridge bind, browser-open failure) in a visible dialog on Windows, never a silent exit.
+- Native file dialogs must work on Windows too (not just macOS osascript): spawn a `powershell.exe -STA` WinForms dialog via a temp `.ps1` script and read the chosen path from stdout. A cancelled dialog returns `null`/empty, never an exception. The published executable must be named `CSStatsRadar.exe` (`<AssemblyName>CSStatsRadar</AssemblyName>` in `Radar.App.csproj`).
+
 ## Showcase transitions
 
 - Transitions between players are mandatory in preview and exported video.

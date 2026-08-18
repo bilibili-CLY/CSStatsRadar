@@ -1132,7 +1132,7 @@ input[type="checkbox"]:disabled:checked {
 .methodology-content dl { display: grid; grid-template-columns: 150px 1fr; gap: 6px 12px; }
 .methodology-content dt { color: #e5e9ed; font-weight: 700; }
 .methodology-content dd { margin: 0; color: #9ca6b0; }
-.formula-block { overflow: auto; padding: 12px; border: 1px solid #2b5660; border-radius: 7px; background: #081317; color: #8ce7f7; font-size: 11px; white-space: pre-wrap; }
+.formula-block { overflow: auto; padding: 12px; border: 1px solid #2b5660; border-radius: 7px; background: #081317; color: #8ce7f7; font-size: 11px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .methodology-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
 .methodology-table-wrap table { width: 100%; border-collapse: collapse; }
 .methodology-table-wrap th, .methodology-table-wrap td { padding: 9px; border-bottom: 1px solid var(--border); text-align: left; font-size: 10px; vertical-align: top; }
