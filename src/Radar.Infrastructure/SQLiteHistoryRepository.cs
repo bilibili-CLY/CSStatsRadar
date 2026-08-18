@@ -171,6 +171,7 @@ CREATE INDEX IF NOT EXISTS idx_player_match_stats_steam_id ON player_match_stats
                     cmd.CommandText = Schema;
                     cmd.ExecuteNonQuery();
                 }
+                MigrateColumns(db);
                 using (var cmd = db.CreateCommand())
                 {
                     cmd.CommandText = "PRAGMA user_version = 5;";
@@ -193,6 +194,41 @@ CREATE INDEX IF NOT EXISTS idx_player_match_stats_steam_id ON player_match_stats
             db?.Dispose();
             db = null;
         }
+    }
+
+    private static void MigrateColumns(SqliteConnection db)
+    {
+        var columns = new (string Table, string Name, string Definition)[]
+        {
+            ("demos", "file_sha256", "TEXT NOT NULL DEFAULT ''"),
+            ("demos", "source_path", "TEXT NOT NULL DEFAULT ''"),
+            ("demos", "match_time_source", "TEXT NOT NULL DEFAULT 'unknown'"),
+            ("demos", "note", "TEXT NOT NULL DEFAULT ''"),
+            ("demos", "analysis_version", "TEXT NOT NULL DEFAULT ''"),
+            ("player_match_stats", "rating_3", "REAL"),
+            ("player_match_stats", "round_swing", "REAL"),
+            ("player_match_stats", "multi_kill", "REAL"),
+            ("player_match_stats", "rating_algorithm", "TEXT NOT NULL DEFAULT ''"),
+            ("player_match_stats", "rating_3_metrics_json", "TEXT NOT NULL DEFAULT '[]'"),
+        };
+        foreach (var column in columns)
+        {
+            if (ColumnExists(db, column.Table, column.Name)) continue;
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = $"ALTER TABLE {column.Table} ADD COLUMN {column.Name} {column.Definition}";
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    private static bool ColumnExists(SqliteConnection db, string table, string column)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = $"PRAGMA table_info({table})";
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
     }
 
     private SqliteConnection Conn()

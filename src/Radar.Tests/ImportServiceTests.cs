@@ -245,7 +245,7 @@ public class ImportServiceTests
         }
     }
 
-    private static ImportSummary WaitForJob(DesktopApp app, string jobID)
+    public static ImportSummary WaitForJob(DesktopApp app, string jobID)
     {
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (DateTime.UtcNow < deadline)

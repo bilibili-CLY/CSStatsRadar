@@ -19,6 +19,11 @@ These rules are product requirements. Preserve them in every UI, rendering, and 
 - Startup must surface fatal errors (missing `frontend/dist`, failed bridge bind, browser-open failure) in a visible dialog on Windows, never a silent exit.
 - Native file dialogs must work on Windows too (not just macOS osascript): spawn a `powershell.exe -STA` WinForms dialog via a temp `.ps1` script and read the chosen path from stdout. A cancelled dialog returns `null`/empty, never an exception. The published executable must be named `CSStatsRadar.exe` (`<AssemblyName>CSStatsRadar</AssemblyName>` in `Radar.App.csproj`).
 
+## Database schema
+
+- SQLite schema must be forward-compatible with legacy databases: `CREATE TABLE IF NOT EXISTS` never adds columns to an existing table, so `Init()` must run a column migration (`PRAGMA table_info` + `ALTER TABLE ... ADD COLUMN`) for every column that was added after the initial release (`demos.file_sha256/source_path/match_time_source/note/analysis_version`, `player_match_stats.rating_3/round_swing/multi_kill/rating_algorithm/rating_3_metrics_json`). Never drop this migration when refactoring `Init()`.
+- Newly added columns must be nullable or carry a `DEFAULT` so `ALTER TABLE ADD COLUMN` works on populated legacy rows.
+
 ## Showcase transitions
 
 - Transitions between players are mandatory in preview and exported video.
