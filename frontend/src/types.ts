@@ -186,6 +186,7 @@ export interface ShowcaseSlide {
   duration: number;
   color: string;
   imageUrl?: string;
+  avatarUrl?: string;
   backgroundUrl?: string;
   imageTransform?: { x: number; y: number; scale: number };
 }

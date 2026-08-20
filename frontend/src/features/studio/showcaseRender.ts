@@ -299,8 +299,9 @@ export function renderShowcaseFrame(
     ctx.restore();
   };
   const drawImageFor = (item: ShowcaseSlide, opacity: number) => {
-    if (!item.imageUrl || opacity <= 0) return;
-    const image = showcaseImageCache.get(item.imageUrl);
+    const imageUrl = item.imageUrl ?? item.avatarUrl;
+    if (!imageUrl || opacity <= 0) return;
+    const image = showcaseImageCache.get(imageUrl);
     if (!image) return;
     const transform = item.imageTransform ?? { x: layout.imageX, y: layout.imageY, scale: layout.imageScale };
     const boxW = (width * 0.28 * transform.scale) / 100;

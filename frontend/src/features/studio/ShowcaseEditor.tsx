@@ -4,7 +4,7 @@ import { bridge } from "../../bridge";
 import { Spinner } from "../../components/Busy";
 import { PlayerAvatarView } from "../../components/PlayerAvatar";
 import { Field, Range, SaveStatus } from "../../components/ui";
-import type { AppConfig, PlayerMedia, ShowcaseLayoutDraft, ShowcaseSlide, StudioKind, StudioSeed } from "../../types";
+import type { AppConfig, PlayerAvatar, PlayerMedia, ShowcaseLayoutDraft, ShowcaseSlide, StudioKind, StudioSeed } from "../../types";
 import { draftColors as colors } from "./draftMutations";
 import { ShowcasePreview } from "./ShowcasePreview";
 import {
@@ -195,13 +195,16 @@ export function ShowcaseEditor({
   }, [playing, previewTime, musicURL, audioOffsetMs]);
   useEffect(() => {
     if (!draftReady || !seed?.radar) return;
-    bridge
-      .getPlayerMedia(seed.player.steam_id)
-      .catch(() => ({}) as PlayerMedia)
-      .then((media) =>
+    const playerId = seed.player.steam_id;
+    Promise.all([
+      bridge.getPlayerMedia(playerId).catch(() => ({}) as PlayerMedia),
+      bridge.getPlayerAvatars([playerId]).catch(() => [] as PlayerAvatar[]),
+    ])
+      .then(([media, avatars]) => {
+        const avatarUrl = avatars[0]?.data_url;
         setDraft((current) => {
           const existingIndex = current.slides.findIndex(
-            (slide) => slide.id === seed.player.steam_id,
+            (slide) => slide.id === playerId,
           );
           if (existingIndex >= 0) {
             return {
@@ -214,6 +217,7 @@ export function ShowcaseEditor({
                       radar: seed.radar!,
                       imageUrl: media.image_url || item.imageUrl,
                       backgroundUrl: media.background_url || item.backgroundUrl,
+                      avatarUrl: avatarUrl || item.avatarUrl,
                     }
                   : item,
               ),
@@ -225,19 +229,20 @@ export function ShowcaseEditor({
                 slides: [
                   ...current.slides,
                   {
-                    id: seed.player.steam_id,
+                    id: playerId,
                     radar: seed.radar!,
                     title: seed.player.name,
                     subtitle: `${seed.matchIds.length} 场综合数据`,
                     duration: 4,
                     color: colors[current.slides.length % colors.length],
                     imageUrl: media.image_url,
+                    avatarUrl,
                     backgroundUrl: media.background_url,
                   },
                 ],
               };
-        }),
-      );
+        });
+      });
   }, [seed, draftReady]);
   useEffect(() => {
     if (!draftReady || !draft.slides.length) return;
@@ -425,7 +430,7 @@ export function ShowcaseEditor({
           imageUrls: Array.from(
             new Set(
               draft.slides.flatMap((item) =>
-                [item.imageUrl, item.backgroundUrl].filter(
+                [item.imageUrl, item.avatarUrl, item.backgroundUrl].filter(
                   (url): url is string => Boolean(url),
                 ),
               ),
@@ -511,7 +516,7 @@ export function ShowcaseEditor({
       await ensureShowcaseFonts();
       await Promise.all(
         draft.slides.flatMap((item) =>
-          [item.imageUrl, item.backgroundUrl]
+          [item.imageUrl, item.avatarUrl, item.backgroundUrl]
             .filter(Boolean)
             .map((url) => loadImage(url!)),
         ),
