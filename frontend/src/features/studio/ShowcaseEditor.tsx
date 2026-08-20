@@ -19,7 +19,12 @@ import {
   showcaseSlideStart,
   timelineTickStep,
 } from "./showcaseMath";
-import { ensureShowcaseFonts, loadImage, renderShowcaseFrame } from "./showcaseRender";
+import {
+  ensureShowcaseFonts,
+  loadImage,
+  renderShowcaseFrame,
+  showcasePlayerImageUrl,
+} from "./showcaseRender";
 import { useDraft } from "./useDraft";
 
 export function ShowcaseEditor({
@@ -459,7 +464,7 @@ export function ShowcaseEditor({
           imageUrls: Array.from(
             new Set(
               draft.slides.flatMap((item) =>
-                [item.imageUrl, item.avatarUrl, item.backgroundUrl].filter(
+                [showcasePlayerImageUrl(item), item.backgroundUrl].filter(
                   (url): url is string => Boolean(url),
                 ),
               ),
@@ -545,7 +550,7 @@ export function ShowcaseEditor({
       await ensureShowcaseFonts();
       await Promise.all(
         draft.slides.flatMap((item) =>
-          [item.imageUrl, item.avatarUrl, item.backgroundUrl]
+          [showcasePlayerImageUrl(item), item.backgroundUrl]
             .filter(Boolean)
             .map((url) => loadImage(url!)),
         ),

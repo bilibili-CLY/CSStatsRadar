@@ -26,6 +26,11 @@ export function drawShowcaseSelection(canvas: HTMLCanvasElement, target: Showcas
 }
 type ShowcaseImage = HTMLImageElement | ImageBitmap;
 const showcaseImageCache = new Map<string, ShowcaseImage>();
+export function showcasePlayerImageUrl(
+  slide?: Pick<ShowcaseSlide, "imageUrl" | "avatarUrl"> | null,
+) {
+  return slide?.imageUrl || slide?.avatarUrl;
+}
 function imageWidth(image: ShowcaseImage) {
   return "naturalWidth" in image ? image.naturalWidth : image.width;
 }
@@ -299,7 +304,7 @@ export function renderShowcaseFrame(
     ctx.restore();
   };
   const drawImageFor = (item: ShowcaseSlide, opacity: number) => {
-    const imageUrl = item.imageUrl ?? item.avatarUrl;
+    const imageUrl = showcasePlayerImageUrl(item);
     if (!imageUrl || opacity <= 0) return;
     const image = showcaseImageCache.get(imageUrl);
     if (!image) return;

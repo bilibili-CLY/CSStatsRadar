@@ -8,6 +8,7 @@ These rules are product requirements. Preserve them in every UI, rendering, and 
 - Never apply a fixed normalized-value cap to radar vertices. Constrain only at the composition's natural safe boundary so the rendered point and its label remain visible.
 - Radar polygons, point markers, the six metric names, their values, `BEST` markers, and the Rating 3.0 Swing track must not overlap. Reserve separate label and Swing regions when calculating geometry.
 - In showcase exports, `Rating 3.0 本地近似 · 非 HLTV 官方` belongs at the bottom-left of the complete composition, not inside the movable radar sub-canvas.
+- Rating 3.0 `Multi-Kill` is the multi-kill round probability (rounds with ≥2 kills ÷ total rounds), shown as a percentage with the outer ring = 20%. It is not the multiImpact sub-score; do not reintroduce the old value/max (2) during refactors.
 
 ## Bridge server (desktop app)
 

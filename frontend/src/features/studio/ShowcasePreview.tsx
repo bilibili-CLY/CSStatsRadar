@@ -11,7 +11,13 @@ import {
   type ShowcaseTarget,
   type ShowcaseTransform,
 } from "./showcaseMath";
-import { drawShowcaseSelection, ensureShowcaseFonts, loadImage, renderShowcaseFrame } from "./showcaseRender";
+import {
+  drawShowcaseSelection,
+  ensureShowcaseFonts,
+  loadImage,
+  renderShowcaseFrame,
+  showcasePlayerImageUrl,
+} from "./showcaseRender";
 
 export function ShowcasePreview({
   slides,
@@ -61,7 +67,7 @@ export function ShowcasePreview({
   const sizeRef = useRef({ width: 0, height: 0 });
   useEffect(() => {
     const urls = slides.flatMap(
-      (item) => [item.imageUrl, item.backgroundUrl].filter(Boolean) as string[],
+      (item) => [showcasePlayerImageUrl(item), item.backgroundUrl].filter(Boolean) as string[],
     );
     if (!urls.length) return;
     let active = true;
@@ -194,7 +200,7 @@ export function ShowcasePreview({
     }
     return available.find((target) => {
       if (target === "swing") return false;
-      if (target === "image" && !currentSlide()?.imageUrl) return false;
+      if (target === "image" && !showcasePlayerImageUrl(currentSlide())) return false;
       const bounds = selectionBounds(target, currentTransform(target), canvasWidth, canvasHeight, layout);
       return point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
     }) ?? null;

@@ -25,7 +25,7 @@ const radarAxisLimits: Array<{
   { name: "ADR", min: 50, max: 200, step: 5, defaultValue: 100 },
   { name: "KAST", min: 0.35, max: 1, step: 0.01, defaultValue: 0.7 },
   { name: "Impact", min: 1, max: 4, step: 0.05, defaultValue: 2 },
-  { name: "Multi-Kill", min: 1, max: 4, step: 0.05, defaultValue: 2 },
+  { name: "Multi-Kill", min: 0.05, max: 0.5, step: 0.01, defaultValue: 0.2 },
   { name: "Rating", min: 0.75, max: 3, step: 0.05, defaultValue: 1.5 },
 ];
 

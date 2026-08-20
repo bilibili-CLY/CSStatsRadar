@@ -27,6 +27,7 @@ public static class Rating3Calculator
         }
         foreach (var kv in killsByRound)
             if (kv.Value > 1) extraMulti += kv.Value - 1;
+        var multiKillRounds = killsByRound.Count(kv => kv.Value > 1);
 
         if (demo.Damages != null)
             foreach (var evt in demo.Damages)
@@ -49,7 +50,6 @@ public static class Rating3Calculator
         var swingRating = Rating3.Clamp(1 + swing / 4, 0, 2.5);
         var base3 = 0.0073 * eKAST * 100 + 0.3591 * eKPR - 0.5329 * eDPR + 0.2372 * multiImpact + 0.0032 * eADR + 0.1587;
         var rating3 = Rating3.Round3(Math.Max(0, 0.92 * base3 + 0.08 * swingRating));
-        var multiRating = Rating3.Round3(Math.Max(0, multiImpact));
         swing = Math.Round(swing * 100) / 100;
 
         var metrics = new Dictionary<string, RadarMetric>
@@ -58,7 +58,7 @@ public static class Rating3Calculator
             ["Surviving"] = PlayerStatsCalculator.OkMetric("Surviving", baseStats.SurvivedRounds / rounds, "percentage", ""),
             ["ADR"] = PlayerStatsCalculator.OkMetric("ADR", eADR, "number", "已按枪械对位修正。"),
             ["KAST"] = PlayerStatsCalculator.OkMetric("KAST", eKAST, "percentage", ""),
-            ["Multi-Kill"] = PlayerStatsCalculator.OkMetric("Multi-Kill", multiRating, "number", "经济修正后的多杀子评分。"),
+            ["Multi-Kill"] = PlayerStatsCalculator.OkMetric("Multi-Kill", multiKillRounds / rounds, "percentage", "多杀回合占比（每回合≥2杀）。"),
             ["Rating"] = PlayerStatsCalculator.OkMetric("Rating", rating3, "number", "Rating 3.0 本地近似。"),
         };
         return (metrics, swing, "");

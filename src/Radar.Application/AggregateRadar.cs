@@ -5,8 +5,8 @@ namespace Radar.Application;
 public static class AggregateRadar
 {
     public const string Note = "综合雷达为所选比赛等权平均结果。Rating 2.0 为公开逆向公式的本地计算。";
-    public static readonly string[] Rating3DisplayTypes = { "number", "percentage", "number", "percentage", "number", "number" };
-    public static readonly double[] Rating3MaxValues = { 1, 0.6, 100, 0.7, 2, 1.5 };
+    public static readonly string[] Rating3DisplayTypes = { "number", "percentage", "number", "percentage", "percentage", "number" };
+    public static readonly double[] Rating3MaxValues = { 1, 0.6, 100, 0.7, 0.2, 1.5 };
 
     public static RadarPayload BuildRadar2(List<RadarMetric> metrics)
     {
@@ -87,7 +87,7 @@ public static class AggregateRadar
 
     public static string DisplayTypeForMetric(string name)
     {
-        if (name == "Surviving" || name == "KAST") return "percentage";
+        if (name == "Surviving" || name == "KAST" || name == "Multi-Kill") return "percentage";
         return "number";
     }
 

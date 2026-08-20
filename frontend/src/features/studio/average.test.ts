@@ -23,6 +23,7 @@ import {
   selectRatingProfile,
   visibleRadarPointDistance,
 } from "../../components/RadarCanvas";
+import { showcasePlayerImageUrl } from "./showcaseRender";
 
 const radar = (name: string, values: Array<number | null>): RadarResponse => ({
   player: { name, steam_id: name },
@@ -143,6 +144,12 @@ describe("showcase timeline", () => {
       "image",
       "name",
     ]);
+  });
+
+  it("uses the player avatar when no custom showcase image is set", () => {
+    expect(showcasePlayerImageUrl({ avatarUrl: "avatar.jpg" })).toBe("avatar.jpg");
+    expect(showcasePlayerImageUrl({ imageUrl: "", avatarUrl: "avatar.jpg" })).toBe("avatar.jpg");
+    expect(showcasePlayerImageUrl({ imageUrl: "portrait.png", avatarUrl: "avatar.jpg" })).toBe("portrait.png");
   });
 
   it("slip-drags audio in useful timeline-sized increments", () => {

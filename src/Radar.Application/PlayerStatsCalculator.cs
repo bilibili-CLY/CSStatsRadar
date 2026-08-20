@@ -139,7 +139,7 @@ public class PlayerStatsCalculator
         "ADR" => 100,
         "KAST" => 0.7,
         "Impact" => 2,
-        "Multi-Kill" => 2,
+        "Multi-Kill" => 0.2,
         "Rating" => 1.5,
         _ => 1,
     };

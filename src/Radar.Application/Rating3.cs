@@ -4,7 +4,7 @@ namespace Radar.Application;
 
 public class Rating3
 {
-    public const string AlgorithmVersion = "local-r3-2025.10-v1";
+    public const string AlgorithmVersion = "local-r3-2026.08-v2";
 
     public const double SideBiasT = -0.08;
     public const double SideBiasCT = 0.08;

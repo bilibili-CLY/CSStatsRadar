@@ -92,9 +92,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 1.927,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.286,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
@@ -213,9 +213,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 1.321,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.143,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
@@ -334,9 +334,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 0,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.0,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
@@ -455,9 +455,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 0.478,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.0,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
@@ -576,9 +576,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 0.913,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.143,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
@@ -697,9 +697,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 3.938,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.571,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
@@ -818,9 +818,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 1.928,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.429,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
@@ -939,9 +939,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 0.715,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.0,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
@@ -1060,9 +1060,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 0.649,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.143,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
@@ -1181,9 +1181,9 @@
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 1.079,
-        "display_type": "number",
-        "max_value": 2,
+        "value": 0.0,
+        "display_type": "percentage",
+        "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
         "note": "经济修正后的多杀子评分。"
