@@ -13,6 +13,7 @@ import { bridge } from "../../bridge";
 import { BusyMessage, Spinner } from "../../components/Busy";
 import { PlayerAvatarView } from "../../components/PlayerAvatar";
 import { useAppStore } from "../../stores/appStore";
+import { useStudioStore } from "../../stores/studioStore";
 import { saveSeedToDraft, studioToastLabels } from "../studio/draftMutations";
 import type {
   MatchRecord,
@@ -101,6 +102,7 @@ export function LibraryView() {
       const radar = await bridge.buildRadar(selected.steam_id, activeIds);
       const seed: StudioSeed = { player: selected, matchIds: activeIds, radar };
       await saveSeedToDraft(kind, seed, useAppStore.getState().config);
+      useStudioStore.getState().setSeed(seed);
       useAppStore.getState().showToast(`${studioToastLabels[kind]}：${selected.name}`);
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));

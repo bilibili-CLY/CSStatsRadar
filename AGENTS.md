@@ -87,9 +87,9 @@ These rules govern the application chrome and component aesthetics. They must be
 
 ## Library page & player avatars
 
-- In the library (`LibraryView`), "制作雷达/加入叠图/加入轮播" only save the draft and show a toast — they must never navigate to the studio route.
+- In the library (`LibraryView`), "制作雷达/加入叠图/加入轮播" only save the draft, set the studio seed (`useStudioStore.setSeed`), and show a toast — they must never navigate to the studio route.
 - Right-clicking a player in the library player list opens a `context-menu` with "取消关注/关注" and "删除资历" (deletes that player's match stats). Keep this affordance; do not remove it during refactors.
-- Player avatars come from Steam with no API key: `GetPlayerAvatars` reads the Steam community profile XML (`steamcommunity.com/profiles/{steamid}/?xml=1`, `avatarFull` element) and caches the downloaded image in `~/.csplayerstatsradar/player-avatars/{steamid}.jpg`. Ready caches return a data URL immediately; failed fetches are stored as `status="fallback"` and are not retried within 24h. The showcase slide image defaults to the player avatar (`item.imageUrl ?? item.avatarUrl`).
+- Player avatars come from Steam with no API key: `GetPlayerAvatars` reads the Steam community profile XML (`steamcommunity.com/profiles/{steamid}/?xml=1`, `avatarFull` element) and caches the downloaded image in `~/.csplayerstatsradar/player-avatars/{steamid}.jpg`. Ready caches return a data URL immediately; failed fetches are stored as `status="fallback"` and are not retried within 24h. The showcase slide image defaults to the player avatar (`item.imageUrl ?? item.avatarUrl`); `ShowcaseEditor` backfills `avatarUrl` for any slide missing it on load.
 
 ## Auto-capture of user conventions
 

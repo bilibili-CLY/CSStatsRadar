@@ -88,6 +88,7 @@ export function ShowcaseEditor({
   const playbackStopAt = useRef<number | null>(null);
   const previewTimeRef = useRef(0);
   const lastSyncedActive = useRef(false);
+  const avatarFetched = useRef(new Set<string>());
   const lastPreviewUiUpdate = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const timelineTrackRef = useRef<HTMLDivElement>(null);
@@ -244,6 +245,34 @@ export function ShowcaseEditor({
         });
       });
   }, [seed, draftReady]);
+  useEffect(() => {
+    if (!draftReady || !draft.slides.length) return;
+    const missing = draft.slides
+      .filter(
+        (slide) => !slide.avatarUrl && !avatarFetched.current.has(slide.id),
+      )
+      .map((slide) => slide.id);
+    if (!missing.length) return;
+    missing.forEach((id) => avatarFetched.current.add(id));
+    bridge
+      .getPlayerAvatars(missing)
+      .then((values) => {
+        const byId = new Map(values.map((value) => [value.steam_id, value.data_url]));
+        setDraft((current) => {
+          let changed = false;
+          const slides = current.slides.map((item) => {
+            const url = byId.get(item.id);
+            if (url && !item.avatarUrl) {
+              changed = true;
+              return { ...item, avatarUrl: url };
+            }
+            return item;
+          });
+          return changed ? { ...current, slides } : current;
+        });
+      })
+      .catch(() => undefined);
+  }, [draftReady, draft.slides]);
   useEffect(() => {
     if (!draftReady || !draft.slides.length) return;
     if (lastSyncedActive.current) return;
