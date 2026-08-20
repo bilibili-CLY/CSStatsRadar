@@ -6,9 +6,9 @@ import {
   Search,
   Star,
   StarOff,
+  Trash2,
   Video,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { bridge } from "../../bridge";
 import { BusyMessage, Spinner } from "../../components/Busy";
 import { PlayerAvatarView } from "../../components/PlayerAvatar";
@@ -25,7 +25,6 @@ import { filterMatches, recentMatchIDs } from "./selection";
 export function LibraryView() {
   const players = useAppStore((state) => state.players);
   const refreshPlayers = useAppStore((state) => state.refreshPlayers);
-  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SavedPlayer | null>(null);
   const [matches, setMatches] = useState<MatchRecord[]>([]);
@@ -36,6 +35,11 @@ export function LibraryView() {
   const [mapFilter, setMapFilter] = useState("all");
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState("");
+  const [menu, setMenu] = useState<{
+    player: SavedPlayer;
+    x: number;
+    y: number;
+  } | null>(null);
   const visiblePlayers = useMemo(
     () =>
       players
@@ -73,6 +77,23 @@ export function LibraryView() {
       .catch((value) => setError(String(value)))
       .finally(() => setLoading(false));
   }, [selected]);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(null);
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [menu]);
   async function create(kind: StudioKind) {
     if (!selected || !activeIds.length) return;
     try {
@@ -81,7 +102,6 @@ export function LibraryView() {
       const seed: StudioSeed = { player: selected, matchIds: activeIds, radar };
       await saveSeedToDraft(kind, seed, useAppStore.getState().config);
       useAppStore.getState().showToast(`${studioToastLabels[kind]}：${selected.name}`);
-      navigate(`/studio/${kind}`);
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
     } finally {
@@ -136,6 +156,25 @@ export function LibraryView() {
       return next;
     });
   }
+  async function deletePlayerFromMenu(player: SavedPlayer) {
+    setMenu(null);
+    if (
+      !window.confirm(
+        `永久删除 ${player.name} 的全部比赛统计？关注状态、Demo 目录和媒体会保留。`,
+      )
+    )
+      return;
+    try {
+      await bridge.deletePlayerData(player.steam_id);
+      if (selected?.steam_id === player.steam_id) {
+        setSelected(null);
+        setMatches([]);
+      }
+      await refreshPlayers();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+    }
+  }
   return (
     <div className="page library-page">
       <header className="page-header">
@@ -166,6 +205,10 @@ export function LibraryView() {
                 key={player.steam_id}
                 className={`player-item ${selected?.steam_id === player.steam_id ? "active" : ""}`}
                 onClick={() => setSelected(player)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setMenu({ player, x: event.clientX, y: event.clientY });
+                }}
               >
                 <PlayerAvatarView name={player.name} steamId={player.steam_id}/>
                 <span>
@@ -409,6 +452,38 @@ export function LibraryView() {
           )}
         </main>
       </div>
+      {menu && (
+        <div
+          className="context-menu"
+          role="menu"
+          style={{
+            left: Math.min(menu.x, window.innerWidth - 180),
+            top: Math.min(menu.y, window.innerHeight - 96),
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            role="menuitem"
+            onClick={() => toggleFollow(menu.player)}
+            disabled={busyAction === "follow"}
+          >
+            {menu.player.followed ? (
+              <StarOff size={15} />
+            ) : (
+              <Star size={15} />
+            )}
+            {menu.player.followed ? "取消关注" : "关注"}
+          </button>
+          <button
+            role="menuitem"
+            className="danger"
+            onClick={() => deletePlayerFromMenu(menu.player)}
+          >
+            <Trash2 size={15} />
+            删除资历
+          </button>
+        </div>
+      )}
     </div>
   );
 }

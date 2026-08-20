@@ -249,14 +249,45 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
 
     public List<PlayerAvatar> GetPlayerAvatars(List<string> steamIDs)
     {
-        var result = new List<PlayerAvatar>();
-        foreach (var id in steamIDs)
+        var results = new PlayerAvatar[steamIDs.Count];
+        var fetches = new List<(int Index, string SteamID)>();
+        for (var i = 0; i < steamIDs.Count; i++)
         {
+            var id = steamIDs[i];
             var cached = repo.GetPlayerAvatar(id);
-            if (cached != null)
-                result.Add(new PlayerAvatar { SteamID = id, DataURL = "", Status = cached.Status, UpdatedAt = cached.UpdatedAt.ToString("o") });
+            if (cached != null && cached.Status == "ready" && !string.IsNullOrEmpty(cached.CachePath) && File.Exists(cached.CachePath))
+            {
+                results[i] = new PlayerAvatar { SteamID = id, DataURL = MediaFiles.FileDataURL(cached.CachePath), Status = "ready", UpdatedAt = cached.UpdatedAt.ToString("o") };
+            }
+            else if (cached != null && cached.Status == "fallback" && (DateTimeOffset.UtcNow - cached.UpdatedAt).TotalHours < 24)
+            {
+                results[i] = new PlayerAvatar { SteamID = id, Status = "fallback", UpdatedAt = cached.UpdatedAt.ToString("o") };
+            }
+            else
+            {
+                fetches.Add((i, id));
+            }
         }
-        return result;
+        if (fetches.Count > 0)
+        {
+            Parallel.ForEach(fetches, new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
+            {
+                var (index, id) = item;
+                var source = SteamAvatars.FetchAvatarURL(id);
+                var path = source == null ? null : SteamAvatars.DownloadAvatar(source, id);
+                if (path != null)
+                {
+                    repo.SavePlayerAvatar(new PlayerAvatarCache { SteamID = id, SourceURL = source!, CachePath = path, Status = "ready", UpdatedAt = DateTimeOffset.UtcNow });
+                    results[index] = new PlayerAvatar { SteamID = id, DataURL = MediaFiles.FileDataURL(path), Status = "ready", UpdatedAt = DateTimeOffset.UtcNow.ToString("o") };
+                }
+                else
+                {
+                    repo.SavePlayerAvatar(new PlayerAvatarCache { SteamID = id, SourceURL = "", CachePath = "", Status = "fallback", UpdatedAt = DateTimeOffset.UtcNow });
+                    results[index] = new PlayerAvatar { SteamID = id, Status = "fallback" };
+                }
+            });
+        }
+        return results.ToList();
     }
 
     public void FollowDemoPlayers(string demoID, List<string> steamIDs)

@@ -451,6 +451,42 @@ button:active:not(:disabled) {
   animation-duration: 0.001ms;
   transition-duration: 0.001ms;
 }
+.context-menu {
+  position: fixed;
+  z-index: 220;
+  min-width: 160px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #161a20;
+  box-shadow: var(--shadow-md);
+  animation: dialog-in 0.2s ease-out;
+}
+.context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border-color: transparent;
+  border-radius: 6px;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+.context-menu button:hover:not(:disabled) {
+  background: var(--hover-bg-strong);
+}
+.context-menu button:disabled {
+  opacity: 0.5;
+}
+.context-menu button.danger {
+  color: var(--danger);
+}
 .success-text,
 .success {
   color: var(--success) !important;
