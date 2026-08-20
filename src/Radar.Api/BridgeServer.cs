@@ -129,6 +129,21 @@ public class BridgeServer
                 WriteBytes(stream, 405, "text/plain; charset=utf-8", MethodNotAllowed, keepAlive);
                 return;
             }
+            if (path == "/__bridge-bin")
+            {
+                if (request.Method == "POST")
+                {
+                    if (!IsTrustedRequest(request))
+                    {
+                        WriteBytes(stream, 403, "text/plain; charset=utf-8", Forbidden, keepAlive);
+                        return;
+                    }
+                    WriteBytes(stream, 200, "application/json; charset=utf-8", HandleBinaryFrames(request), keepAlive);
+                    return;
+                }
+                WriteBytes(stream, 405, "text/plain; charset=utf-8", MethodNotAllowed, keepAlive);
+                return;
+            }
             if (request.Method == "GET" && request.Path.StartsWith("/video-download", StringComparison.Ordinal))
             {
                 ServeVideoDownload(stream, request.Query);
@@ -264,6 +279,56 @@ public class BridgeServer
         var response = new { result, error };
         return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response));
     }
+
+    /// <summary>
+    /// 二进制视频帧上传：4B 帧数 + 4B 起始序号 + N × (4B 长度 + PNG 数据)。
+    /// 相对 JSON/base64 帧上传减少约 1/3 的传输与序列化开销。
+    /// </summary>
+    private byte[] HandleBinaryFrames(HttpRequest request)
+    {
+        object? result = null;
+        object? error = null;
+        try
+        {
+            var exportId = ParseQuery(request.Query).GetValueOrDefault("exportId");
+            var body = request.Body;
+            if (string.IsNullOrEmpty(exportId) || body.Length < 8)
+                throw AppErrors.New("video_export_not_found", AppErrors.StatusBadRequest, "视频导出任务不存在。");
+            var frameCount = ReadInt32(body, 0);
+            var startIndex = ReadInt32(body, 4);
+            if (frameCount < 0 || frameCount > ShowcaseVideo.MaxShowcaseVideoFrames)
+                throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "视频帧数量超过限制。");
+            var frames = new byte[frameCount][];
+            var offset = 8;
+            for (var i = 0; i < frameCount; i++)
+            {
+                if (offset + 4 > body.Length)
+                    throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "视频帧数据不完整。");
+                var length = ReadInt32(body, offset);
+                offset += 4;
+                if (length < 0 || offset + length > body.Length)
+                    throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "视频帧数据不完整。");
+                frames[i] = new byte[length];
+                Buffer.BlockCopy(body, offset, frames[i], 0, length);
+                offset += length;
+            }
+            app.AppendVideoFramesBinary(exportId, startIndex, frames);
+            result = null;
+        }
+        catch (AppError appErr)
+        {
+            error = new { code = appErr.Code, message = appErr.Message };
+        }
+        catch (Exception ex)
+        {
+            error = new { code = "internal_error", message = ex.Message };
+        }
+        var response = new { result, error };
+        return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response));
+    }
+
+    private static int ReadInt32(byte[] data, int offset)
+        => (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
 
     private void ServeStatic(Stream stream, string path, bool keepAlive)
     {

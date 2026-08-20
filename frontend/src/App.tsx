@@ -1,108 +1,80 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
   Database,
   ChartNoAxesCombined,
-  DownloadCloud,
   FolderInput,
   Library,
   Settings,
   Sparkles,
 } from "lucide-react";
-import { bridge } from "./bridge";
-import { ImportView } from "./features/import/ImportView";
-import { AnalysisView } from "./features/analysis/AnalysisView";
+import { BusyMessage } from "./components/Busy";
 import { RatingMethodologyDialog } from "./components/RatingMethodologyDialog";
-import { LibraryView } from "./features/library/LibraryView";
-import { SettingsView } from "./features/settings/SettingsView";
-import { StudioView } from "./features/studio/StudioView";
-import type {
-  AppConfig,
-  BootstrapState,
-  DemoRecord,
-  ImportSource,
-  Page,
-  SavedPlayer,
-  StudioKind,
-  StudioSeed,
-} from "./types";
-import { defaultConfig } from "./types";
-import {
-  makeInitialDraft,
-  mergeOverlaySeed,
-  mergeRadarSeed,
-  mergeShowcaseSeed,
-  stripLegacyDraftFields,
-} from "./features/studio/draftMutations";
+import { useAppStore } from "./stores/appStore";
+import type { Page } from "./types";
 
-const toastLabels: Record<StudioKind, string> = {
-  radar: "已保存到雷达制作",
-  overlay: "已加入叠图队列",
-  showcase: "已加入轮播",
-};
+const LibraryView = lazy(() =>
+  import("./features/library/LibraryView").then((m) => ({ default: m.LibraryView })),
+);
+const ImportView = lazy(() =>
+  import("./features/import/ImportView").then((m) => ({ default: m.ImportView })),
+);
+const AnalysisView = lazy(() =>
+  import("./features/analysis/AnalysisView").then((m) => ({ default: m.AnalysisView })),
+);
+const StudioView = lazy(() =>
+  import("./features/studio/StudioView").then((m) => ({ default: m.StudioView })),
+);
+const SettingsView = lazy(() =>
+  import("./features/settings/SettingsView").then((m) => ({ default: m.SettingsView })),
+);
+
+const nav: Array<{ id: Page; to: string; label: string; icon: typeof Library }> = [
+  { id: "library", to: "/library", label: "资料库", icon: Library },
+  { id: "import", to: "/import", label: "导入", icon: FolderInput },
+  { id: "analysis", to: "/analysis", label: "比赛分析", icon: ChartNoAxesCombined },
+  { id: "studio", to: "/studio/radar", label: "制作", icon: Sparkles },
+  { id: "settings", to: "/settings", label: "设置", icon: Settings },
+];
+
+function isActive(id: Page, pathname: string) {
+  if (id === "studio") return pathname.startsWith("/studio");
+  if (id === "analysis") return pathname.startsWith("/analysis");
+  return pathname === `/${id}`;
+}
+
+function HomeRedirect() {
+  const players = useAppStore((state) => state.players);
+  return <Navigate to={players.length ? "/library" : "/import"} replace />;
+}
 
 export default function App() {
-  const [page, setPage] = useState<Page>("library");
-  const [bootstrap, setBootstrap] = useState<BootstrapState | null>(null);
-  const [players, setPlayers] = useState<SavedPlayer[]>([]);
-  const [sources, setSources] = useState<ImportSource[]>([]);
-  const [demos, setDemos] = useState<DemoRecord[]>([]);
-  const [analysisDemoId, setAnalysisDemoId] = useState("");
-  const [config, setConfig] = useState<AppConfig>(defaultConfig);
-  const [seed, setSeed] = useState<StudioSeed | null>(null);
-  const [studioKind, setStudioKind] = useState<StudioKind>("radar");
-  const [error, setError] = useState("");
-  const [methodologyOpen, setMethodologyOpen] = useState(false);
-  const [toast, setToast] = useState("");
-  const toastTimer = useRef<number | null>(null);
-  const refreshPlayers = useCallback(async () => {
-    const values = await bridge.listPlayers();
-    setPlayers(values);
-  }, []);
+  const bootstrapped = useAppStore((state) => state.bootstrapped);
+  const bootError = useAppStore((state) => state.bootError);
+  const config = useAppStore((state) => state.config);
+  const players = useAppStore((state) => state.players);
+  const sources = useAppStore((state) => state.sources);
+  const toast = useAppStore((state) => state.toast);
+  const methodologyOpen = useAppStore((state) => state.methodologyOpen);
+  const setMethodologyOpen = useAppStore((state) => state.setMethodologyOpen);
+  const bootstrap = useAppStore((state) => state.bootstrap);
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+
   useEffect(() => {
-    bridge
-      .bootstrap()
-      .then((value) => {
-        setBootstrap(value);
-        setPlayers(value.players ?? []);
-        setSources(value.config.import_sources ?? []);
-        setConfig(value.config);
-        bridge.listDemos().then((values) => setDemos(values ?? [])).catch(() => setDemos([]));
-        if (!value.players?.length) setPage("import");
-      })
-      .catch((value) =>
-        setError(value instanceof Error ? value.message : String(value)),
-      );
-  }, []);
-  function showToast(message: string) {
-    setToast(message);
-    if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(""), 2400);
-  }
-  async function create(kind: StudioKind, nextSeed: StudioSeed) {
-    try {
-      const existing = await bridge.loadDraft(kind);
-      let draft = existing
-        ? stripLegacyDraftFields(JSON.parse(existing.payload))
-        : makeInitialDraft(kind, config);
-      if (kind === "radar") draft = mergeRadarSeed(draft, nextSeed);
-      else if (kind === "overlay") draft = mergeOverlaySeed(draft, nextSeed);
-      else draft = await mergeShowcaseSeed(draft, nextSeed);
-      await bridge.saveDraft(kind, JSON.stringify(draft));
-      showToast(`${toastLabels[kind]}：${nextSeed.player.name}`);
-    } catch (value) {
-      setError(value instanceof Error ? value.message : String(value));
-    }
-  }
-  if (error && !bootstrap)
+    void bootstrap();
+  }, [bootstrap]);
+
+  if (bootError && !bootstrapped)
     return (
       <div className="boot-screen">
         <img src="/logo.svg" alt="" />
         <h1>工作台无法启动</h1>
-        <p>{error}</p>
+        <p>{bootError}</p>
         <button onClick={() => window.location.reload()}>重新加载</button>
       </div>
     );
-  if (!bootstrap)
+  if (!bootstrapped)
     return (
       <div className="boot-screen">
         <img src="/logo.svg" alt="" />
@@ -110,13 +82,7 @@ export default function App() {
         <p>正在打开本地资料库…</p>
       </div>
     );
-  const nav = [
-    { id: "library" as Page, label: "资料库", icon: Library },
-    { id: "import" as Page, label: "导入", icon: FolderInput },
-    { id: "analysis" as Page, label: "比赛分析", icon: ChartNoAxesCombined },
-    { id: "studio" as Page, label: "制作", icon: Sparkles },
-    { id: "settings" as Page, label: "设置", icon: Settings },
-  ];
+
   return (
     <div className={`app-shell ${config.reduce_motion ? "reduce-motion" : ""}`}>
       <a className="skip-link" href="#main-content">
@@ -131,12 +97,12 @@ export default function App() {
           </div>
         </div>
         <nav aria-label="主导航">
-          {nav.map(({ id, label, icon: Icon }) => (
+          {nav.map(({ id, to, label, icon: Icon }) => (
             <button
               key={id}
-              className={page === id ? "active" : ""}
-              aria-current={page === id ? "page" : undefined}
-              onClick={() => setPage(id)}
+              className={isActive(id, pathname) ? "active" : ""}
+              aria-current={isActive(id, pathname) ? "page" : undefined}
+              onClick={() => navigate(to)}
             >
               <Icon size={19} />
               <span>{label}</span>
@@ -157,56 +123,30 @@ export default function App() {
         </div>
       </aside>
       <main id="main-content" className="app-content" tabIndex={-1}>
-        {page === "library" && (
-          <LibraryView
-            players={players}
-            refresh={refreshPlayers}
-            onCreate={create}
-          />
-        )}{" "}
-        {page === "import" && (
-          <ImportView
-            sources={sources}
-            followedSteamIDs={players
-              .filter((player) => player.followed)
-              .map((player) => player.steam_id)}
-            onSourcesChange={(next) => {
-              setSources(next);
-              setConfig({ ...config, import_sources: next });
-            }}
-            onImported={refreshPlayers}
-            demos={demos}
-            onDemosChange={setDemos}
-            onAnalyze={(demoId) => { setAnalysisDemoId(demoId); setPage("analysis"); }}
-          />
-        )}{" "}
-        {page === "analysis" && (
-          <AnalysisView demos={demos} initialDemoId={analysisDemoId} onDemosChange={setDemos} />
-        )}{" "}
-        {page === "studio" && (
-          <StudioView
-            seed={seed}
-            initialKind={studioKind}
-            config={config}
-            onNeedMaterial={() => setPage("library")}
-            onShowMethodology={() => setMethodologyOpen(true)}
-          />
-        )}{" "}
-        {page === "settings" && (
-          <SettingsView
-            config={config}
-            onChange={setConfig}
-            sources={sources}
-            onSourcesChange={(next) => {
-              setSources(next);
-              setConfig({ ...config, import_sources: next });
-            }}
-            onDataChanged={refreshPlayers}
-            onShowMethodology={() => setMethodologyOpen(true)}
-          />
-        )}
+        <Suspense
+          fallback={
+            <div className="route-loading">
+              <BusyMessage>正在加载页面…</BusyMessage>
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/" element={<HomeRedirect />} />
+            <Route path="/library" element={<LibraryView />} />
+            <Route path="/import" element={<ImportView followedSteamIDs={players.filter((p) => p.followed).map((p) => p.steam_id)} />} />
+            <Route path="/analysis" element={<AnalysisView />} />
+            <Route path="/analysis/:demoId" element={<AnalysisView />} />
+            <Route path="/studio" element={<Navigate to="/studio/radar" replace />} />
+            <Route path="/studio/:kind" element={<StudioView />} />
+            <Route path="/settings" element={<SettingsView />} />
+            <Route path="*" element={<Navigate to="/library" replace />} />
+          </Routes>
+        </Suspense>
       </main>
-      <RatingMethodologyDialog open={methodologyOpen} onClose={() => setMethodologyOpen(false)} />
+      <RatingMethodologyDialog
+        open={methodologyOpen}
+        onClose={() => setMethodologyOpen(false)}
+      />
       {toast && (
         <div className="app-toast" role="status">
           {toast}

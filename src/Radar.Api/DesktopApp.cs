@@ -505,6 +505,21 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         }
     }
 
+    public void AppendVideoFramesBinary(string exportID, int startIndex, byte[][] frames)
+    {
+        VideoExportSession session;
+        lock (videoLock) videoExports.TryGetValue(exportID, out session!);
+        if (session == null) throw AppErrors.New("video_export_not_found", AppErrors.StatusBadRequest, "视频导出任务不存在。");
+        lock (session.Lock)
+        {
+            if (session.Cts.IsCancellationRequested) throw AppErrors.New("video_export_cancelled", AppErrors.StatusBadRequest, "视频导出已取消。");
+            if (startIndex < 0 || startIndex + frames.Length > ShowcaseVideo.MaxShowcaseVideoFrames)
+                throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "视频帧数量超过限制。");
+            for (var i = 0; i < frames.Length; i++)
+                File.WriteAllBytes(Path.Combine(session.TempDir, $"frame_{startIndex + i + 1:000000}.png"), frames[i]);
+        }
+    }
+
     public object FinishVideoExport(string exportID)
     {
         VideoExportSession session;

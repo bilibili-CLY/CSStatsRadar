@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  memo,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -56,7 +57,18 @@ function polygon(ctx: CanvasRenderingContext2D, points: Point[]) {
   ctx.closePath();
 }
 
+const geometryCache = new Map<string, ReturnType<typeof computeGeometry>>();
 function geometry(props: RadarCanvasProps, width: number, height: number) {
+  const showSwing = !props.hideSwing && props.ratingVersion === "rating_3";
+  const key = `${props.compact ? 1 : 0}|${showSwing ? 1 : 0}|${width}|${height}`;
+  const cached = geometryCache.get(key);
+  if (cached) return cached;
+  const value = computeGeometry(props, width, height);
+  if (geometryCache.size > 128) geometryCache.clear();
+  geometryCache.set(key, value);
+  return value;
+}
+function computeGeometry(props: RadarCanvasProps, width: number, height: number) {
   const showSwing = !props.hideSwing && props.ratingVersion === "rating_3";
   return {
     cx: width / 2,
@@ -89,14 +101,21 @@ function pointAt(
   };
 }
 
+const labelBoundsCache = new Map<string, Bounds>();
 function labelBounds(props: RadarCanvasProps, width: number, height: number): Bounds {
   const showSwing = !props.hideSwing && props.ratingVersion === "rating_3";
-  return {
+  const key = `${props.compact ? 1 : 0}|${showSwing ? 1 : 0}|${width}|${height}`;
+  const cached = labelBoundsCache.get(key);
+  if (cached) return cached;
+  const value = {
     left: width * 0.035,
     right: width * 0.965,
     top: height * 0.035,
     bottom: height * (showSwing ? (props.compact ? 0.82 : 0.82) : 0.95),
   };
+  if (labelBoundsCache.size > 128) labelBoundsCache.clear();
+  labelBoundsCache.set(key, value);
+  return value;
 }
 
 function distanceToBounds(
@@ -228,15 +247,31 @@ export function selectRatingProfile(response: RadarResponse, version: RatingVers
   return profile ? { ...response, radar: profile } : response;
 }
 
+function createRadarCanvas(width: number, height: number) {
+  const canvas =
+    typeof document !== "undefined"
+      ? document.createElement("canvas")
+      : new OffscreenCanvas(width, height);
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
+}
+
+function canvas2D(
+  canvas: HTMLCanvasElement | OffscreenCanvas,
+): CanvasRenderingContext2D | null {
+  return canvas.getContext("2d") as CanvasRenderingContext2D | null;
+}
+
 export function renderRadarCanvas(
-  canvas: HTMLCanvasElement,
+  canvas: HTMLCanvasElement | OffscreenCanvas,
   props: RadarCanvasProps,
   width: number,
   height: number,
 ) {
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas2D(canvas);
   if (!ctx) return;
   ctx.clearRect(0, 0, width, height);
   if (!props.transparent) {
@@ -647,10 +682,8 @@ export function renderSwingCanvas(
   halfWidth?: number,
   fontScale = 1,
 ) {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
+  const canvas = createRadarCanvas(width, height);
+  const ctx = canvas2D(canvas);
   if (!ctx) return canvas;
   ctx.clearRect(0, 0, width, height);
   drawSwingRows(ctx, [dataset], width, height, true, halfWidth, fontScale);
@@ -750,8 +783,9 @@ function hitTestOverlay(
   return best ? (best as { id: string; distance: number }).id : null;
 }
 
-export const RadarCanvas = forwardRef<RadarCanvasHandle, RadarCanvasProps>(
-  (props, ref) => {
+export const RadarCanvas = memo(
+  forwardRef<RadarCanvasHandle, RadarCanvasProps>(
+    (props, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [hoveredOverlayId, setHoveredOverlayId] = useState<string | null>(
       null,
@@ -831,4 +865,5 @@ export const RadarCanvas = forwardRef<RadarCanvasHandle, RadarCanvasProps>(
       />
     );
   },
+  ),
 );

@@ -8,9 +8,12 @@ import {
   StarOff,
   Video,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { bridge } from "../../bridge";
 import { BusyMessage, Spinner } from "../../components/Busy";
 import { PlayerAvatarView } from "../../components/PlayerAvatar";
+import { useAppStore } from "../../stores/appStore";
+import { saveSeedToDraft, studioToastLabels } from "../studio/draftMutations";
 import type {
   MatchRecord,
   SavedPlayer,
@@ -19,13 +22,10 @@ import type {
 } from "../../types";
 import { filterMatches, recentMatchIDs } from "./selection";
 
-interface Props {
-  players: SavedPlayer[];
-  refresh: () => Promise<void>;
-  onCreate: (kind: StudioKind, seed: StudioSeed) => void;
-}
-
-export function LibraryView({ players, refresh, onCreate }: Props) {
+export function LibraryView() {
+  const players = useAppStore((state) => state.players);
+  const refreshPlayers = useAppStore((state) => state.refreshPlayers);
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SavedPlayer | null>(null);
   const [matches, setMatches] = useState<MatchRecord[]>([]);
@@ -78,7 +78,10 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
     try {
       setBusyAction(`studio:${kind}`);
       const radar = await bridge.buildRadar(selected.steam_id, activeIds);
-      onCreate(kind, { player: selected, matchIds: activeIds, radar });
+      const seed: StudioSeed = { player: selected, matchIds: activeIds, radar };
+      await saveSeedToDraft(kind, seed, useAppStore.getState().config);
+      useAppStore.getState().showToast(`${studioToastLabels[kind]}：${selected.name}`);
+      navigate(`/studio/${kind}`);
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
     } finally {
@@ -92,7 +95,7 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
         { name: player.name, steam_id: player.steam_id },
         !player.followed,
       );
-      await refresh();
+      await refreshPlayers();
       if (selected?.steam_id === player.steam_id)
         setSelected({ ...player, followed: !player.followed });
     } finally {
@@ -111,7 +114,7 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
     await bridge.deletePlayerMatches(selected.steam_id, Array.from(chosen));
     setMatches(await bridge.getMatches(selected.steam_id).catch(() => []));
     setChosen(new Set());
-    await refresh();
+    await refreshPlayers();
   }
   async function deletePlayerData() {
     if (
@@ -124,7 +127,7 @@ export function LibraryView({ players, refresh, onCreate }: Props) {
     await bridge.deletePlayerData(selected.steam_id);
     setSelected(null);
     setMatches([]);
-    await refresh();
+    await refreshPlayers();
   }
   function toggleChosen(id: string) {
     setChosen((current) => {

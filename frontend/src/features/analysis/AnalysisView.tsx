@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowDown, ArrowUp, ChartNoAxesCombined, FileArchive, FileSearch, Play, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChartNoAxesCombined, FileSearch, Play, Search } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
 import { bridge } from "../../bridge";
 import { BusyMessage } from "../../components/Busy";
+import { DemoCard } from "../../components/demo/DemoCard";
 import { PlayerAvatarView } from "../../components/PlayerAvatar";
+import { formatDemoDate, signed } from "../../lib/format";
+import { useAppStore } from "../../stores/appStore";
 import type { DemoAnalysis, DemoPlayerAnalysis, DemoRecord, PlayerRoundMetric } from "../../types";
 
-interface Props {
-  demos: DemoRecord[];
-  initialDemoId: string;
-  onDemosChange: (demos: DemoRecord[]) => void;
-}
-
-export function AnalysisView({ demos, initialDemoId, onDemosChange }: Props) {
-  const [demoId, setDemoId] = useState(initialDemoId);
+export function AnalysisView() {
+  const demos = useAppStore((state) => state.demos);
+  const setDemos = useAppStore((state) => state.setDemos);
+  const navigate = useNavigate();
+  const { demoId: demoIdParam } = useParams();
+  const [demoId, setDemoId] = useState(demoIdParam ?? "");
   const [analysis, setAnalysis] = useState<DemoAnalysis | null>(null);
   const [playerId, setPlayerId] = useState("");
   const [round, setRound] = useState(1);
@@ -26,13 +28,13 @@ export function AnalysisView({ demos, initialDemoId, onDemosChange }: Props) {
   const selectedRound = player?.rounds.find((item) => item.round_number === round) ?? player?.rounds[0];
   const filteredDemos = useMemo(() => demos.filter((item) => `${item.file_name} ${item.map_name} ${item.note ?? ""}`.toLowerCase().includes(query.toLowerCase())), [demos, query]);
 
-  useEffect(() => { if (initialDemoId) setDemoId(initialDemoId); }, [initialDemoId]);
+  useEffect(() => { setDemoId(demoIdParam ?? ""); }, [demoIdParam]);
   useEffect(() => {
     if (!demoId) { setAnalysis(null); return; }
     setLoading(true); setError("");
     bridge.getDemoAnalysis(demoId).then((value) => {
       setAnalysis(value); setPlayerId((current) => value.players.some((item) => item.player.steam_id === current) ? current : value.players[0]?.player.steam_id ?? ""); setRound(1);
-      bridge.listDemos().then(onDemosChange).catch(() => undefined);
+      bridge.listDemos().then(setDemos).catch(() => undefined);
     }).catch((value) => setError(value instanceof Error ? value.message : String(value))).finally(() => setLoading(false));
   }, [demoId]);
 
@@ -48,14 +50,14 @@ export function AnalysisView({ demos, initialDemoId, onDemosChange }: Props) {
         <div className="demo-catalog-heading"><div><h2>比赛目录</h2><p>已成功解析的 Demo 可用于逐回合分析。</p></div></div>
         <div className="demo-catalog-content">
           <label className="search-box" style={{ margin: "0 0 12px" }}><Search size={17}/><span className="sr-only">搜索 Demo</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="文件名、地图或备注"/></label>
-          {filteredDemos.length ? <div className="demo-record-grid">{filteredDemos.map((demo) => <article key={demo.demo_record_id} className="persistent-demo-card analysis-demo-card" onClick={() => setDemoId(demo.demo_record_id)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDemoId(demo.demo_record_id); } }}><header><button className="persistent-demo-summary" tabIndex={-1}><span className="demo-file-icon"><FileArchive size={18}/></span><span><strong title={demo.file_name}>{demo.map_name || "未知地图"}</strong><small title={demo.file_name}>{demo.file_name}</small></span><b>{demo.score_a}<i>:</i>{demo.score_b}</b></button></header><button className="persistent-demo-meta" tabIndex={-1}><span>{demo.rounds || "—"} 回合</span><span>{demo.participants?.length ?? 0} 名玩家</span><span title={demo.match_time_source}>{formatDemoDate(demo.match_time)}</span></button><footer><button onClick={(event) => { event.stopPropagation(); setDemoId(demo.demo_record_id); }}><Play size={15}/>分析此 Demo</button></footer></article>)}</div> : <div className="demo-empty-state"><span><FileSearch size={29}/></span><h2>没有可分析的 Demo</h2><p>调整文件名、地图或备注搜索条件，或先在导入页添加比赛。</p></div>}
+          {filteredDemos.length ? <div className="demo-record-grid">{filteredDemos.map((demo) => <DemoCard key={demo.demo_record_id} demo={demo} variant="analysis" onOpen={() => navigate(`/analysis/${demo.demo_record_id}`)} footer={<button onClick={() => navigate(`/analysis/${demo.demo_record_id}`)}><Play size={15}/>分析此 Demo</button>}/>)}</div> : <div className="demo-empty-state"><span><FileSearch size={29}/></span><h2>没有可分析的 Demo</h2><p>调整文件名、地图或备注搜索条件，或先在导入页添加比赛。</p></div>}
         </div>
       </section>
     </div>
   );
 
   return <div className="page analysis-page">
-    <header className="page-header compact-header"><div><span className="eyebrow">逐回合洞察</span><h1>{selectedDemo.map_name || "比赛分析"}</h1><p>{selectedDemo.file_name} · {selectedDemo.score_a}:{selectedDemo.score_b} · {selectedDemo.rounds} 回合</p></div><button className="quiet" onClick={() => { setDemoId(""); setAnalysis(null); }}><FileSearch size={16}/>切换 Demo</button></header>
+    <header className="page-header compact-header"><div><span className="eyebrow">逐回合洞察</span><h1>{selectedDemo.map_name || "比赛分析"}</h1><p>{selectedDemo.file_name} · {selectedDemo.score_a}:{selectedDemo.score_b} · {selectedDemo.rounds} 回合</p></div><button className="quiet" onClick={() => { setDemoId(""); setAnalysis(null); navigate("/analysis"); }}><FileSearch size={16}/>切换 Demo</button></header>
     {error && <div className="notice danger" role="alert"><span>{error}</span><button onClick={() => bridge.chooseReplacementDemo(demoId).then(setAnalysis).catch((value) => setError(String(value)))}>重新定位文件</button></div>}
     {loading ? <BusyMessage>正在读取并补全回合分析…</BusyMessage> : analysis && <div className="analysis-workspace">
       <aside className="card analysis-roster">
@@ -108,9 +110,4 @@ function RoundDetail({ metric }: { metric: PlayerRoundMetric }) {
   return <section className="round-detail" aria-label={`第 ${metric.round_number} 回合详情`}><header><strong>第 {metric.round_number} 回合详情</strong><span className={metric.won ? "round-win" : "round-loss"}>{metric.won ? "胜利" : "失利"}</span></header><div><Metric label="比分" value={`${metric.score_a}:${metric.score_b}`}/><Metric label="K / D / A" value={`${metric.kills} / ${metric.deaths} / ${metric.assists}`}/><Metric label="伤害" value={String(metric.damage)}/><Metric label="KAST" value={metric.kast ? "✓ 有效" : "—"}/><Metric label="累计 R3" value={metric.cumulative_rating?.toFixed(2) ?? "—"}/><Metric label="Swing" value={`${signed(metric.round_swing)}%`} tone={metric.round_swing}/></div></section>;
 }
 function Metric({ label, value, tone }: { label: string; value: string; tone?: number }) { return <span><small>{label}</small><strong className={tone == null ? "" : tone >= 0 ? "positive-text" : "negative-text"}>{value}</strong></span>; }
-function signed(value: number) { return `${value > 0 ? "+" : ""}${value.toFixed(2)}`; }
 function contributionLabel(kind: string) { return ({ final_blow: "终结击杀", damage: "伤害分摊", flash_assist: "闪光助攻", trade: "补枪", death: "死亡", round_result: "回合结算", plant_and_result: "下包与结算", defuse_and_result: "拆包与结算", survival_and_result: "存活与结算" } as Record<string,string>)[kind] ?? kind; }
-function formatDemoDate(value: string) {
-  const date = new Date(value); if (Number.isNaN(date.getTime())) return "时间未知";
-  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
-}

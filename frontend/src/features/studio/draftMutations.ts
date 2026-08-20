@@ -142,6 +142,27 @@ export function mergeOverlaySeed(
   return entries === draft.entries ? draft : { ...draft, entries };
 }
 
+export const studioToastLabels: Record<StudioKind, string> = {
+  radar: "已保存到雷达制作",
+  overlay: "已加入叠图队列",
+  showcase: "已加入轮播",
+};
+
+export async function saveSeedToDraft(
+  kind: StudioKind,
+  seed: StudioSeed,
+  config: AppConfig,
+): Promise<void> {
+  const existing = await bridge.loadDraft(kind);
+  let draft = existing
+    ? stripLegacyDraftFields(JSON.parse(existing.payload))
+    : makeInitialDraft(kind, config);
+  if (kind === "radar") draft = mergeRadarSeed(draft, seed);
+  else if (kind === "overlay") draft = mergeOverlaySeed(draft, seed);
+  else draft = await mergeShowcaseSeed(draft, seed);
+  await bridge.saveDraft(kind, JSON.stringify(draft));
+}
+
 export async function mergeShowcaseSeed(
   draft: DraftRecord,
   seed: StudioSeed,

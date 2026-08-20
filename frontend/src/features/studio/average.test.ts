@@ -1,25 +1,24 @@
 import { describe, expect, it } from "vitest";
-import type { OverlayEntry, RadarResponse } from "../../types";
+import type { OverlayEntry, RadarResponse, ShowcaseSlide } from "../../types";
+import { appendOverlayEntry } from "./draftMutations";
 import {
-  appendOverlayEntry,
   audioOffsetFromDrag,
   audioOffsetLabel,
-  timelineTickStep,
   averageRadar,
   bestMetricIndexesForSlide,
-  interpolateRadarResponse,
   clampShowcaseTransform,
+  interpolateRadarResponse,
   rating3Available,
   resizedShowcaseDuration,
+  settledShowcasePreviewTime,
   showcaseCanvasTextAlign,
   showcaseDuration,
   showcasePaintOrder,
   showcaseSegment,
   showcaseSlideStart,
   showcaseTransitionProgress,
-  settledShowcasePreviewTime,
-  type ShowcaseSlide,
-} from "./StudioView";
+  timelineTickStep,
+} from "./showcaseMath";
 import {
   selectRatingProfile,
   visibleRadarPointDistance,

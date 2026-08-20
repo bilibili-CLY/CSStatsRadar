@@ -139,6 +139,32 @@ export const bridge = {
     ),
   appendVideoFrames: (id: string, start: number, frames: string[]) =>
     call<void>("AppendVideoFrames", id, start, frames),
+  appendVideoFramesBinary: async (id: string, start: number, frames: Blob[]) => {
+    const chunks: BlobPart[] = [];
+    const header = new ArrayBuffer(8);
+    const view = new DataView(header);
+    view.setInt32(0, frames.length, false);
+    view.setInt32(4, start, false);
+    chunks.push(header);
+    for (const frame of frames) {
+      const lengthHeader = new ArrayBuffer(4);
+      new DataView(lengthHeader).setInt32(0, frame.size, false);
+      chunks.push(lengthHeader, frame);
+    }
+    const response = await fetch(
+      `/__bridge-bin?exportId=${encodeURIComponent(id)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Blob(chunks),
+      },
+    );
+    const payload = (await response.json()) as {
+      result: unknown;
+      error?: { code: string; message: string };
+    };
+    if (payload.error) throw new Error(payload.error.message || "bridge error");
+  },
   finishVideoExport: (id: string) =>
     call<{ url: string; name: string }>("FinishVideoExport", id),
   cancelVideoExport: (id: string) => call<void>("CancelVideoExport", id),

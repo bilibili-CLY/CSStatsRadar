@@ -1,5 +1,6 @@
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./styles.css";
 import "./media.css";
@@ -24,6 +25,10 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: strin
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <AppErrorBoundary><App /></AppErrorBoundary>
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </AppErrorBoundary>
   </StrictMode>,
 );

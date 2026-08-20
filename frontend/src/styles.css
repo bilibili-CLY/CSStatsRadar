@@ -252,6 +252,12 @@ p {
   padding: 27px 30px 30px;
   animation: page-in 0.2s ease;
 }
+.route-loading {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  color: #9aa3ad;
+}
 .page-header {
   min-height: 72px;
   display: flex;

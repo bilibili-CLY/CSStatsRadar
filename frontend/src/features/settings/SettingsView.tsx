@@ -10,16 +10,8 @@ import {
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { Spinner } from "../../components/Busy";
+import { useAppStore } from "../../stores/appStore";
 import type { AppConfig, ImportSource } from "../../types";
-
-interface Props {
-  config: AppConfig;
-  onChange: (config: AppConfig) => void;
-  sources: ImportSource[];
-  onSourcesChange: (sources: ImportSource[]) => void;
-  onDataChanged: () => Promise<void>;
-  onShowMethodology: () => void;
-}
 
 const radarAxisLimits: Array<{
   name: string;
@@ -37,14 +29,13 @@ const radarAxisLimits: Array<{
   { name: "Rating", min: 0.75, max: 3, step: 0.05, defaultValue: 1.5 },
 ];
 
-export function SettingsView({
-  config,
-  onChange,
-  sources,
-  onSourcesChange,
-  onDataChanged,
-  onShowMethodology,
-}: Props) {
+export function SettingsView() {
+  const config = useAppStore((state) => state.config);
+  const sources = useAppStore((state) => state.sources);
+  const setConfig = useAppStore((state) => state.setConfig);
+  const setImportSources = useAppStore((state) => state.setImportSources);
+  const refreshPlayers = useAppStore((state) => state.refreshPlayers);
+  const setMethodologyOpen = useAppStore((state) => state.setMethodologyOpen);
   const [draft, setDraft] = useState(config);
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -69,7 +60,7 @@ export function SettingsView({
         draft.show_rating_watermark,
       );
       setDraft(next);
-      onChange(next);
+      setConfig(next);
       setState("saved");
     } catch (value) {
       setState("error");
@@ -89,15 +80,15 @@ export function SettingsView({
   }
   async function addSource() {
     const path = await bridge.chooseDirectory();
-    if (path) onSourcesChange(await bridge.addSource(path));
+    if (path) setImportSources(await bridge.addSource(path));
   }
   async function chooseDatabase() {
     try {
       setError("");
       const next = await bridge.chooseDatabase();
       setDraft(next);
-      onChange(next);
-      await onDataChanged();
+      setConfig(next);
+      await refreshPlayers();
       setState("saved");
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
@@ -113,7 +104,7 @@ export function SettingsView({
       return;
     try {
       await bridge.clearAllData();
-      await onDataChanged();
+      await refreshPlayers();
       setState("saved");
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
@@ -182,7 +173,7 @@ export function SettingsView({
                 <span>显示 3.0 近似水印</span>
               </label>
             )}
-            <button className="quiet" onClick={onShowMethodology}>查看 Rating 与 Swing 公式</button>
+            <button className="quiet" onClick={() => setMethodologyOpen(true)}>查看 Rating 与 Swing 公式</button>
           </div>
         </section>
         <section className="card settings-section">
@@ -201,7 +192,7 @@ export function SettingsView({
                   </span>
                   <button
                     onClick={() =>
-                      bridge.removeSource(source.id).then(onSourcesChange)
+                      bridge.removeSource(source.id).then(setImportSources)
                     }
                   >
                     移除

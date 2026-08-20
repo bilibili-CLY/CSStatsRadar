@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Dispatch, KeyboardEvent as ReactKeyboardEvent, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   CheckCircle2,
   FileArchive,
@@ -19,7 +20,9 @@ import {
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { BusyMessage, Spinner } from "../../components/Busy";
+import { DemoCard } from "../../components/demo/DemoCard";
 import { PlayerAvatarView } from "../../components/PlayerAvatar";
+import { useAppStore } from "../../stores/appStore";
 import { claimCompletedImport } from "./completion";
 import type {
   DemoRecord,
@@ -31,26 +34,18 @@ import type {
 } from "../../types";
 
 interface Props {
-  sources: ImportSource[];
   followedSteamIDs: string[];
-  onSourcesChange: (sources: ImportSource[]) => void;
-  onImported: () => void | Promise<void>;
-  demos: DemoRecord[];
-  onDemosChange: (demos: DemoRecord[]) => void;
-  onAnalyze: (demoId: string) => void;
 }
 
 type ViewMode = "grid" | "list";
 
-export function ImportView({
-  sources,
-  followedSteamIDs,
-  onSourcesChange,
-  onImported,
-  demos,
-  onDemosChange,
-  onAnalyze,
-}: Props) {
+export function ImportView({ followedSteamIDs }: Props) {
+  const demos = useAppStore((state) => state.demos);
+  const sources = useAppStore((state) => state.sources);
+  const setDemos = useAppStore((state) => state.setDemos);
+  const setImportSources = useAppStore((state) => state.setImportSources);
+  const refreshPlayers = useAppStore((state) => state.refreshPlayers);
+  const navigate = useNavigate();
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [activeItem, setActiveItem] = useState<ImportItem | null>(null);
   const [activeDemo, setActiveDemo] = useState<DemoRecord | null>(null);
@@ -82,8 +77,8 @@ export function ImportView({
 
   useEffect(() => {
     if (!claimCompletedImport(finalizedJobs.current, summary)) return;
-    Promise.all([Promise.resolve(onImported()), bridge.listDemos().then(onDemosChange)]).catch((value) => setError(message(value)));
-  }, [summary?.job_id, summary?.status, onImported, onDemosChange]);
+    Promise.all([refreshPlayers(), bridge.listDemos().then(setDemos)]).catch((value) => setError(message(value)));
+  }, [summary?.job_id, summary?.status]);
 
   useEffect(() => {
     if (!jobId || !running) return;
@@ -169,7 +164,7 @@ export function ImportView({
     try {
       setError("");
       const path = await bridge.chooseDirectory();
-      if (path) onSourcesChange(await bridge.addSource(path));
+      if (path) setImportSources(await bridge.addSource(path));
     } catch (value) {
       setError(message(value));
     }
@@ -178,7 +173,7 @@ export function ImportView({
   async function removeSource(source: ImportSource) {
     try {
       setError("");
-      onSourcesChange(await bridge.removeSource(source.id));
+      setImportSources(await bridge.removeSource(source.id));
       if (sourceFilter === source.id) setSourceFilter("all");
     } catch (value) {
       setError(message(value));
@@ -228,7 +223,7 @@ export function ImportView({
       setActiveItem(null);
       setActiveDemo(null);
       await refreshDemos();
-      onImported();
+      refreshPlayers();
     } catch (value) {
       setError(message(value));
     } finally {
@@ -244,12 +239,12 @@ export function ImportView({
       const analysis = await bridge.chooseReplacementDemo(activeDemo.demo_record_id);
       setActiveAnalysis(analysis);
       await bridge.followDemoPlayers(activeDemo.demo_record_id, ids);
-      setSelected(new Set()); setActiveDemo(null); await refreshDemos(); onImported();
+      setSelected(new Set()); setActiveDemo(null); await refreshDemos(); refreshPlayers();
     } catch (value) { setDialogError(message(value)); }
     finally { setFollowing(false); }
   }
 
-  async function refreshDemos() { onDemosChange(await bridge.listDemos()); }
+  async function refreshDemos() { setDemos(await bridge.listDemos()); }
   async function confirmDeleteDemos() {
     if (!pendingDelete.length || deleting) return;
     try {
@@ -257,10 +252,10 @@ export function ImportView({
       setError("");
       await bridge.deleteDemos(pendingDelete);
       const nextDemos = await bridge.listDemos();
-      onDemosChange(nextDemos);
+      setDemos(nextDemos);
       setSelectedDemos(new Set());
       setPendingDelete([]);
-      await Promise.resolve(onImported());
+      refreshPlayers();
     } catch (value) {
       setError(message(value));
     } finally {
@@ -428,12 +423,12 @@ export function ImportView({
           </div>
         )}
 
-        {!!visibleItems.filter((item) => item.status !== "imported").length && <div className="import-task-items">{visibleItems.filter((item) => item.status !== "imported").map((item) => <DemoCard item={item} key={item.path} onOpen={() => { setSelected(new Set()); setActiveItem(item); }}/>)}</div>}
+        {!!visibleItems.filter((item) => item.status !== "imported").length && <div className="import-task-items">{visibleItems.filter((item) => item.status !== "imported").map((item) => <ImportTaskCard item={item} key={item.path} onOpen={() => { setSelected(new Set()); setActiveItem(item); }}/>)}</div>}
       </section>}
 
       <section className="demo-catalog" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const paths = Array.from(event.dataTransfer.files).map((file) => (file as File & { path?: string }).path).filter(Boolean) as string[]; if (paths.length) start(paths); }}>
         <div className="demo-catalog-heading"><div><h2>比赛目录</h2><p>成功解析的 Demo 会跨页面和重启保留。</p></div><div className="catalog-bulk-actions"><label><input type="checkbox" checked={visibleDemos.length > 0 && visibleDemos.every((demo) => selectedDemos.has(demo.demo_record_id))} onChange={(event) => setSelectedDemos(event.target.checked ? new Set(visibleDemos.map((demo) => demo.demo_record_id)) : new Set())}/>全选当前</label><button className="danger-action" disabled={!selectedDemos.size || deleting} onClick={() => setPendingDelete(Array.from(selectedDemos))}><Trash2 size={15}/>删除所选 ({selectedDemos.size})</button></div></div>
-	        <div className="demo-catalog-content">{visibleDemos.length ? <div className={`demo-record-grid ${viewMode}`}>{visibleDemos.map((demo) => <PersistentDemoCard key={demo.demo_record_id} demo={demo} selected={selectedDemos.has(demo.demo_record_id)} onSelected={(checked) => setSelectedDemos((current) => { const next = new Set(current); checked ? next.add(demo.demo_record_id) : next.delete(demo.demo_record_id); return next; })} onSaved={refreshDemos} onPlayers={() => { setSelected(new Set()); setActiveDemo(demo); }} onAnalyze={() => onAnalyze(demo.demo_record_id)} onDelete={() => setPendingDelete([demo.demo_record_id])}/>)}</div> : <div className="demo-empty-state"><span><UploadCloud size={29}/></span><h2>{demos.length ? "没有符合当前筛选的 Demo" : "还没有比赛记录"}</h2><p>{demos.length ? "调整文件名、来源或状态筛选后再试。" : "添加素材目录并扫描，或将 DEM / ZIP 文件拖到此处。"}</p>{!demos.length && <div><button className="primary" onClick={chooseFiles}><FileUp size={16}/>选择文件</button><button className="quiet" onClick={addSource}><FolderPlus size={16}/>添加目录</button></div>}</div>}</div>
+	        <div className="demo-catalog-content">{visibleDemos.length ? <div className={`demo-record-grid ${viewMode}`}>{visibleDemos.map((demo) => <DemoCard key={demo.demo_record_id} demo={demo} variant="catalog" selected={selectedDemos.has(demo.demo_record_id)} onSelected={(checked) => setSelectedDemos((current) => { const next = new Set(current); checked ? next.add(demo.demo_record_id) : next.delete(demo.demo_record_id); return next; })} editableNote onSavedNote={refreshDemos} footer={<><button onClick={() => { setSelected(new Set()); setActiveDemo(demo); }}>玩家</button><button onClick={() => navigate(`/analysis/${demo.demo_record_id}`)}><Play size={15}/>{demo.analysis_ready ? "分析" : "打开时补解析"}</button><button className="icon-button danger-action" aria-label={`删除 ${demo.file_name}`} onClick={() => setPendingDelete([demo.demo_record_id])}><Trash2 size={15}/></button></>}/>)}</div> : <div className="demo-empty-state"><span><UploadCloud size={29}/></span><h2>{demos.length ? "没有符合当前筛选的 Demo" : "还没有比赛记录"}</h2><p>{demos.length ? "调整文件名、来源或状态筛选后再试。" : "添加素材目录并扫描，或将 DEM / ZIP 文件拖到此处。"}</p>{!demos.length && <div><button className="primary" onClick={chooseFiles}><FileUp size={16}/>选择文件</button><button className="quiet" onClick={addSource}><FolderPlus size={16}/>添加目录</button></div>}</div>}</div>
 	        <footer className="catalog-footer"><span>显示 {visibleDemos.length} / {demos.length} 个 Demo</span></footer>
       </section>
 
@@ -544,26 +539,6 @@ export function ImportView({
   );
 }
 
-function PersistentDemoCard({ demo, selected, onSelected, onSaved, onPlayers, onAnalyze, onDelete }: { demo: DemoRecord; selected: boolean; onSelected: (checked: boolean) => void; onSaved: () => Promise<void>; onPlayers: () => void; onAnalyze: () => void; onDelete: () => void }) {
-  const [note, setNote] = useState(demo.note ?? "");
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  useEffect(() => setNote(demo.note ?? ""), [demo.note]);
-  async function save() {
-    if (note.trim() === (demo.note ?? "").trim()) return;
-    try { setSaveState("saving"); await bridge.updateDemoNote(demo.demo_record_id, note); setSaveState("saved"); await onSaved(); }
-    catch { setSaveState("error"); }
-  }
-  function toggleFromKeyboard(event: ReactKeyboardEvent<HTMLElement>) {
-    if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) { event.preventDefault(); onSelected(!selected); }
-  }
-  return <article className={`persistent-demo-card ${selected ? "selected" : ""}`} role="checkbox" aria-checked={selected} tabIndex={0} onKeyDown={toggleFromKeyboard} onClick={() => onSelected(!selected)}>
-    <header><label className="demo-select" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selected} onChange={(event) => onSelected(event.target.checked)}/><span className="sr-only">选择 {demo.file_name}</span></label><div className="persistent-demo-summary"><span className="demo-file-icon"><FileArchive size={18}/></span><span><strong title={demo.file_name}>{demo.map_name || "未知地图"}</strong><small title={demo.file_name}>{demo.file_name}</small></span><b>{demo.score_a}<i>:</i>{demo.score_b}</b></div></header>
-    <div className="persistent-demo-meta"><span>{demo.rounds || "—"} 回合</span><span>{demo.participants?.length ?? 0} 名玩家</span><span title={demo.match_time_source}>{formatDemoDate(demo.match_time)}</span></div>
-    <label className="demo-note-field" onClick={(event) => event.stopPropagation()}><span className="sr-only">比赛备注</span><input value={note} maxLength={500} placeholder="点击添加备注…" onChange={(event) => { setNote(event.target.value); setSaveState("idle"); }} onBlur={save} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) event.currentTarget.blur(); }}/><small aria-live="polite">{saveState === "saving" ? "保存中…" : saveState === "saved" ? "已保存" : saveState === "error" ? "保存失败" : `${note.length}/500`}</small></label>
-    <footer><button onClick={(event) => { event.stopPropagation(); onPlayers(); }}>玩家</button><button onClick={(event) => { event.stopPropagation(); onAnalyze(); }}><Play size={15}/>{demo.analysis_ready ? "分析" : "打开时补解析"}</button><button className="icon-button danger-action" aria-label={`删除 ${demo.file_name}`} onClick={(event) => { event.stopPropagation(); onDelete(); }}><Trash2 size={15}/></button></footer>
-  </article>;
-}
-
 function persistentPlayerDetails(demo: DemoRecord, analysis: DemoAnalysis | null): ImportPlayerDetail[] {
   if (!analysis) return playerDetails({ players: demo.participants ?? [] } as ImportItem);
   return analysis.players.map((entry) => ({
@@ -575,7 +550,7 @@ function persistentPlayerDetails(demo: DemoRecord, analysis: DemoAnalysis | null
   }));
 }
 
-function DemoCard({ item, onOpen }: { item: ImportItem; onOpen: () => void }) {
+function ImportTaskCard({ item, onOpen }: { item: ImportItem; onOpen: () => void }) {
   const playerCount = item.players?.length ?? 0;
   const success = item.status === "imported";
   const failed =
@@ -621,11 +596,6 @@ function DemoCard({ item, onOpen }: { item: ImportItem; onOpen: () => void }) {
       </span>
     </button>
   );
-}
-
-function formatDemoDate(value: string) {
-  const date = new Date(value); if (Number.isNaN(date.getTime())) return "时间未知";
-  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
 function TeamPanel({

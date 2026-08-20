@@ -15,6 +15,7 @@ These rules are product requirements. Preserve them in every UI, rendering, and 
 - The embedded bridge server must bind a loopback `TcpListener` (raw HTTP) and never `HttpListener`/http.sys — the latter requires admin or a URL ACL and hard-crashes on normal Windows accounts.
 - Never require elevation or OS-level port permissions. Port fallback (walk up to 50 ports from the preferred one) must stay in place so a busy port degrades gracefully instead of aborting startup.
 - The bridge runs inside the user's real browser, so it MUST protect against CSRF/DNS-rebinding: reject `POST /__bridge` unless the `Host` header is `127.0.0.1:port`/`localhost:port` and, when present, the `Origin` header matches `http://127.0.0.1:port`/`http://localhost:port`.
+- Binary frame uploads go to `POST /__bridge-bin?exportId=...` with length-prefixed framing (`4B frameCount + 4B startIndex + N × (4B length + PNG)`). It must pass the same CSRF/Host check as `/__bridge`. The JSON/base64 `AppendVideoFrames` bridge method remains as a fallback and must not be removed.
 - App lifecycle: the page beacon pings `Ping` every 5s; the host exits when heartbeats stop for 120s (or after 90s if never loaded), or immediately on the `QuitApp` bridge call. Never leave orphaned background processes.
 - Startup must surface fatal errors (missing `frontend/dist`, failed bridge bind, browser-open failure) in a visible dialog on Windows, never a silent exit.
 - Native file dialogs must work on Windows too (not just macOS osascript): spawn a `powershell.exe -STA` WinForms dialog via a temp `.ps1` script and read the chosen path from stdout. A cancelled dialog returns `null`/empty, never an exception. The published executable must be named `CSStatsRadar.exe` (`<AssemblyName>CSStatsRadar</AssemblyName>` in `Radar.App.csproj`).
@@ -74,6 +75,15 @@ These rules govern the application chrome and component aesthetics. They must be
 - No CSS modules or CSS-in-JS — the project uses a single `styles.css` with feature-specific overrides in `media.css` and `metadata.css`.
 - Hardcoded color values in TSX component files (e.g. RadarCanvas.tsx) are acceptable for canvas-rendered artwork; do not use hardcoded colors in DOM React components — use CSS variables instead.
 - Never add emoji icons, decorative looping motion, or hover-only affordances. All interactive elements must have `:focus-visible` outline.
+
+## Frontend architecture
+
+- Routing: React Router. `App.tsx` is a shell with lazy routes and button-based sidebar nav (never `NavLink` — the CSS targets `.sidebar nav button`). View state lives in zustand stores (`stores/appStore.ts`, `stores/studioStore.ts`); views read state from stores instead of props drilling.
+- `StudioView` is a shell; editors live in `RadarEditor.tsx`, `OverlayEditor.tsx`, `ShowcaseEditor.tsx`, `ShowcasePreview.tsx`. Shared logic: `useDraft.ts` (save debounce hook), `showcaseMath.ts` (pure/timeline functions — importable from tests), `showcaseRender.ts` (canvas rendering). `SaveState` is defined once in `components/ui/SaveStatus.tsx` and re-exported through the `components/ui/index.ts` barrel.
+- Shared components live in `components/` (`demo/DemoCard.tsx` with `variant="catalog" | "analysis"`, `ui/` primitives). Formatting helpers live in `lib/format.ts` (`formatDemoDate`, `formatValue`, `signed`, `errorMessage`) — views must not re-define them.
+- Video export rendering runs in a Web Worker (`showcaseExportWorker.ts`) using `OffscreenCanvas` when `Worker` and `OffscreenCanvas` exist; frames upload via `bridge.appendVideoFramesBinary` (see Bridge server section). The main-thread `toDataURL` + `appendVideoFrames` loop stays as the fallback.
+- Shared render code must be Worker-safe: create canvases through `createCanvas`, obtain 2D contexts via `canvas2D`, read image dimensions through `imageWidth`/`imageHeight` (works for `HTMLImageElement` and `ImageBitmap`), load fonts in a worker via `FontFace` + `globalThis.fonts` — never call `document.*` directly.
+- `RadarCanvas` is wrapped in `React.memo`; `geometry`/`labelBounds` in `RadarCanvas.tsx` are cached by a `compact|showSwing|width|height` key (these are constant across export frames).
 
 ## Auto-capture of user conventions
 
