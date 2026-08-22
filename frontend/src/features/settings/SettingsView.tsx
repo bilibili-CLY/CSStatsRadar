@@ -52,6 +52,8 @@ export function SettingsView() {
         draft.showcase.ffmpeg_path ?? "",
         draft.reduce_motion,
         draft.showcase.show_best_markers,
+        draft.showcase.show_intro_animation,
+        draft.showcase.show_best_entrance_animation,
         draft.showcase.audio_offset_ms,
         draft.showcase.radar_scale_mode,
         draft.showcase.radar_scale,
@@ -267,6 +269,38 @@ export function SettingsView() {
                 }
               />
               <span>轮播中显示单项最佳 BEST 标记</span>
+            </label>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={draft.showcase.show_intro_animation}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    showcase: {
+                      ...draft.showcase,
+                      show_intro_animation: event.target.checked,
+                    },
+                  })
+                }
+              />
+              <span>播放轮播开场动画（6 秒）</span>
+            </label>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={draft.showcase.show_best_entrance_animation}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    showcase: {
+                      ...draft.showcase,
+                      show_best_entrance_animation: event.target.checked,
+                    },
+                  })
+                }
+              />
+              <span>播放 BEST 玩家入场动画</span>
             </label>
             <h3>雷达外圈缩放</h3>
             <p className="field-note">

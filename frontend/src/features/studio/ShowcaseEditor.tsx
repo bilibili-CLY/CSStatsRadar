@@ -14,7 +14,12 @@ import {
   rating3Available,
   resizedShowcaseDuration,
   SHOWCASE_TRANSITION_MS,
+  SHOWCASE_EXPORT_HEIGHT,
+  SHOWCASE_EXPORT_WIDTH,
+  normalizeShowcaseDimensions,
+  showcaseBestEntranceDuration,
   showcaseDuration,
+  showcaseIntroDuration,
   showcaseSegment,
   showcaseSlideStart,
   timelineTickStep,
@@ -59,6 +64,7 @@ export function ShowcaseEditor({
         imageX: 73,
         imageY: 57,
         imageScale: 100,
+        metricLabelFontSize: 12,
         swingX: 34,
         swingY: 78,
         swingScale: 100,
@@ -70,10 +76,9 @@ export function ShowcaseEditor({
         imageFit: "contain" as "contain" | "cover",
       },
       fps: config.video_fps,
-      width: config.export_width,
-      height: config.export_height,
+      width: SHOWCASE_EXPORT_WIDTH,
+      height: SHOWCASE_EXPORT_HEIGHT,
       audioOffsetMs: config.showcase.audio_offset_ms,
-      fontScale: 1,
     },
   );
   const [exportState, setExportState] = useState<{
@@ -112,8 +117,18 @@ export function ShowcaseEditor({
     initialOffsetMs: number;
     trackWidth: number;
   } | null>(null);
-  const totalDuration = showcaseDuration(draft.slides);
-  const previewIndex = showcaseSegment(draft.slides, previewTime).index;
+  const animationOptions = useMemo(() => ({
+    showIntroAnimation: config.showcase.show_intro_animation,
+    showBestEntranceAnimation: config.showcase.show_best_entrance_animation,
+    reduceMotion: config.reduce_motion,
+  }), [
+    config.reduce_motion,
+    config.showcase.show_best_entrance_animation,
+    config.showcase.show_intro_animation,
+  ]);
+  const totalDuration = showcaseDuration(draft.slides, animationOptions);
+  const introDuration = showcaseIntroDuration(animationOptions);
+  const previewIndex = showcaseSegment(draft.slides, previewTime, animationOptions).index;
   const audioOffsetMs =
     draft.audioOffsetMs ?? config.showcase.audio_offset_ms ?? 0;
   const audioOffsetMin = -Math.max(1_000, musicDurationMs - 100);
@@ -143,6 +158,10 @@ export function ShowcaseEditor({
     [timelineSpanMs, timelineTickStepMs],
   );
   const renderTime = previewTime;
+  useEffect(() => {
+    if (!draftReady) return;
+    setDraft((current) => normalizeShowcaseDimensions(current));
+  }, [draftReady, setDraft]);
   useEffect(() => {
     if (previewTime > totalDuration) setPreviewTime(totalDuration);
   }, [previewTime, totalDuration]);
@@ -286,7 +305,7 @@ export function ShowcaseEditor({
       0,
       Math.min(draft.slides.length - 1, draft.active),
     );
-    seekPreview(showcaseSlideStart(draft.slides, index));
+    seekPreview(index === 0 ? 0 : showcaseSlideStart(draft.slides, index, animationOptions));
   }, [draftReady, draft.slides]);
   useEffect(() => {
     if (!playing || !draft.slides.length) return;
@@ -304,9 +323,9 @@ export function ShowcaseEditor({
   }
   function selectSlide(index: number) {
     setDraft({ ...draft, active: index });
-    const start = showcaseSlideStart(draft.slides, index);
+    const start = index === 0 ? 0 : showcaseSlideStart(draft.slides, index, animationOptions);
     seekPreview(start);
-    if (index > 0) { playbackStopAt.current = Math.min(totalDuration, start + SHOWCASE_TRANSITION_MS); setPlaying(true); }
+    if (index > 0) { playbackStopAt.current = Math.min(totalDuration, start + SHOWCASE_TRANSITION_MS + showcaseBestEntranceDuration(draft.slides, index, animationOptions)); setPlaying(true); }
     else { playbackStopAt.current = null; setPlaying(false); }
   }
   function togglePlayback() {
@@ -354,7 +373,7 @@ export function ShowcaseEditor({
       : 0;
     setPlaying(false);
     setDraft({ ...draft, slides, active });
-    seekPreview(showcaseSlideStart(slides, active));
+    seekPreview(active === 0 ? 0 : showcaseSlideStart(slides, active, animationOptions));
   }
   function startSlideResize(
     event: ReactPointerEvent<HTMLSpanElement>,
@@ -407,9 +426,9 @@ export function ShowcaseEditor({
   async function exportVideo() {
     if (!draft.slides.length || exportState.running) return;
     cancelRequested.current = false;
-    const durationMs = Math.round(
-      draft.slides.reduce((sum, item) => sum + item.duration, 0) * 1000,
-    );
+    // Export must use the same timeline as preview: it includes the optional
+    // opener and each qualifying BEST entrance/handoff, not only slide holds.
+    const durationMs = totalDuration;
     const frameCount = Math.ceil((durationMs / 1000) * draft.fps);
     if (frameCount > 7200) {
       setExportState({
@@ -450,8 +469,6 @@ export function ShowcaseEditor({
           config: {
             slides: draft.slides,
             layout: draft.layout,
-            width: draft.width,
-            height: draft.height,
             fps: draft.fps,
             showBestMarkers: config.showcase.show_best_markers,
             radarScaleMode: config.showcase.radar_scale_mode,
@@ -459,7 +476,9 @@ export function ShowcaseEditor({
             radarAxisScale: config.showcase.radar_axis_scale,
             ratingVersion: config.rating_version,
             showRatingWatermark: config.show_rating_watermark,
-            fontScale: draft.fontScale ?? 1,
+            fontScale: 1,
+            metricLabelFontSize: draft.layout.metricLabelFontSize ?? 12,
+            animations: animationOptions,
           },
           imageUrls: Array.from(
             new Set(
@@ -473,8 +492,8 @@ export function ShowcaseEditor({
         });
       });
       exportId = await bridge.beginVideoExport(
-        draft.width,
-        draft.height,
+        SHOWCASE_EXPORT_WIDTH,
+        SHOWCASE_EXPORT_HEIGHT,
         draft.fps,
         durationMs,
         audioOffsetMs,
@@ -556,8 +575,8 @@ export function ShowcaseEditor({
         ),
       );
       exportId = await bridge.beginVideoExport(
-        draft.width,
-        draft.height,
+        SHOWCASE_EXPORT_WIDTH,
+        SHOWCASE_EXPORT_HEIGHT,
         draft.fps,
         durationMs,
         audioOffsetMs,
@@ -576,8 +595,8 @@ export function ShowcaseEditor({
         const frameCanvas = renderShowcaseFrame(
           draft.slides,
           draft.layout,
-          draft.width,
-          draft.height,
+          SHOWCASE_EXPORT_WIDTH,
+          SHOWCASE_EXPORT_HEIGHT,
           timeMs,
           undefined,
           config.showcase.show_best_markers,
@@ -586,7 +605,9 @@ export function ShowcaseEditor({
           config.showcase.radar_axis_scale,
           config.rating_version,
           config.show_rating_watermark,
-          draft.fontScale ?? 1,
+          1,
+          draft.layout.metricLabelFontSize ?? 12,
+          animationOptions,
         );
         if (!batch.length) batchStart = frame;
         batch.push((frameCanvas as HTMLCanvasElement).toDataURL("image/png"));
@@ -781,12 +802,21 @@ export function ShowcaseEditor({
           radarAxisScale={config.showcase.radar_axis_scale}
           ratingVersion={config.rating_version}
           showRatingWatermark={config.show_rating_watermark}
-          fontScale={draft.fontScale ?? 1}
+          metricLabelFontSize={draft.layout.metricLabelFontSize ?? 12}
+          animations={animationOptions}
           onLayoutChange={(layout) =>
             setDraft((current) => ({ ...current, layout }))
           }
           onImageTransformChange={(imageTransform) =>
-            patchSlideAt(previewIndex, { imageTransform })
+            setDraft((current) => ({
+              ...current,
+              layout: { ...current.layout, imageScale: imageTransform.scale },
+              slides: current.slides.map((item, index) =>
+                index === previewIndex
+                  ? { ...item, imageTransform: { x: imageTransform.x, y: imageTransform.y } }
+                  : item,
+              ),
+            }))
           }
         />
         <div className="timeline">
@@ -879,9 +909,18 @@ export function ShowcaseEditor({
                   ))}
                 </div>
                 <div className="showcase-clip-track" ref={timelineTrackRef}>
+                  {introDuration > 0 && (
+                    <div
+                      className="showcase-clip intro-clip"
+                      style={{ flex: `0 0 ${(introDuration / 1000) * timelinePixelsPerSecond}px` }}
+                    >
+                      <span className="clip-title">开场动画</span>
+                      <small>6.0s</small>
+                    </div>
+                  )}
                   {draft.slides.map((item, index) => (
                     <div
-                      style={{ flex: `0 0 ${item.duration * timelinePixelsPerSecond}px` }}
+                      style={{ flex: `0 0 ${(item.duration + showcaseBestEntranceDuration(draft.slides, index, animationOptions) / 1000) * timelinePixelsPerSecond}px` }}
                       className={`showcase-clip ${index === previewIndex ? "active" : ""}`}
                       onClick={() => selectSlide(index)}
                       key={item.id}
@@ -905,7 +944,7 @@ export function ShowcaseEditor({
                         onPointerCancel={finishSlideResize}
                       />
                       <span className="clip-title">{item.title}</span>
-                      <small>{item.duration.toFixed(1)}s</small>
+                      <small>{item.duration.toFixed(1)}s{showcaseBestEntranceDuration(draft.slides, index, animationOptions) ? " + BEST 4.0s" : ""}</small>
                       <span
                         className="clip-resize-handle end"
                         role="separator"
@@ -1084,14 +1123,26 @@ export function ShowcaseEditor({
                 </button>
               )}
             </div>
-            <Range
-              label="文字大小"
-              min={0.7}
-              max={1.5}
-              step={0.05}
-              value={draft.fontScale ?? 1}
-              onChange={(fontScale) => setDraft({ ...draft, fontScale })}
-            />
+            <Field label="雷达与 Round Swing 文字字号（px）">
+              <input
+                type="number"
+                min="8"
+                max="32"
+                step="1"
+                value={draft.layout.metricLabelFontSize ?? 12}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  if (!Number.isFinite(next)) return;
+                  setDraft({
+                    ...draft,
+                    layout: {
+                      ...draft.layout,
+                      metricLabelFontSize: Math.max(8, Math.min(32, next)),
+                    },
+                  });
+                }}
+              />
+            </Field>
             <div className="two-fields">
               <Field label="文字对齐">
                 <select

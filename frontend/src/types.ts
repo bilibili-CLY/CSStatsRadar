@@ -9,6 +9,7 @@ export interface Player {
 export interface SavedPlayer extends Player {
   match_count: number;
   latest_match_time: string;
+  latest_imported_at: string;
   followed: boolean;
 }
 export interface ImportSource {
@@ -30,6 +31,8 @@ export interface AppConfig {
     ffmpeg_path?: string;
     default_duration_ms: number;
     show_best_markers: boolean;
+    show_intro_animation: boolean;
+    show_best_entrance_animation: boolean;
     audio_offset_ms: number;
     radar_scale_mode: "global" | "axis";
     radar_scale: number;
@@ -99,6 +102,7 @@ export interface DemoRecord {
   note?: string;
   analysis_version?: string;
   participants?: Player[];
+  player_stat_steam_ids?: string[];
   rounds: number;
   score_a: number;
   score_b: number;
@@ -188,7 +192,7 @@ export interface ShowcaseSlide {
   imageUrl?: string;
   avatarUrl?: string;
   backgroundUrl?: string;
-  imageTransform?: { x: number; y: number; scale: number };
+  imageTransform?: { x: number; y: number; scale?: number };
 }
 
 export interface ShowcaseLayoutDraft {
@@ -207,6 +211,7 @@ export interface ShowcaseLayoutDraft {
   imageX: number;
   imageY: number;
   imageScale: number;
+  metricLabelFontSize: number;
   swingX: number;
   swingY: number;
   swingScale: number;
@@ -264,6 +269,8 @@ export const defaultConfig: AppConfig = {
   showcase: {
     default_duration_ms: 4000,
     show_best_markers: true,
+    show_intro_animation: true,
+    show_best_entrance_animation: true,
     audio_offset_ms: 0,
     radar_scale_mode: "global",
     radar_scale: 1,

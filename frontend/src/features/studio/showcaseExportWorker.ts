@@ -8,12 +8,14 @@ import type {
   ShowcaseLayoutDraft,
   ShowcaseSlide,
 } from "../../types";
+import {
+  SHOWCASE_EXPORT_HEIGHT,
+  SHOWCASE_EXPORT_WIDTH,
+} from "./showcaseMath";
 
 type ExportConfig = {
   slides: ShowcaseSlide[];
   layout: ShowcaseLayoutDraft;
-  width: number;
-  height: number;
   fps: number;
   showBestMarkers: boolean;
   radarScaleMode: string;
@@ -22,6 +24,12 @@ type ExportConfig = {
   ratingVersion: RatingVersion;
   showRatingWatermark: boolean;
   fontScale: number;
+  metricLabelFontSize: number;
+  animations: {
+    showIntroAnimation: boolean;
+    showBestEntranceAnimation: boolean;
+    reduceMotion: boolean;
+  };
 };
 
 type WorkerMessage =
@@ -84,12 +92,15 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
       }
       const frameIndex = message.start + index;
       const timeMs = (frameIndex / active.fps) * 1000;
-      const canvas = new OffscreenCanvas(active.width, active.height);
+      const canvas = new OffscreenCanvas(
+        SHOWCASE_EXPORT_WIDTH,
+        SHOWCASE_EXPORT_HEIGHT,
+      );
       renderShowcaseFrame(
         active.slides,
         active.layout,
-        active.width,
-        active.height,
+        SHOWCASE_EXPORT_WIDTH,
+        SHOWCASE_EXPORT_HEIGHT,
         timeMs,
         canvas,
         active.showBestMarkers,
@@ -99,6 +110,8 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
         active.ratingVersion,
         active.showRatingWatermark,
         active.fontScale,
+        active.metricLabelFontSize,
+        active.animations,
       );
       blobs.push(await canvas.convertToBlob({ type: "image/png" }));
     }

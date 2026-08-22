@@ -206,7 +206,7 @@ public class BridgeServer
     GetRatingMethodology: function(){ return post('GetRatingMethodology'); },
     LoadDraft: function(kind){ return post('LoadDraft', [kind]); },
     SaveDraft: function(kind, payload){ return post('SaveDraft', [kind, payload]); },
-    SavePreferences: function(w,h,fps,ffmpeg,reduced,best,offset,scaleMode,scale,axis,ratingVersion,showWatermark){ return post('SavePreferences',[w,h,fps,ffmpeg,reduced,best,offset,scaleMode,scale,axis,ratingVersion,showWatermark]); },
+    SavePreferences: function(w,h,fps,ffmpeg,reduced,best,intro,bestEntrance,offset,scaleMode,scale,axis,ratingVersion,showWatermark){ return post('SavePreferences',[w,h,fps,ffmpeg,reduced,best,intro,bestEntrance,offset,scaleMode,scale,axis,ratingVersion,showWatermark]); },
     ChooseFFmpeg: function(){ return post('ChooseFFmpeg'); },
     ExportPNG: function(dataURL, name){ return post('ExportPNG', [dataURL, name]); },
     GetPlayerMedia: function(steamId){ return post('GetPlayerMedia', [steamId]); },

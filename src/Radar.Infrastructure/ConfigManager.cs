@@ -46,6 +46,8 @@ public class ConfigManager
         {
             DefaultDurationMS = 4000,
             ShowBestMarkers = true,
+            ShowIntroAnimation = true,
+            ShowBestEntranceAnimation = true,
             RadarScaleMode = "global",
             RadarScale = 1.0,
             RadarAxisScale = new Dictionary<string, double>(),
@@ -90,6 +92,11 @@ public class ConfigManager
                 if (!WhitelistedKeys.Contains(key)) continue;
                 var value = prop.GetValue(rawCfg);
                 if (value != null && !(value is string s && s == "")) prop.SetValue(merged, value);
+            }
+            if (root.TryGetProperty("showcase", out var showcase) && showcase.ValueKind == JsonValueKind.Object)
+            {
+                if (!showcase.TryGetProperty("show_intro_animation", out _)) merged.Showcase.ShowIntroAnimation = true;
+                if (!showcase.TryGetProperty("show_best_entrance_animation", out _)) merged.Showcase.ShowBestEntranceAnimation = true;
             }
             return merged;
         }

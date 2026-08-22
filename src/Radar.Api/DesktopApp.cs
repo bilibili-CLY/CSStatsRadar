@@ -126,7 +126,7 @@ public class DesktopApp : IDisposable
         repo.SaveEditorDraft(new EditorDraft { Kind = kind, Payload = payload });
     }
 
-    public AppConfig SavePreferences(int exportWidth, int exportHeight, int videoFPS, string ffmpegPath, bool reduceMotion, bool showBestMarkers, int audioOffsetMS, string radarScaleMode, double radarScale, Dictionary<string, double> radarAxisScale, string ratingVersion, bool showRatingWatermark)
+    public AppConfig SavePreferences(int exportWidth, int exportHeight, int videoFPS, string ffmpegPath, bool reduceMotion, bool showBestMarkers, bool showIntroAnimation, bool showBestEntranceAnimation, int audioOffsetMS, string radarScaleMode, double radarScale, Dictionary<string, double> radarAxisScale, string ratingVersion, bool showRatingWatermark)
     {
         cfg.ExportWidth = exportWidth;
         cfg.ExportHeight = exportHeight;
@@ -134,6 +134,8 @@ public class DesktopApp : IDisposable
         cfg.Showcase.FFmpegPath = ffmpegPath;
         cfg.ReduceMotion = reduceMotion;
         cfg.Showcase.ShowBestMarkers = showBestMarkers;
+        cfg.Showcase.ShowIntroAnimation = showIntroAnimation;
+        cfg.Showcase.ShowBestEntranceAnimation = showBestEntranceAnimation;
         cfg.Showcase.AudioOffsetMS = audioOffsetMS;
         cfg.Showcase.RadarScaleMode = radarScaleMode;
         cfg.Showcase.RadarScale = radarScale;
@@ -174,7 +176,7 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
 
     public string? ChooseImportDirectory() => NativeDialogs.ChooseDirectory("选择素材目录");
 
-    public List<string>? ChooseImportFiles() => NativeDialogs.ChooseFiles("选择 DEM 或 ZIP", ".dem", ".zip");
+    public List<string> ChooseImportFiles() => NativeDialogs.ChooseFiles("选择 DEM 或 ZIP", ".dem", ".zip") ?? new List<string>();
 
     public List<ImportSource> AddImportSource(string path)
     {

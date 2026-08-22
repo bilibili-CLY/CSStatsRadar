@@ -10,14 +10,23 @@ import type {
 } from "../../types";
 import {
   bestMetricIndexesForSlide,
+  easeInOut,
   interpolateRadarResponse,
+  showcaseAverageRadar,
+  showcaseOuterRadarRingDiameter,
+  showcaseSwingCanvasWidth,
+  showcaseSwingReferenceHalfWidth,
   showcaseCanvasTextAlign,
+  showcaseIntroState,
   showcasePaintOrder,
+  showcaseReferenceRadar,
+  showcaseZeroRadar,
   showcaseSegment,
   showcaseTransitionProgress,
   stripRatingProfiles,
   targetBounds,
   type ShowcaseTarget,
+  type ShowcaseAnimationOptions,
   type ShowcaseTransform,
 } from "./showcaseMath";
 
@@ -92,6 +101,101 @@ function drawCover(
   const w = imageWidth(image) * scale,
     h = imageHeight(image) * scale;
   ctx.drawImage(image, (width - w) / 2, (height - h) / 2, w, h);
+}
+export function bestEntranceSidePattern(title: string, repeats: number) {
+  return title.repeat(Math.max(1, Math.ceil(repeats)));
+}
+export function bestEntranceSideScrollDistance(
+  progress: number,
+  measuredNameWidth: number,
+) {
+  return Math.max(0, Math.min(1, progress)) * 6 * Math.max(1, measuredNameWidth);
+}
+export function bestEntranceImageOpacity(progress: number) {
+  return easeInOut(Math.min(1, Math.max(0, progress) / .25));
+}
+export function bestEntranceTitleLayout(
+  width: number,
+  measuredTitleWidth: number,
+  fontSize: number,
+) {
+  const safeInset = Math.max(32, width * .045);
+  const maximumTitleWidth = Math.max(1, width - safeInset * 2);
+  const fontScale = Math.min(1, maximumTitleWidth / Math.max(1, measuredTitleWidth));
+  const finalX = width - safeInset;
+  const initialX = Math.min(
+    width - Math.max(2, width * .005),
+    finalX + width * .04,
+  );
+  return { fontSize: fontSize * fontScale, finalX, initialX, maximumTitleWidth };
+}
+function drawBestEntrance(
+  ctx: CanvasRenderingContext2D,
+  slide: ShowcaseSlide,
+  width: number,
+  height: number,
+  progress: number,
+  opacity = 1,
+) {
+  const amount = Math.max(0, Math.min(1, progress));
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
+  ctx.fillStyle = "rgba(3,5,10,.72)";
+  ctx.fillRect(0, 0, width, height);
+  const drawSideName = (side: "left" | "right") => {
+    ctx.save();
+    const x = side === "left" ? width * .06 : width * .94;
+    ctx.textAlign = "center";
+    ctx.font = `800 ${Math.max(28, width * .065)}px "Noto Sans SC",system-ui`;
+    ctx.lineWidth = Math.max(2, width / 700);
+    ctx.strokeStyle = "rgba(244,246,248,.9)";
+    ctx.fillStyle = "rgba(10,16,30,.15)";
+    const nameWidth = Math.max(1, ctx.measureText(slide.title).width);
+    const pattern = bestEntranceSidePattern(slide.title, Math.ceil(height * 3 / nameWidth) + 2);
+    const patternWidth = ctx.measureText(pattern).width;
+    const travel = bestEntranceSideScrollDistance(amount, nameWidth);
+    const offset = wrap(travel, patternWidth);
+    for (let repeat = -1; repeat <= 1; repeat += 1) {
+      ctx.save();
+      ctx.translate(x, height / 2);
+      ctx.rotate(side === "left" ? -Math.PI / 2 : Math.PI / 2);
+      ctx.strokeText(pattern, -height * 1.5 + offset + repeat * patternWidth, 0);
+      ctx.fillText(pattern, -height * 1.5 + offset + repeat * patternWidth, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+  };
+  drawSideName("left");
+  drawSideName("right");
+  const image = showcaseImageCache.get(showcasePlayerImageUrl(slide) ?? "");
+  if (image) {
+    const boxW = width * .4;
+    const boxH = height * .72;
+    const scale = Math.min(boxW / imageWidth(image), boxH / imageHeight(image));
+    const imageW = imageWidth(image) * scale;
+    const imageH = imageHeight(image) * scale;
+    ctx.save();
+    ctx.globalAlpha *= bestEntranceImageOpacity(amount);
+    ctx.drawImage(image, width / 2 - imageW / 2, height * .56 - imageH / 2, imageW, imageH);
+    ctx.restore();
+  }
+  const titleProgress = easeInOut(Math.min(1, amount / .35));
+  const titleFontSize = Math.max(32, width * .058);
+  ctx.font = `900 italic ${titleFontSize}px "Noto Sans SC",system-ui`;
+  const titleLayout = bestEntranceTitleLayout(
+    width,
+    ctx.measureText(slide.title).width,
+    titleFontSize,
+  );
+  ctx.textAlign = "right";
+  ctx.font = `900 italic ${titleLayout.fontSize}px "Noto Sans SC",system-ui`;
+  ctx.fillStyle = "#f4f6f8";
+  ctx.fillText(
+    slide.title,
+    titleLayout.initialX + (titleLayout.finalX - titleLayout.initialX) * titleProgress,
+    height * .83,
+  );
+  ctx.restore();
 }
 function colorAlpha(color: string, alpha: number) {
   const value = color.replace("#", "");
@@ -191,17 +295,26 @@ export function renderShowcaseFrame(
   ratingVersion: RatingVersion = "rating_2",
   showRatingWatermark = true,
   fontScale = 1,
+  metricLabelFontSize = 12,
+  animations: ShowcaseAnimationOptions = {},
 ) {
   const ratedSlides = slides.map((item) => ({ ...item, radar: selectRatingProfile(item.radar, ratingVersion) }));
-  const segment = showcaseSegment(ratedSlides, timeMs);
+  const segment = showcaseSegment(ratedSlides, timeMs, animations);
   const slide = ratedSlides[segment.index];
   const canvas = targetCanvas ?? createCanvas(width, height);
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas2D(canvas);
-  const previousSlide = segment.index > 0 ? ratedSlides[segment.index - 1] : null;
+  const previousSlide =
+    segment.phase === "intro" ||
+    segment.phase === "entrance" ||
+    segment.phase === "handoff" ||
+    segment.usesBestEntrance ||
+    segment.index === 0
+      ? null
+      : ratedSlides[segment.index - 1];
   const morphProgress = previousSlide
-    ? showcaseTransitionProgress(ratedSlides, timeMs)
+    ? showcaseTransitionProgress(ratedSlides, timeMs, animations)
     : 1;
   const accent = slide
     ? previousSlide
@@ -240,23 +353,96 @@ export function renderShowcaseFrame(
     ctx.fillText("从资料库添加玩家后预览轮播", width / 2, height / 2);
     return canvas;
   }
-  const renderedRadar = (previousSlide
+  if (segment.phase === "entrance") {
+    drawBestEntrance(ctx, slide, width, height, segment.entranceProgress);
+    return canvas;
+  }
+  const average = showcaseAverageRadar(ratedSlides, ratingVersion);
+  const intro = segment.phase === "intro" ? showcaseIntroState(timeMs) : null;
+  const referenceRadar = showcaseReferenceRadar(slide.radar);
+  referenceRadar.radar.round_swing = 5;
+  // The opener is a fade handoff, not a player-transition morph. Only regular
+  // slide boundaries interpolate radar vertices directly.
+  const introAverage = average;
+  const zeroRadar = showcaseZeroRadar(slide.radar);
+  const playerColor = accent;
+  const introColor = intro?.stage === "reference"
+    ? "#f4f6f8"
+    : intro?.stage === "average"
+      ? interpolateHexColor("#f4f6f8", "#ef4444", intro.progress)
+      : intro?.stage === "outro"
+        ? interpolateHexColor("#ef4444", accent, Math.max(0, Math.min(1, (intro.progress - .4) / .6)))
+        : "#ef4444";
+  const introLabelOpacity = intro?.stage === "reference"
+    ? intro.progress
+    : intro?.stage === "average"
+      ? 1
+      : intro?.stage === "outro"
+        ? 1
+        : 1;
+  const outroPlayerProgress = intro?.stage === "outro"
+    ? Math.max(0, Math.min(1, (intro.progress - .4) / .6))
+    : 1;
+  const outroValueOpacity = intro?.stage === "outro"
+    ? intro.progress < .3
+      ? 1 - intro.progress / .3
+      : intro.progress < .4
+        ? 0
+        : (intro.progress - .4) / .6
+    : 1;
+  const averageRadarOpacity = intro?.stage === "average"
+    ? Math.min(1, intro.progress / .35)
+    : intro?.stage === "outro"
+      ? 1
+      : 1;
+  const playerRadarOpacity = 1;
+  const handoffProgress = segment.phase === "handoff"
+    ? easeInOut(segment.handoffProgress)
+    : 1;
+  const renderedRadar = segment.phase === "handoff"
+    ? interpolateRadarResponse(zeroRadar, slide.radar, handoffProgress)
+    : intro && average
+    ? intro.stage === "outro"
+      ? interpolateRadarResponse(zeroRadar, slide.radar, outroPlayerProgress)
+      : intro.stage === "average"
+        ? introAverage!
+        : slide.radar
+    : (previousSlide
     ? interpolateRadarResponse(previousSlide.radar, slide.radar, morphProgress)
     : slide.radar);
+  const labelRadar = segment.phase === "handoff"
+    ? renderedRadar
+    : intro?.stage === "average"
+    ? average
+      ? interpolateRadarResponse(referenceRadar, average, intro.progress)
+      : renderedRadar
+    : intro?.stage === "outro"
+      ? intro.progress < .3 && average
+        ? average
+        : interpolateRadarResponse(zeroRadar, slide.radar, outroPlayerProgress)
+      : renderedRadar;
   const profilelessRadar = stripRatingProfiles(renderedRadar);
+  const sceneOpacity = segment.phase === "handoff" ? handoffProgress : 1;
   const radarSize =
     (Math.min(width * 0.48, height * 0.78) * layout.radarScale) / 100;
   const radar = createCanvas(Math.round(radarSize), Math.round(radarSize));
   renderRadarCanvas(
     radar,
     {
-      radar: profilelessRadar,
-      color: accent,
+      radar: intro?.stage === "outro" ? profilelessRadar : intro ? null : profilelessRadar,
+      averageRadar: (intro?.stage === "average" || intro?.stage === "outro") && introAverage
+        ? stripRatingProfiles(introAverage)
+        : average && !intro ? stripRatingProfiles(average) : null,
+      referenceRadar: stripRatingProfiles(slide.radar),
+      labelRadar: stripRatingProfiles(labelRadar),
+      fixedLabelPlacement: Boolean(intro),
+      color: playerColor,
       compact: true,
       transparent: true,
       hideSwing: true,
-      bestMetricIndexes:
-        morphProgress > 0.65
+      bestMetricIndexes: segment.phase === "intro"
+        ? []
+        : morphProgress > 0.65
           ? bestMetricIndexesForSlide(ratedSlides, segment.index)
           : [],
       showBestMarkers,
@@ -266,24 +452,61 @@ export function renderShowcaseFrame(
       ratingVersion,
       showRatingWatermark: false,
       fontScale,
+      metricLabelFontSize,
+      averageLineStyle: "solid",
+      hideLabels: intro?.stage === "empty",
+      showReferenceLabels: intro?.stage === "reference",
+      gridOpacity: intro?.stage === "empty" ? intro.progress : 1,
+      highlightOuterRing: intro?.stage === "reference" || intro?.stage === "average",
+      outerRingHighlightOpacity: intro?.stage === "reference" ? intro.progress : intro?.stage === "average" ? 1 - intro.progress : 0,
+      averageColor: intro?.stage === "average" ? introColor : "#ef4444",
+      labelValueColor: intro ? introColor : undefined,
+      labelOpacity: introLabelOpacity,
+      metricLabelOpacity: intro?.stage === "reference" ? intro.progress : 1,
+      valueLabelOpacity: intro?.stage === "reference" ? intro.progress : outroValueOpacity,
+      primaryOpacity: intro?.stage === "outro" ? outroPlayerProgress : playerRadarOpacity,
+      averageOpacity: averageRadarOpacity,
     },
     Math.round(radarSize),
     Math.round(radarSize),
   );
   // Render swing separately
-  const swingSize = Math.round(radarSize);
-  const swingCanvas = ratingVersion === "rating_3" && renderedRadar.radar.round_swing != null
+  const outerRingDiameter = showcaseOuterRadarRingDiameter(radarSize);
+  const swingWidth = Math.round(showcaseSwingCanvasWidth(outerRingDiameter));
+  const swingStage = intro?.stage ?? "player";
+  const swingCanvas = ratingVersion === "rating_3" && (swingStage !== "player" || renderedRadar.radar.round_swing != null)
     ? renderSwingCanvas(
-        { id: slide.id, radar: renderedRadar, color: accent },
-        swingSize,
-        Math.round(radarSize * 0.19),
-        Math.round(radarSize * 0.27),
+        swingStage === "player" || swingStage === "outro" ? { id: slide.id, radar: renderedRadar, color: playerColor } : null,
+        swingWidth,
+        Math.round(radarSize * 0.22),
+        Math.round(showcaseSwingReferenceHalfWidth(outerRingDiameter)),
         fontScale,
+        (intro?.stage === "average" || intro?.stage === "outro") && introAverage ? stripRatingProfiles(introAverage) : average ? stripRatingProfiles(average) : null,
+        swingStage,
+        intro?.stage === "empty" ? intro.progress : 1,
+        outroPlayerProgress,
+        intro?.stage === "average" ? introColor : "#ef4444",
+        intro?.stage === "reference"
+          ? intro.progress
+          : 1,
+        intro?.stage === "average" ? intro.progress : 1,
+        intro?.stage === "average"
+          ? average?.radar.round_swing
+          : intro?.stage === "outro"
+            ? intro.progress < .3
+              ? average?.radar.round_swing
+              : renderedRadar.radar.round_swing
+            : undefined,
+        intro?.stage === "average" ? intro.progress : 1,
+        outroValueOpacity,
+        intro?.stage === "average" ? introColor : playerColor,
+        slide.radar.radar.round_swing,
+        metricLabelFontSize,
       )
     : null;
   const drawRadar = () => {
     ctx.save();
-    ctx.globalAlpha = layout.opacity / 100;
+    ctx.globalAlpha = (layout.opacity / 100) * sceneOpacity;
     ctx.translate(
       (width * layout.radarX) / 100,
       (height * layout.radarY) / 100,
@@ -291,10 +514,32 @@ export function renderShowcaseFrame(
     ctx.drawImage(radar, -radarSize / 2, -radarSize / 2, radarSize, radarSize);
     ctx.restore();
   };
+  if (intro) {
+    drawRadar();
+    if (swingCanvas) {
+      ctx.save();
+      ctx.globalAlpha = (layout.opacity / 100) * sceneOpacity;
+      const swingX = width * (layout.swingX ?? layout.radarX) / 100;
+      const swingY = height * (layout.swingY ?? (layout.radarY + radarSize / 2 / height * 100 + 8)) / 100;
+      const scale = (layout.swingScale ?? 100) / 100;
+      ctx.drawImage(swingCanvas, swingX - swingCanvas.width * scale / 2, swingY - swingCanvas.height * scale / 2, swingCanvas.width * scale, swingCanvas.height * scale);
+      ctx.restore();
+    }
+    if (ratingVersion === "rating_3" && showRatingWatermark) {
+      ctx.save();
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(245,158,11,.78)";
+      ctx.font = `650 ${Math.max(11, width * 0.009)}px "Noto Sans SC",system-ui`;
+      ctx.fillText("Rating 3.0 本地近似 · 非 HLTV 官方", width * 0.022, height * 0.965);
+      ctx.restore();
+    }
+    return canvas;
+  }
   const drawSwing = () => {
     if (!swingCanvas) return;
     ctx.save();
-    ctx.globalAlpha = layout.opacity / 100;
+    ctx.globalAlpha = (layout.opacity / 100) * sceneOpacity;
     const swingX = width * (layout.swingX ?? layout.radarX) / 100;
     const swingY = height * (layout.swingY ?? (layout.radarY + radarSize / 2 / height * 100 + 8)) / 100;
     const scale = (layout.swingScale ?? 100) / 100;
@@ -308,7 +553,11 @@ export function renderShowcaseFrame(
     if (!imageUrl || opacity <= 0) return;
     const image = showcaseImageCache.get(imageUrl);
     if (!image) return;
-    const transform = item.imageTransform ?? { x: layout.imageX, y: layout.imageY, scale: layout.imageScale };
+    const transform = {
+      x: item.imageTransform?.x ?? layout.imageX,
+      y: item.imageTransform?.y ?? layout.imageY,
+      scale: layout.imageScale,
+    };
     const boxW = (width * 0.28 * transform.scale) / 100;
     const boxH = (height * 0.5 * transform.scale) / 100;
     const scale =
@@ -320,7 +569,7 @@ export function renderShowcaseFrame(
     const x = (width * transform.x) / 100;
     const y = (height * transform.y) / 100;
     ctx.save();
-    ctx.globalAlpha = opacity;
+    ctx.globalAlpha = opacity * sceneOpacity;
     if ((layout.imageFit ?? "contain") === "cover") {
       ctx.beginPath();
       ctx.rect(x - boxW / 2, y - boxH / 2, boxW, boxH);
@@ -336,7 +585,7 @@ export function renderShowcaseFrame(
   };
   const drawTitleFor = (item: ShowcaseSlide, opacity: number) => {
     ctx.save();
-    ctx.globalAlpha = opacity;
+    ctx.globalAlpha = opacity * sceneOpacity;
     ctx.translate((width * (layout.titleX ?? layout.nameX)) / 100, (height * (layout.titleY ?? layout.nameY)) / 100);
     ctx.scale((layout.titleScale ?? layout.nameScale) / 100, (layout.titleScale ?? layout.nameScale) / 100);
     ctx.textAlign = showcaseCanvasTextAlign(layout.nameAlign);
@@ -347,7 +596,7 @@ export function renderShowcaseFrame(
   };
   const drawSubtitleFor = (item: ShowcaseSlide, opacity: number) => {
     ctx.save();
-    ctx.globalAlpha = opacity;
+    ctx.globalAlpha = opacity * sceneOpacity;
     ctx.translate((width * (layout.subtitleX ?? layout.nameX)) / 100, (height * (layout.subtitleY ?? layout.nameY + 4.5)) / 100);
     ctx.scale((layout.subtitleScale ?? layout.nameScale) / 100, (layout.subtitleScale ?? layout.nameScale) / 100);
     ctx.textAlign = showcaseCanvasTextAlign(layout.nameAlign);
@@ -376,11 +625,13 @@ export function renderShowcaseFrame(
       : (layout.layers ?? defaultLayers).filter((layer) => layer !== "swing");
   for (const layer of showcasePaintOrder(effectiveLayers))
     renderers[layer]?.();
+  if (segment.phase === "handoff")
+    drawBestEntrance(ctx, slide, width, height, 1, 1 - handoffProgress);
   if (ratingVersion === "rating_3" && showRatingWatermark) {
     ctx.save();
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(245,158,11,.78)";
+    ctx.fillStyle = `rgba(245,158,11,${.78 * sceneOpacity})`;
     ctx.font = `650 ${Math.max(11, width * 0.009)}px "Noto Sans SC",system-ui`;
     ctx.fillText(
       "Rating 3.0 本地近似 · 非 HLTV 官方",

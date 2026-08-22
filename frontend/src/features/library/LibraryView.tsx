@@ -21,12 +21,19 @@ import type {
   StudioKind,
   StudioSeed,
 } from "../../types";
-import { filterMatches, recentMatchIDs } from "./selection";
+import {
+  filterMatches,
+  playersWithStats,
+  recentMatchIDs,
+  sortPlayers,
+  type PlayerSort,
+} from "./selection";
 
 export function LibraryView() {
   const players = useAppStore((state) => state.players);
   const refreshPlayers = useAppStore((state) => state.refreshPlayers);
   const [search, setSearch] = useState("");
+  const [playerSort, setPlayerSort] = useState<PlayerSort>("latest_imported");
   const [selected, setSelected] = useState<SavedPlayer | null>(null);
   const [matches, setMatches] = useState<MatchRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -36,6 +43,7 @@ export function LibraryView() {
   const [mapFilter, setMapFilter] = useState("all");
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState("");
+  const [bulkProgress, setBulkProgress] = useState<{ processed: number; total: number } | null>(null);
   const [menu, setMenu] = useState<{
     player: SavedPlayer;
     x: number;
@@ -43,14 +51,13 @@ export function LibraryView() {
   } | null>(null);
   const visiblePlayers = useMemo(
     () =>
-      players
+      sortPlayers(players
         .filter((player) =>
           `${player.name} ${player.steam_id}`
             .toLowerCase()
             .includes(search.toLowerCase()),
-        )
-        .sort((a, b) => Number(b.followed) - Number(a.followed)),
-    [players, search],
+        ), playerSort),
+    [players, search, playerSort],
   );
   const maps = useMemo(
     () =>
@@ -108,6 +115,47 @@ export function LibraryView() {
       setError(value instanceof Error ? value.message : String(value));
     } finally {
       setBusyAction("");
+    }
+  }
+  async function addAllToShowcase() {
+    const targets = playersWithStats(sortPlayers(players, playerSort));
+    if (!targets.length) return;
+    const failures: string[] = [];
+    let completed = 0;
+    let lastSeed: StudioSeed | null = null;
+    try {
+      setBusyAction("studio:showcase-all");
+      setError("");
+      setBulkProgress({ processed: 0, total: targets.length });
+      for (const [index, player] of targets.entries()) {
+        try {
+          const playerMatches = await bridge.getMatches(player.steam_id);
+          const matchIds = playerMatches.map((match) => match.demo_record_id);
+          if (!matchIds.length) continue;
+          const radar = await bridge.buildRadar(player.steam_id, matchIds);
+          const seed: StudioSeed = { player, matchIds, radar };
+          await saveSeedToDraft("showcase", seed, useAppStore.getState().config);
+          lastSeed = seed;
+          completed += 1;
+        } catch {
+          failures.push(player.name);
+        }
+        setBulkProgress({ processed: index + 1, total: targets.length });
+      }
+      if (lastSeed) useStudioStore.getState().setSeed(lastSeed);
+      if (completed)
+        useAppStore.getState().showToast(
+          failures.length
+            ? `已加入轮播：${completed} 名玩家；${failures.length} 名未完成`
+            : `已加入轮播：${completed} 名玩家`,
+        );
+      if (failures.length)
+        setError(`未能加入轮播：${failures.join("、")}`);
+      else if (!completed)
+        setError("没有可用于生成轮播的比赛统计。");
+    } finally {
+      setBusyAction("");
+      setBulkProgress(null);
     }
   }
   async function toggleFollow(player: SavedPlayer) {
@@ -185,9 +233,22 @@ export function LibraryView() {
           <h1>资料库</h1>
           <p>筛选比赛、观察近期表现，然后把选材送入制作器。</p>
         </div>
-        <div className="header-stat">
-          <strong>{players.length}</strong>
-          <span>已保存玩家</span>
+        <div className="library-header-actions">
+          <div className="header-stat">
+            <strong>{players.length}</strong>
+            <span>已保存玩家</span>
+          </div>
+          <button
+            className="quiet"
+            onClick={addAllToShowcase}
+            disabled={!playersWithStats(players).length || Boolean(busyAction)}
+            aria-label="将所有有比赛统计的玩家加入轮播"
+          >
+            {busyAction === "studio:showcase-all" ? <Spinner /> : <Video size={17} />}
+            {busyAction === "studio:showcase-all"
+              ? `正在加入 ${bulkProgress?.processed ?? 0}/${bulkProgress?.total ?? 0}`
+              : "全部加入轮播"}
+          </button>
         </div>
       </header>
       <div className="library-layout">
@@ -201,6 +262,18 @@ export function LibraryView() {
               placeholder="玩家名或 SteamID"
             />
           </div>
+          <label className="player-sort">
+            <span>排序</span>
+            <select
+              aria-label="玩家排序"
+              value={playerSort}
+              onChange={(event) => setPlayerSort(event.target.value as PlayerSort)}
+            >
+              <option value="latest_imported">最新导入</option>
+              <option value="match_count_asc">场次升序</option>
+              <option value="match_count_desc">场次降序</option>
+            </select>
+          </label>
           <div className="player-list">
             {visiblePlayers.map((player) => (
               <button

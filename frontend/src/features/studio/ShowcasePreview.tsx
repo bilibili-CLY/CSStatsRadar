@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import { selectRatingProfile } from "../../components/RadarCanvas";
 import type { RatingVersion, ShowcaseLayoutDraft, ShowcaseSlide } from "../../types";
 import {
   clampShowcaseTransform,
   nearestCornerDistance,
   selectionBounds,
+  SHOWCASE_EXPORT_HEIGHT,
+  SHOWCASE_EXPORT_WIDTH,
+  showcasePreviewSize,
   showcaseSegment,
   targetBaseBounds,
   targetBounds,
   type ShowcaseTarget,
   type ShowcaseTransform,
+  type ShowcaseAnimationOptions,
 } from "./showcaseMath";
 import {
   drawShowcaseSelection,
@@ -30,7 +35,8 @@ export function ShowcasePreview({
   radarAxisScale,
   ratingVersion,
   showRatingWatermark,
-  fontScale,
+  metricLabelFontSize,
+  animations,
   onLayoutChange,
   onImageTransformChange,
   previewTimeRef,
@@ -45,15 +51,18 @@ export function ShowcasePreview({
   radarAxisScale?: Record<string, number>;
   ratingVersion: RatingVersion;
   showRatingWatermark: boolean;
-  fontScale: number;
+  metricLabelFontSize: number;
+  animations: ShowcaseAnimationOptions;
   onLayoutChange: (layout: ShowcaseLayoutDraft) => void;
   onImageTransformChange: (transform: { x: number; y: number; scale: number }) => void;
   previewTimeRef?: React.MutableRefObject<number>;
 }) {
+  const fullscreenRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [assetRevision, setAssetRevision] = useState(0);
   const [fontState, setFontState] = useState<"loading" | "ready" | "error">("loading");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   type Target = "radar" | "title" | "subtitle" | "image" | "swing";
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
   const selectionRef = useRef<Target | null>(null);
@@ -80,6 +89,12 @@ export function ShowcasePreview({
   }, [slides]);
   useEffect(() => { ensureShowcaseFonts().then(() => { setFontState("ready"); setAssetRevision((value) => value + 1); }).catch(() => setFontState("error")); }, []);
   useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === fullscreenRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    syncFullscreen();
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+  useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
     if (!container || !canvas || fontState !== "ready") return;
@@ -87,8 +102,11 @@ export function ShowcasePreview({
     const draw = (forceTimeMs?: number) => {
       const drawTimeMs = forceTimeMs ?? (previewTimeRef ? previewTimeRef.current : timeMs);
       const density = Math.min(2, window.devicePixelRatio || 1);
-      const width = Math.max(640, Math.floor(sizeRef.current.width * density));
-      const height = Math.floor((width * 9) / 16);
+      const display = showcasePreviewSize(sizeRef.current.width, sizeRef.current.height);
+      const width = Math.max(1, Math.round(display.width * density));
+      const height = Math.max(1, Math.round(width * SHOWCASE_EXPORT_HEIGHT / SHOWCASE_EXPORT_WIDTH));
+      canvas.style.width = `${display.width}px`;
+      canvas.style.height = `${display.height}px`;
       const effectiveLayout = { ...layout };
       const dragState = drag.current;
       if (dragState?.pendingTransform) {
@@ -98,14 +116,18 @@ export function ShowcasePreview({
         else if (target === "title") { effectiveLayout.titleX = dragState.pendingTransform.x; effectiveLayout.titleY = dragState.pendingTransform.y; effectiveLayout.titleScale = dragState.pendingTransform.scale; }
         else if (target === "subtitle") { effectiveLayout.subtitleX = dragState.pendingTransform.x; effectiveLayout.subtitleY = dragState.pendingTransform.y; effectiveLayout.subtitleScale = dragState.pendingTransform.scale; }
       }
-      const segmentIndex = showcaseSegment(slides, drawTimeMs).index;
+      const segmentIndex = showcaseSegment(slides, drawTimeMs, animations).index;
       const dragTransform =
         dragState?.pendingTransform && dragState.target === "image"
           ? dragState.pendingTransform
           : null;
+      if (dragTransform)
+        effectiveLayout.imageScale = dragTransform.scale;
       const effectiveSlides = dragTransform
         ? slides.map((item, index) =>
-            index === segmentIndex ? { ...item, imageTransform: dragTransform } : item,
+            index === segmentIndex
+              ? { ...item, imageTransform: { x: dragTransform.x, y: dragTransform.y } }
+              : item,
           )
         : slides;
       renderShowcaseFrame(
@@ -121,7 +143,9 @@ export function ShowcasePreview({
         radarAxisScale,
         ratingVersion,
         showRatingWatermark,
-        fontScale,
+        1,
+        metricLabelFontSize,
+        animations,
       );
       const currentSelection = selectionRef.current;
       if (currentSelection) {
@@ -147,7 +171,7 @@ export function ShowcasePreview({
     const observer = new ResizeObserver(() => { measure(); draw(); });
     observer.observe(container);
     return () => { drawRef.current = null; observer.disconnect(); if (rafId) cancelAnimationFrame(rafId); };
-  }, [slides, layout, assetRevision, fontState, showBestMarkers, radarScaleMode, radarScale, radarAxisScale, ratingVersion, showRatingWatermark, fontScale, playing, previewTimeRef]);
+  }, [slides, layout, assetRevision, fontState, showBestMarkers, radarScaleMode, radarScale, radarAxisScale, ratingVersion, showRatingWatermark, metricLabelFontSize, animations, playing, previewTimeRef]);
   useEffect(() => {
     if (playing) return;
     drawRef.current?.();
@@ -159,7 +183,7 @@ export function ShowcasePreview({
       y: ((event.clientY - rect.top) / Math.max(1, rect.height)) * 100,
     };
   }
-  function currentSlide() { return slides[showcaseSegment(slides, timeMs).index]; }
+  function currentSlide() { return slides[showcaseSegment(slides, timeMs, animations).index]; }
   function currentTransform(target: Target) {
     if (target === "radar") return { x: layout.radarX, y: layout.radarY, scale: layout.radarScale };
     if (target === "swing") {
@@ -170,7 +194,11 @@ export function ShowcasePreview({
     }
     if (target === "title") return { x: layout.titleX ?? layout.nameX, y: layout.titleY ?? layout.nameY, scale: layout.titleScale ?? layout.nameScale };
     if (target === "subtitle") return { x: layout.subtitleX ?? layout.nameX, y: layout.subtitleY ?? layout.nameY + 4.5, scale: layout.subtitleScale ?? layout.nameScale };
-    return currentSlide()?.imageTransform ?? { x: layout.imageX, y: layout.imageY, scale: layout.imageScale };
+    return {
+      x: currentSlide()?.imageTransform?.x ?? layout.imageX,
+      y: currentSlide()?.imageTransform?.y ?? layout.imageY,
+      scale: layout.imageScale,
+    };
   }
   function patchTransform(target: Target, transform: { x: number; y: number; scale: number }) {
     if (target === "image") return onImageTransformChange(transform);
@@ -205,12 +233,22 @@ export function ShowcasePreview({
       return point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
     }) ?? null;
   }
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement === fullscreenRef.current)
+        await document.exitFullscreen();
+      else await fullscreenRef.current?.requestFullscreen();
+    } catch {
+      // Browsers may reject fullscreen when it is unavailable; the preview remains usable.
+    }
+  }
   return (
-    <div
-      className={`showcase-canvas ${drag.current ? "dragging-element" : ""}`}
-      ref={containerRef}
-    >
-      <canvas
+    <div className="showcase-preview" ref={fullscreenRef}>
+      <div
+        className={`showcase-canvas ${drag.current ? "dragging-element" : ""}`}
+        ref={containerRef}
+      >
+        <canvas
         ref={canvasRef}
         role="img"
         tabIndex={0}
@@ -271,8 +309,18 @@ export function ShowcasePreview({
           if (event.key === "+" || event.key === "=") { event.preventDefault(); patchTransform(selectedTarget, clampShowcaseTransform(selectedTarget, { ...transform, scale: Math.min(220, transform.scale+5) })); }
           if (event.key === "-") { event.preventDefault(); patchTransform(selectedTarget, clampShowcaseTransform(selectedTarget, { ...transform, scale: Math.max(35, transform.scale-5) })); }
         }}
-      />
-      {fontState !== "ready" && <span className={`showcase-font-status ${fontState}`} role="status">{fontState === "loading" ? "正在载入离线字体…" : "离线字体加载失败，已暂停预览与导出"}</span>}
+        />
+        {fontState !== "ready" && <span className={`showcase-font-status ${fontState}`} role="status">{fontState === "loading" ? "正在载入离线字体…" : "离线字体加载失败，已暂停预览与导出"}</span>}
+      </div>
+      <button
+        type="button"
+        className="quiet showcase-fullscreen-button"
+        aria-label={isFullscreen ? "退出全屏预览" : "全屏预览"}
+        onClick={toggleFullscreen}
+      >
+        {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+        {isFullscreen ? "退出全屏" : "全屏预览"}
+      </button>
     </div>
   );
 }

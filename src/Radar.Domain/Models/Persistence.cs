@@ -64,6 +64,7 @@ public class SavedDemo
     [JsonPropertyName("note")] public string Note { get; set; } = "";
     [JsonPropertyName("analysis_version")] public string AnalysisVersion { get; set; } = "";
     [JsonPropertyName("participants")] public List<Player> Participants { get; set; } = new();
+    [JsonPropertyName("player_stat_steam_ids")] public List<string> PlayerStatSteamIDs { get; set; } = new();
     [JsonPropertyName("rounds")] public int Rounds { get; set; }
     [JsonPropertyName("score_a")] public int ScoreA { get; set; }
     [JsonPropertyName("score_b")] public int ScoreB { get; set; }
@@ -76,6 +77,7 @@ public class SavedPlayer
     [JsonPropertyName("name")] public string Name { get; set; } = "";
     [JsonPropertyName("match_count")] public int MatchCount { get; set; }
     [JsonPropertyName("latest_match_time")] public DateTimeOffset LatestMatchTime { get; set; }
+    [JsonPropertyName("latest_imported_at")] public DateTimeOffset LatestImportedAt { get; set; }
     [JsonPropertyName("followed")] public bool Followed { get; set; }
 }
 
@@ -128,6 +130,8 @@ public class ShowcaseConfig
     [JsonPropertyName("layout")] public ShowcaseLayout Layout { get; set; } = new();
     [JsonPropertyName("music_path")] public string MusicPath { get; set; } = "";
     [JsonPropertyName("show_best_markers")] public bool ShowBestMarkers { get; set; }
+    [JsonPropertyName("show_intro_animation")] public bool ShowIntroAnimation { get; set; } = true;
+    [JsonPropertyName("show_best_entrance_animation")] public bool ShowBestEntranceAnimation { get; set; } = true;
     [JsonPropertyName("audio_offset_ms")] public int AudioOffsetMS { get; set; }
     [JsonPropertyName("ffmpeg_path")] public string FFmpegPath { get; set; } = "";
     [JsonPropertyName("radar_scale_mode")] public string RadarScaleMode { get; set; } = "global";

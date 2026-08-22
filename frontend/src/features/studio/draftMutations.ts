@@ -9,6 +9,10 @@ import type {
   StudioKind,
   StudioSeed,
 } from "../../types";
+import {
+  SHOWCASE_EXPORT_HEIGHT,
+  SHOWCASE_EXPORT_WIDTH,
+} from "./showcaseMath";
 
 export type DraftRecord = Record<string, unknown>;
 
@@ -67,6 +71,7 @@ export function makeInitialDraft(
       imageX: 73,
       imageY: 57,
       imageScale: 100,
+      metricLabelFontSize: 12,
       swingX: 34,
       swingY: 78,
       swingScale: 100,
@@ -78,10 +83,9 @@ export function makeInitialDraft(
       imageFit: "contain" as "contain" | "cover",
     } as ShowcaseLayoutDraft,
     fps: config.video_fps,
-    width: config.export_width,
-    height: config.export_height,
+    width: SHOWCASE_EXPORT_WIDTH,
+    height: SHOWCASE_EXPORT_HEIGHT,
     audioOffsetMs: config.showcase.audio_offset_ms,
-    fontScale: 1,
   };
 }
 
@@ -89,6 +93,24 @@ export function stripLegacyDraftFields(draft: DraftRecord): DraftRecord {
   const next = { ...draft };
   delete next.ratingVersion;
   delete next.showRatingWatermark;
+  if (Array.isArray(next.slides)) {
+    const slides = next.slides as ShowcaseSlide[];
+    const active = typeof next.active === "number" ? next.active : 0;
+    const layout = { ...((next.layout as ShowcaseLayoutDraft | undefined) ?? {}) };
+    const activeScale = slides[active]?.imageTransform?.scale;
+    layout.imageScale = activeScale ?? layout.imageScale ?? 100;
+    layout.metricLabelFontSize = Math.max(
+      8,
+      Math.min(32, Number(layout.metricLabelFontSize) || 12),
+    );
+    next.layout = layout;
+    next.slides = slides.map((slide) => {
+      if (!slide.imageTransform) return slide;
+      const { x, y } = slide.imageTransform;
+      return { ...slide, imageTransform: { x, y } };
+    });
+    delete next.fontScale;
+  }
   return next;
 }
 

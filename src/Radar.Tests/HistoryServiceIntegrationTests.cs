@@ -45,6 +45,10 @@ public class HistoryServiceIntegrationTests
 
             var players = repo.ListPlayers();
             Assert.Equal(10, players.Count);
+            Assert.All(players, player => Assert.NotEqual(default, player.LatestImportedAt));
+
+            var savedDemo = repo.ListDemos().Single();
+            Assert.Equal(demo.Players.Select(player => player.SteamID).OrderBy(id => id), savedDemo.PlayerStatSteamIDs.OrderBy(id => id));
 
             var player = players.First();
             var matches = repo.ListPlayerMatches(player.SteamID);
@@ -98,6 +102,35 @@ public class HistoryServiceIntegrationTests
             var players = repo.ListPlayers();
             Assert.Single(players);
             Assert.Equal(firstSteamID, players[0].SteamID);
+        }
+        finally
+        {
+            repo.Close();
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void FollowBackfill_Adds_Only_Missing_Player_Stats_And_Is_Idempotent()
+    {
+        var (repo, history, dir) = CreateRepo();
+        try
+        {
+            var demo = LoadDemo("legacy_g163.json");
+            var first = demo.Players[0];
+            var second = demo.Players[1];
+            history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, new List<string> { first.SteamID });
+
+            var before = repo.ListDemos().Single();
+            Assert.Contains(first.SteamID, before.PlayerStatSteamIDs);
+            Assert.DoesNotContain(second.SteamID, before.PlayerStatSteamIDs);
+
+            history.FollowParsedDemoPlayersAtSource("a.dem", "", demo, new List<string> { second.SteamID });
+            history.FollowParsedDemoPlayersAtSource("a.dem", "", demo, new List<string> { second.SteamID });
+
+            var after = repo.ListDemos().Single();
+            Assert.Equal(new[] { first.SteamID, second.SteamID }.OrderBy(id => id), after.PlayerStatSteamIDs.OrderBy(id => id));
+            Assert.Single(repo.ListPlayerMatches(second.SteamID));
         }
         finally
         {

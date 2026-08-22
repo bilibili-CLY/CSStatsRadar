@@ -127,6 +127,12 @@ public partial class SQLiteHistoryRepository
                 while (reader.Read())
                     demo.Participants.Add(new Player { Name = reader.GetString(0), SteamID = reader.GetString(1) });
             }
+            var byDemoID = result.ToDictionary(demo => demo.DemoRecordID, StringComparer.Ordinal);
+            using (var cmd = NewCmd("SELECT demo_id, steam_id FROM player_match_stats"))
+            using (var reader = cmd.ExecuteReader())
+                while (reader.Read())
+                    if (byDemoID.TryGetValue(reader.GetString(0), out var demo))
+                        demo.PlayerStatSteamIDs.Add(reader.GetString(1));
             return result;
         }
     }
@@ -159,6 +165,12 @@ public partial class SQLiteHistoryRepository
                 using var preader = pc.ExecuteReader();
                 while (preader.Read())
                     demo.Participants.Add(new Player { Name = preader.GetString(0), SteamID = preader.GetString(1) });
+            }
+            using (var stats = NewCmd("SELECT steam_id FROM player_match_stats WHERE demo_id = $id"))
+            {
+                stats.Parameters.AddWithValue("$id", demoID);
+                using var statsReader = stats.ExecuteReader();
+                while (statsReader.Read()) demo.PlayerStatSteamIDs.Add(statsReader.GetString(0));
             }
             return demo;
         }
@@ -231,6 +243,7 @@ public partial class SQLiteHistoryRepository
         {
             const string sql = @"SELECT p.steam_id, p.latest_name, COUNT(DISTINCT d.id) AS match_count,
        COALESCE(MAX(d.match_time), p.last_seen_at) AS latest_match_time,
+       COALESCE(MAX(d.imported_at), p.last_seen_at) AS latest_imported_at,
        EXISTS(SELECT 1 FROM followed_players fp WHERE fp.steam_id = p.steam_id)
 FROM players p
 LEFT JOIN demo_players dp ON dp.steam_id = p.steam_id
@@ -247,7 +260,8 @@ ORDER BY latest_match_time DESC";
                     Name = reader.GetString(1),
                     MatchCount = reader.GetInt32(2),
                     LatestMatchTime = ParseDBTime(reader.GetString(3)),
-                    Followed = reader.GetInt64(4) != 0,
+                    LatestImportedAt = ParseDBTime(reader.GetString(4)),
+                    Followed = reader.GetInt64(5) != 0,
                 });
             return result;
         }
@@ -259,6 +273,7 @@ ORDER BY latest_match_time DESC";
         {
             const string sql = @"SELECT p.steam_id, p.latest_name, COUNT(DISTINCT d.id) AS match_count,
        COALESCE(MAX(d.match_time), p.last_seen_at) AS latest_match_time,
+       COALESCE(MAX(d.imported_at), p.last_seen_at) AS latest_imported_at,
        EXISTS(SELECT 1 FROM followed_players fp WHERE fp.steam_id = p.steam_id)
 FROM players p
 LEFT JOIN demo_players dp ON dp.steam_id = p.steam_id
@@ -275,7 +290,8 @@ GROUP BY p.steam_id, p.latest_name";
                 Name = reader.GetString(1),
                 MatchCount = reader.GetInt32(2),
                 LatestMatchTime = ParseDBTime(reader.GetString(3)),
-                Followed = reader.GetInt64(4) != 0,
+                LatestImportedAt = ParseDBTime(reader.GetString(4)),
+                Followed = reader.GetInt64(5) != 0,
             };
         }
     }

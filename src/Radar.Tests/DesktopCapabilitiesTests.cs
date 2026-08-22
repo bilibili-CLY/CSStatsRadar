@@ -17,6 +17,37 @@ public class DesktopCapabilitiesTests
     }
 
     [Fact]
+    public void Mac_MultiFile_Output_Uses_Explicit_Separator()
+    {
+        var parser = typeof(NativeDialogs).GetMethod(
+            "ParseMacFileSelectionOutput",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(parser);
+        var paths = (List<string>?)parser!.Invoke(null, new object?[] { "/tmp/one, two.dem\u001f/tmp/three.zip\n" });
+        Assert.Equal(new[] { "/tmp/one, two.dem", "/tmp/three.zip" }, paths);
+        Assert.Null(parser.Invoke(null, new object?[] { null }));
+    }
+
+    [Fact]
+    public void Legacy_Config_Enables_New_Showcase_Animations()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "config.json");
+            File.WriteAllText(path, "{\"showcase\":{\"show_best_markers\":true}}");
+            var config = new ConfigManager(path).Read(out var error);
+            Assert.Null(error);
+            Assert.True(config.Showcase.ShowIntroAnimation);
+            Assert.True(config.Showcase.ShowBestEntranceAnimation);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
     public void PlayerImage_And_MVPBackground_Persist_And_Clear()
     {
         var dir = CreateTempDir();

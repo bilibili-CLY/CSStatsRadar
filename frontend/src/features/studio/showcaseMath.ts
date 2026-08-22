@@ -4,9 +4,82 @@ import type {
   ShowcaseLayoutDraft,
   ShowcaseSlide,
 } from "../../types";
+import { radarOuterRingDiameter } from "../../lib/radarGeometry";
 
 export type ShowcaseTarget = "radar" | "title" | "subtitle" | "image" | "swing";
 export type ShowcaseTransform = { x: number; y: number; scale: number };
+export type ShowcaseAnimationOptions = {
+  showIntroAnimation?: boolean;
+  showBestEntranceAnimation?: boolean;
+  reduceMotion?: boolean;
+};
+export type ShowcasePhase = "intro" | "entrance" | "handoff" | "slide";
+export type ShowcaseIntroStage = "empty" | "reference" | "average" | "outro";
+export type ShowcaseIntroState = {
+  stage: ShowcaseIntroStage;
+  progress: number;
+};
+export type ShowcaseSegment = {
+  index: number;
+  offsetMs: number;
+  phase: ShowcasePhase;
+  entranceProgress: number;
+  handoffProgress: number;
+  usesBestEntrance: boolean;
+};
+export const SHOWCASE_INTRO_MS = 8000;
+export const SHOWCASE_INTRO_EMPTY_MS = 2000;
+export const SHOWCASE_INTRO_REFERENCE_MS = 2000;
+export const SHOWCASE_INTRO_AVERAGE_MS = 2000;
+export const SHOWCASE_INTRO_OUTRO_MS = 2000;
+export const SHOWCASE_BEST_ENTRANCE_MS = 3000;
+export const SHOWCASE_BEST_HANDOFF_MS = 1000;
+export const SHOWCASE_TRANSITION_MS = 1000;
+export const SHOWCASE_EXPORT_WIDTH = 1920;
+export const SHOWCASE_EXPORT_HEIGHT = 1080;
+// The ±5% reference span matches the actual outer ring, not the radar canvas.
+// The wider canvas
+// reserves independent room for overflow fills and endpoint labels.
+export const SHOWCASE_SWING_CANVAS_WIDTH_RATIO = 1.3;
+
+export function showcaseOuterRadarRingDiameter(radarCanvasSize: number) {
+  return radarOuterRingDiameter(
+    { compact: true, hideSwing: true },
+    radarCanvasSize,
+    radarCanvasSize,
+  );
+}
+
+export function showcaseSwingReferenceHalfWidth(outerRingDiameter: number) {
+  return outerRingDiameter / 2;
+}
+
+export function showcaseSwingCanvasWidth(outerRingDiameter: number) {
+  return outerRingDiameter * SHOWCASE_SWING_CANVAS_WIDTH_RATIO;
+}
+
+export function showcasePreviewSize(availableWidth: number, availableHeight: number) {
+  const width = Math.max(0, availableWidth);
+  const height = Math.max(0, availableHeight);
+  if (width / Math.max(1, height) > SHOWCASE_EXPORT_WIDTH / SHOWCASE_EXPORT_HEIGHT)
+    return { width: height * SHOWCASE_EXPORT_WIDTH / SHOWCASE_EXPORT_HEIGHT, height };
+  return { width, height: width * SHOWCASE_EXPORT_HEIGHT / SHOWCASE_EXPORT_WIDTH };
+}
+
+export function normalizeShowcaseDimensions<T extends { width: number; height: number }>(
+  draft: T,
+): T {
+  if (
+    draft.width === SHOWCASE_EXPORT_WIDTH &&
+    draft.height === SHOWCASE_EXPORT_HEIGHT
+  )
+    return draft;
+  return {
+    ...draft,
+    width: SHOWCASE_EXPORT_WIDTH,
+    height: SHOWCASE_EXPORT_HEIGHT,
+  };
+}
 export function targetBaseBounds(target: ShowcaseTarget) { return target === "radar" ? { x: 18, y: 32 } : target === "image" ? { x: 10, y: 18 } : target === "title" ? { x: 15, y: 5 } : target === "subtitle" ? { x: 13, y: 3.5 } : { x: 17, y: 17 }; }
 export function targetBounds(target: ShowcaseTarget, transform: ShowcaseTransform) {
   const base = targetBaseBounds(target);
@@ -17,16 +90,55 @@ export function selectionBounds(target: ShowcaseTarget, transform: ShowcaseTrans
   if (target !== "swing") return targetBounds(target, transform);
   const radarSize = (Math.min(width * 0.48, height * 0.78) * layout.radarScale) / 100;
   const swingScale = transform.scale / 100;
-  const swingCanvasH = radarSize * 0.19 * swingScale;
-  const trackCenterY = transform.y + ((0.28 * swingCanvasH) / height) * 100;
-  const trackHalfX = Math.max(14, ((0.27 * radarSize * swingScale) / width) * 100);
-  return { left: transform.x-trackHalfX, right: transform.x+trackHalfX, top: trackCenterY-6, bottom: trackCenterY+6 };
+  const outerRingDiameter = showcaseOuterRadarRingDiameter(radarSize);
+  const swingCanvasW = showcaseSwingCanvasWidth(outerRingDiameter) * swingScale;
+  const swingCanvasH = radarSize * 0.22 * swingScale;
+  const trackCenterY = transform.y;
+  const trackHalfX = Math.max(14, ((swingCanvasW / 2) / width) * 100);
+  const trackHalfY = Math.max(7.5, ((Math.max(10, Math.min(14, swingCanvasH * 0.18)) * 2.25 / height) * 100) / 2);
+  return { left: transform.x-trackHalfX, right: transform.x+trackHalfX, top: trackCenterY-trackHalfY, bottom: trackCenterY+trackHalfY };
 }
 export function nearestCornerDistance(point: {x:number;y:number}, bounds: ReturnType<typeof targetBounds>) { return Math.min(...[[bounds.left,bounds.top],[bounds.right,bounds.top],[bounds.left,bounds.bottom],[bounds.right,bounds.bottom]].map(([x,y]) => Math.hypot(point.x-x,point.y-y))); }
 export function clampShowcaseTransform(target: ShowcaseTarget, transform: ShowcaseTransform) { const base=targetBaseBounds(target); const scale=Math.max(35,Math.min(220,50/base.x*100,50/base.y*100,transform.scale)); const bounds = targetBounds(target, { ...transform, x:0, y:0, scale }); const halfX=(bounds.right-bounds.left)/2, halfY=(bounds.bottom-bounds.top)/2; return { ...transform, scale, x:Math.max(halfX,Math.min(100-halfX,transform.x)), y:Math.max(halfY,Math.min(100-halfY,transform.y)) }; }
 
-export function showcaseDuration(slides: ShowcaseSlide[]) {
-  return slides.reduce((sum, slide) => sum + slide.duration * 1000, 0);
+function animationsEnabled(options?: ShowcaseAnimationOptions) {
+  return !options?.reduceMotion;
+}
+function hasBestEntrance(slides: ShowcaseSlide[], index: number, options?: ShowcaseAnimationOptions) {
+  return animationsEnabled(options) && Boolean(options?.showBestEntranceAnimation) && bestMetricIndexesForSlide(slides, index).length > 0;
+}
+export function showcaseIntroDuration(options?: ShowcaseAnimationOptions) {
+  return animationsEnabled(options) && options?.showIntroAnimation ? SHOWCASE_INTRO_MS : 0;
+}
+export function showcaseIntroState(timeMs: number): ShowcaseIntroState {
+  const time = Math.max(0, Math.min(SHOWCASE_INTRO_MS, timeMs));
+  if (time < SHOWCASE_INTRO_EMPTY_MS)
+    return { stage: "empty", progress: time / SHOWCASE_INTRO_EMPTY_MS };
+  if (time < SHOWCASE_INTRO_EMPTY_MS + SHOWCASE_INTRO_REFERENCE_MS)
+    return {
+      stage: "reference",
+      progress: (time - SHOWCASE_INTRO_EMPTY_MS) / SHOWCASE_INTRO_REFERENCE_MS,
+    };
+  if (time < SHOWCASE_INTRO_EMPTY_MS + SHOWCASE_INTRO_REFERENCE_MS + SHOWCASE_INTRO_AVERAGE_MS)
+    return {
+      stage: "average",
+      progress: (time - SHOWCASE_INTRO_EMPTY_MS - SHOWCASE_INTRO_REFERENCE_MS) / SHOWCASE_INTRO_AVERAGE_MS,
+    };
+  return {
+    stage: "outro",
+    progress: Math.min(1, (time - SHOWCASE_INTRO_EMPTY_MS - SHOWCASE_INTRO_REFERENCE_MS - SHOWCASE_INTRO_AVERAGE_MS) / SHOWCASE_INTRO_OUTRO_MS),
+  };
+}
+export function showcaseBestEntranceDuration(slides: ShowcaseSlide[], index: number, options?: ShowcaseAnimationOptions) {
+  return hasBestEntrance(slides, index, options)
+    ? SHOWCASE_BEST_ENTRANCE_MS + SHOWCASE_BEST_HANDOFF_MS
+    : 0;
+}
+export function showcaseDuration(slides: ShowcaseSlide[], options?: ShowcaseAnimationOptions) {
+  return showcaseIntroDuration(options) + slides.reduce(
+    (sum, slide, index) => sum + slide.duration * 1000 + showcaseBestEntranceDuration(slides, index, options),
+    0,
+  );
 }
 export function resizedShowcaseDuration(
   initialDuration: number,
@@ -65,37 +177,75 @@ export function audioOffsetLabel(offsetMs: number) {
   if (offsetMs < 0) return `从素材 ${(-offsetMs / 1000).toFixed(1)}s 播放`;
   return `延后 ${(offsetMs / 1000).toFixed(1)}s 播放`;
 }
-export function showcaseSlideStart(slides: ShowcaseSlide[], index: number) {
-  return slides
-    .slice(0, index)
-    .reduce((sum, slide) => sum + slide.duration * 1000, 0);
+export function showcaseSlideStart(slides: ShowcaseSlide[], index: number, options?: ShowcaseAnimationOptions) {
+  return showcaseIntroDuration(options) + slides.slice(0, index).reduce(
+    (sum, slide, candidateIndex) => sum + slide.duration * 1000 + showcaseBestEntranceDuration(slides, candidateIndex, options),
+    0,
+  );
 }
-export function showcaseSegment(slides: ShowcaseSlide[], timeMs: number) {
-  let elapsed = 0;
+export function showcaseSegment(slides: ShowcaseSlide[], timeMs: number, options?: ShowcaseAnimationOptions): ShowcaseSegment {
+  const intro = showcaseIntroDuration(options);
+  if (timeMs < intro) return { index: 0, offsetMs: 0, phase: "intro", entranceProgress: 0, handoffProgress: 0, usesBestEntrance: false };
+  let elapsed = intro;
   for (let index = 0; index < slides.length; index += 1) {
     const duration = slides[index].duration * 1000;
-    if (timeMs < elapsed + duration || index === slides.length - 1)
-      return { index, offsetMs: Math.max(0, timeMs - elapsed) };
-    elapsed += duration;
+    const bestDuration = showcaseBestEntranceDuration(slides, index, options);
+    const usesBestEntrance = bestDuration > 0;
+    const entranceEnd = elapsed + (bestDuration ? SHOWCASE_BEST_ENTRANCE_MS : 0);
+    const handoffEnd = elapsed + bestDuration;
+    const end = handoffEnd + duration;
+    if (timeMs < end || index === slides.length - 1) {
+      if (bestDuration && timeMs < entranceEnd) {
+        return {
+          index,
+          offsetMs: 0,
+          phase: "entrance",
+          entranceProgress: (timeMs - elapsed) / SHOWCASE_BEST_ENTRANCE_MS,
+          handoffProgress: 0,
+          usesBestEntrance,
+        };
+      }
+      if (bestDuration && timeMs < handoffEnd) {
+        return {
+          index,
+          offsetMs: 0,
+          phase: "handoff",
+          entranceProgress: 1,
+          handoffProgress: (timeMs - entranceEnd) / SHOWCASE_BEST_HANDOFF_MS,
+          usesBestEntrance,
+        };
+      }
+      return {
+        index,
+        offsetMs: Math.max(0, timeMs - handoffEnd),
+        phase: "slide",
+        entranceProgress: 1,
+        handoffProgress: 1,
+        usesBestEntrance,
+      };
+    }
+    elapsed = end;
   }
-  return { index: 0, offsetMs: 0 };
+  return { index: 0, offsetMs: 0, phase: "slide", entranceProgress: 1, handoffProgress: 1, usesBestEntrance: false };
 }
 export function settledShowcasePreviewTime(
   slides: ShowcaseSlide[],
   timeMs: number,
+  options?: ShowcaseAnimationOptions,
 ) {
   if (!slides.length) return 0;
-  const segment = showcaseSegment(slides, timeMs);
-  const start = showcaseSlideStart(slides, segment.index);
-  return Math.min(showcaseDuration(slides), Math.max(timeMs, start + 1000));
+  const segment = showcaseSegment(slides, timeMs, options);
+  const start = showcaseSlideStart(slides, segment.index, options);
+  const stableStart = start + showcaseBestEntranceDuration(slides, segment.index, options);
+  return Math.min(showcaseDuration(slides, options), Math.max(timeMs, stableStart + 1000));
 }
-export const SHOWCASE_TRANSITION_MS = 1000;
 export function showcaseTransitionProgress(
   slides: ShowcaseSlide[],
   timeMs: number,
+  options?: ShowcaseAnimationOptions,
 ) {
-  const segment = showcaseSegment(slides, timeMs);
-  if (segment.index === 0) return 1;
+  const segment = showcaseSegment(slides, timeMs, options);
+  if (segment.index === 0 || segment.usesBestEntrance) return 1;
   return easeInOut(
     Math.min(1, segment.offsetMs / SHOWCASE_TRANSITION_MS),
   );
@@ -130,6 +280,32 @@ export function interpolateRadarResponse(
         ...metric,
         value: values[index] ?? null,
       })),
+    },
+  };
+}
+export function showcaseReferenceRadar(response: RadarResponse): RadarResponse {
+  const values = response.radar.max_values.map((value) => value ?? null);
+  return {
+    ...response,
+    radar: {
+      ...response.radar,
+      values,
+      metrics: response.radar.metrics.map((metric, index) => ({
+        ...metric,
+        value: values[index] ?? null,
+      })),
+    },
+  };
+}
+export function showcaseZeroRadar(response: RadarResponse): RadarResponse {
+  const values = response.radar.values.map(() => 0);
+  return {
+    ...response,
+    radar: {
+      ...response.radar,
+      values,
+      round_swing: response.radar.round_swing == null ? undefined : 0,
+      metrics: response.radar.metrics.map((metric) => ({ ...metric, value: 0 })),
     },
   };
 }
@@ -205,10 +381,44 @@ export function averageRadar(entries: OverlayEntry[]): RadarResponse | null {
     rating_3_status: { available: Boolean(rating3), reason: rating3 ? undefined : "队列中的部分数据不支持 Rating 3.0。" },
   };
 }
+export function showcaseAverageRadar(slides: ShowcaseSlide[], ratingVersion: "rating_2" | "rating_3"): RadarResponse | null {
+  if (!slides.length) return null;
+  const responses = slides.map((slide) => slide.radar);
+  const payloads = responses
+    .map((response) => ratingVersion === "rating_3" ? response.profiles?.rating_3 : response.profiles?.rating_2 ?? response.radar)
+    .filter((payload): payload is RadarResponse["radar"] => Boolean(payload));
+  if (!payloads.length) return null;
+  const source = payloads[0];
+  const values = source.dimensions.map((dimension) => {
+    const usable = payloads.flatMap((payload) => {
+      const index = payload.dimensions.indexOf(dimension);
+      const value = index >= 0 ? payload.values[index] : null;
+      return value != null && Number.isFinite(value) ? [value] : [];
+    });
+    return usable.length ? usable.reduce((sum, value) => sum + value, 0) / usable.length : null;
+  });
+  const swings = payloads.flatMap((payload) => payload.round_swing != null && Number.isFinite(payload.round_swing) ? [payload.round_swing] : []);
+  const radar = {
+    ...source,
+    values,
+    round_swing: swings.length ? swings.reduce((sum, value) => sum + value, 0) / swings.length : undefined,
+    metrics: source.metrics.map((metric, index) => ({ ...metric, value: values[index] })),
+  };
+  return {
+    ...responses[0],
+    player: { name: "队列平均", steam_id: "average" },
+    match_count: slides.length,
+    radar,
+    profiles: ratingVersion === "rating_3"
+      ? { rating_2: responses[0].profiles?.rating_2 ?? responses[0].radar, rating_3: radar }
+      : { rating_2: radar },
+    rating_3_status: { available: ratingVersion === "rating_3" },
+  };
+}
 export function showcasePaintOrder(layers: string[]) {
   return [...layers].reverse();
 }
-function easeInOut(progress: number) {
+export function easeInOut(progress: number) {
   const value = Math.max(0, Math.min(1, progress));
   return value < 0.5
     ? 4 * value * value * value

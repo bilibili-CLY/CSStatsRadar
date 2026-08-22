@@ -6,6 +6,8 @@ These rules are product requirements. Preserve them in every UI, rendering, and 
 
 - The outer radar ring is a reference scale, not a clipping boundary. Metric values above the configured maximum must visibly extend beyond the outer ring so exceptional player performance remains obvious.
 - Never apply a fixed normalized-value cap to radar vertices. Constrain only at the composition's natural safe boundary so the rendered point and its label remain visible.
+- Radar label layout must measure the metric name, value, and optional `BEST` marker against per-axis safe regions. Extreme values may use compact notation, but these labels must remain wholly visible and must not overlap vertices or one another.
+- By default, radar metric labels sit immediately outside the outer ring. Only the label whose corresponding vertex extends outward may move farther out, and it must stop at its measured safe boundary.
 - Radar polygons, point markers, the six metric names, their values, `BEST` markers, and the Rating 3.0 Swing track must not overlap. Reserve separate label and Swing regions when calculating geometry.
 - In showcase exports, `Rating 3.0 本地近似 · 非 HLTV 官方` belongs at the bottom-left of the complete composition, not inside the movable radar sub-canvas.
 - Rating 3.0 `Multi-Kill` is the multi-kill round probability (rounds with ≥2 kills ÷ total rounds), shown as a percentage with the outer ring = 20%. It is not the multiImpact sub-score; do not reintroduce the old value/max (2) during refactors.
@@ -28,11 +30,18 @@ These rules are product requirements. Preserve them in every UI, rendering, and 
 
 ## Showcase transitions
 
+- Showcase preview and MP4 export are always a 1920×1080 (16:9) composition. Preview must letterbox/scale down to its available area rather than stretch; its native fullscreen mode must preserve that ratio.
+- In showcase compositions, the Round Swing ±5% reference span must exactly equal the rendered radar's outer-ring diameter, never the radar sub-canvas diameter. Its track height is 225% of the original height. The Swing sub-canvas may be wider only to reserve independent overflow and endpoint-label safe space; values beyond ±5% extend from the fixed outer-ring-aligned endpoints into that overflow region. The fill has a square edge at the center line and may round only at its outer end.
 - Transitions between players are mandatory in preview and exported video.
-- The radar itself must never fade in or fade out. Interpolate each of the six radar vertices directly from the previous player's corresponding metric value to the next player's value, preserving continuous polygon motion.
-- Player name/subtitle, player image, and background image must crossfade between players while the radar vertices morph.
-- Do not replace the transition with a hard cut, a whole-radar opacity fade, or unrelated entrance/exit animation.
+- Outside the explicit BEST entrance flow, the radar itself must never fade in or fade out. Interpolate each of the six radar vertices directly from the previous player's corresponding metric value to the next player's value, preserving continuous polygon motion.
+- During normal player transitions, player name/subtitle, player image, and background image must crossfade while the radar vertices morph.
+- Do not replace a normal player transition with a hard cut, a whole-radar opacity fade, or unrelated entrance/exit animation.
 - Keep preview and export on the same renderer and transition timing so they cannot diverge.
+- Showcase queue averages are a red solid, unfilled radar baseline plus a red Round Swing reference line; average values must use the active Rating profile and ignore missing values per metric.
+- Showcase metric names, values, `BEST`, and all Round Swing text (label, value, and ±5% endpoints) use one global, explicitly entered pixel font size and bold weight; this setting never changes player title/subtitle or the watermark. Showcase player-image size is a global proportional scale while each slide may retain its own image position.
+- The optional eight-second showcase opener has four two-second stages: empty radar/Swing background fade-in (0–2s) → highlighted outer-ring labels and fixed ±5% Swing reference (2–4s) → red average radar and Swing reference line (4–6s) → fade the average values out, then expand the first-player radar from its center and Swing fill from its midpoint (6–8s). The stable first-player scene starts only after the opener finishes; it never morphs from the average. It must never fade the whole radar during normal player-to-player transitions.
+- The base outer radar ring is persistent and never fades; only its separate highlight fades in and out. During the opener, metric labels stay at their default locations. Metric names and the Swing track/endpoint labels remain visible once shown; numeric labels count continuously from outer reference to average, fade out at the third-to-fourth boundary, then reappear while counting from zero to player values. Both the red average radar baseline and the red Round Swing reference line remain fixed and visible while the player data expands. Only normal player-to-player transitions interpolate the six radar vertices directly.
+- BEST remains strict per-metric first place. When its optional entrance is enabled, every BEST player (including the first) adds a 3-second player-name entrance followed by a 1-second crossfade into the main scene; this timing is part of preview, timeline, and export duration. The entrance uses the entering player's background/theme only, shows no radar, Swing, main-scene title/subtitle, watermark, metric values, or `BEST` marker; a centered player portrait fades in during the entrance and fades out with its layer during the handoff. The left/right vertical names loop six times upward/downward respectively as a gapless repeated name string, and the lower-right name enters from the right using a right-side safe anchor and must remain wholly visible even when long. During the crossfade, all main-scene layers appear together while radar values and Rating 3.0 Swing expand from zero with ease-in-out motion; this BEST path replaces the normal player-to-player radar morph and must never resume the previous player's morph after handoff.
 
 ## UI style conventions
 
@@ -88,7 +97,7 @@ These rules govern the application chrome and component aesthetics. They must be
 
 ## Library page & player avatars
 
-- In the library (`LibraryView`), "制作雷达/加入叠图/加入轮播" only save the draft, set the studio seed (`useStudioStore.setSeed`), and show a toast — they must never navigate to the studio route.
+- In the library (`LibraryView`), "制作雷达/加入叠图/加入轮播/全部加入轮播" only save the draft, set the studio seed (`useStudioStore.setSeed`), and show a toast — they must never navigate to the studio route. "全部加入轮播" includes every saved player with match stats in the current player sort order, updates existing slides by SteamID, and reports any individual failures without discarding successful additions.
 - Right-clicking a player in the library player list opens a `context-menu` with "取消关注/关注" and "删除资历" (deletes that player's match stats). Keep this affordance; do not remove it during refactors.
 - Player avatars come from Steam with no API key: `GetPlayerAvatars` reads the Steam community profile XML (`steamcommunity.com/profiles/{steamid}/?xml=1`, `avatarFull` element) and caches the downloaded image in `~/.csplayerstatsradar/player-avatars/{steamid}.jpg`. Ready caches return a data URL immediately; failed fetches are stored as `status="fallback"` and are not retried within 24h. The showcase slide image defaults to the player avatar (`item.imageUrl ?? item.avatarUrl`); `ShowcaseEditor` backfills `avatarUrl` for any slide missing it on load.
 

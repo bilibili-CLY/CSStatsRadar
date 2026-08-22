@@ -200,10 +200,17 @@ $output
         script.AppendLine("repeat with f in chosen");
         script.AppendLine("\tset end of resultList to POSIX path of f");
         script.AppendLine("end repeat");
-        script.AppendLine("return resultList");
+        script.AppendLine("set text item delimiters to ASCII character 31");
+        script.AppendLine("return resultList as text");
         var output = RunOsascript(script.ToString());
+        return ParseMacFileSelectionOutput(output);
+    }
+
+    private static List<string>? ParseMacFileSelectionOutput(string? output)
+    {
         if (string.IsNullOrWhiteSpace(output)) return null;
-        return output.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        var paths = output.TrimEnd('\r', '\n').Split('\u001f').Where(path => path.Length > 0).ToList();
+        return paths.Count == 0 ? null : paths;
     }
 
     private static string? MacChooseFile(string title, string[] extensions)

@@ -98,6 +98,23 @@ export function ImportView({ followedSteamIDs }: Props) {
     [followedSteamIDs],
   );
   const activePlayers = useMemo(() => activeItem ? playerDetails(activeItem) : activeDemo ? persistentPlayerDetails(activeDemo, activeAnalysis) : [], [activeItem, activeDemo, activeAnalysis]);
+  const activePlayerStats = useMemo(
+    () => activeDemo
+      ? new Set(activeDemo.player_stat_steam_ids ?? [])
+      // A completed import has already written stats for each followed player.
+      : followed,
+    [activeDemo, followed],
+  );
+  const selectedPlayers = useMemo(
+    () => activePlayers.filter((player) => selected.has(player.steam_id)),
+    [activePlayers, selected],
+  );
+  const selectedNewFollowCount = selectedPlayers.filter(
+    (player) => !followed.has(player.steam_id),
+  ).length;
+  const selectedBackfillCount = selectedPlayers.filter(
+    (player) => followed.has(player.steam_id) && !activePlayerStats.has(player.steam_id),
+  ).length;
 
   useEffect(() => {
     if (!activeDemo) { setActiveAnalysis(null); return; }
@@ -212,8 +229,7 @@ export function ImportView({ followedSteamIDs }: Props) {
 
   async function follow() {
     if ((!summary || !activeItem) && !activeDemo || !selected.size) return;
-    const players = activePlayers
-      .filter((player) => selected.has(player.steam_id))
+    const players = selectedPlayers
       .map(({ name, steam_id }) => ({ name, steam_id }));
     try {
       setFollowing(true);
@@ -493,7 +509,7 @@ export function ImportView({ followedSteamIDs }: Props) {
             <div className="import-player-heading">
               <div>
                 <h3>本场目标玩家</h3>
-                <p>点击玩家整行即可选择；已关注玩家仅展示，不会重复补写。</p>
+                <p>已关注但本场缺少统计的玩家可继续补写；已有统计不会重复写入。</p>
               </div>
               <span>已选 {selected.size} 人</span>
             </div>
@@ -504,6 +520,7 @@ export function ImportView({ followedSteamIDs }: Props) {
                 tone="blue"
                 players={activePlayers.filter((player) => player.team === "A")}
                 followed={followed}
+                playerStats={activePlayerStats}
                 selected={selected}
                 setSelected={setSelected}
               />
@@ -512,6 +529,7 @@ export function ImportView({ followedSteamIDs }: Props) {
                 tone="amber"
                 players={activePlayers.filter((player) => player.team === "B")}
                 followed={followed}
+                playerStats={activePlayerStats}
                 selected={selected}
                 setSelected={setSelected}
               />
@@ -520,8 +538,10 @@ export function ImportView({ followedSteamIDs }: Props) {
             <footer className="import-dialog-footer">
               <span>
                 {selected.size
-                  ? `将关注并补写 ${selected.size} 名玩家`
-                  : "选择至少一名未关注玩家"}
+                  ? selectedNewFollowCount
+                    ? `将关注 ${selectedNewFollowCount} 名，并补写 ${selectedBackfillCount + selectedNewFollowCount} 份数据`
+                    : `将补写 ${selectedBackfillCount} 份缺失数据`
+                  : "选择需要关注或补写的玩家"}
               </span>
               <button
                 className="primary"
@@ -529,7 +549,9 @@ export function ImportView({ followedSteamIDs }: Props) {
                 onClick={follow}
               >
                 {following ? <Spinner /> : <Play size={16} />}
-                {following ? "正在补写" : "关注并补写当前场次"}
+                {following
+                  ? "正在补写"
+                  : selectedNewFollowCount ? "关注并补写当前场次" : "补写缺失数据"}
               </button>
             </footer>
           </section>
@@ -603,6 +625,7 @@ function TeamPanel({
   tone,
   players,
   followed,
+  playerStats,
   selected,
   setSelected,
 }: {
@@ -610,6 +633,7 @@ function TeamPanel({
   tone: "blue" | "amber";
   players: ImportPlayerDetail[];
   followed: Set<string>;
+  playerStats: Set<string>;
   selected: Set<string>;
   setSelected: Dispatch<SetStateAction<Set<string>>>;
 }) {
@@ -622,14 +646,16 @@ function TeamPanel({
       <div>
         {players.map((player) => {
           const isFollowed = followed.has(player.steam_id);
+          const hasStats = playerStats.has(player.steam_id);
+          const disabled = isFollowed && hasStats;
           return (
             <label
-              className={`${selected.has(player.steam_id) ? "selected" : ""} ${isFollowed ? "followed" : ""}`}
+              className={`${selected.has(player.steam_id) ? "selected" : ""} ${isFollowed ? "followed" : ""} ${hasStats ? "saved" : ""}`}
               key={player.steam_id}
             >
               <input
                 type="checkbox"
-                disabled={isFollowed}
+                disabled={disabled}
                 checked={selected.has(player.steam_id)}
                 onChange={(event) =>
                   setSelected((current) => {
@@ -649,7 +675,9 @@ function TeamPanel({
               <span className="import-player-kda">
                 K {player.kills} / D {player.deaths} / A {player.assists}
               </span>
-              {isFollowed && <small className="followed-label">已关注</small>}
+              <small className="followed-label">
+                {isFollowed ? hasStats ? "已补写" : "待补写" : "未关注"}
+              </small>
             </label>
           );
         })}
