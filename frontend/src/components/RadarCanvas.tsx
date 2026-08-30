@@ -41,6 +41,8 @@ export interface RadarCanvasProps {
   referenceRadar?: RadarResponse | null;
   /** Optional independent label-value source, used when the chart fades separately. */
   labelRadar?: RadarResponse | null;
+  /** Per-axis values that sit at the radar center; lower values remain at center. */
+  radarFloorValues?: Record<string, number>;
   /** Keep opener labels at their default position while their values count. */
   fixedLabelPlacement?: boolean;
   gridOpacity?: number;
@@ -101,8 +103,11 @@ export function roundSwingBarDistance(
   if (magnitude <= ROUND_SWING_TRACK_LIMIT)
     return referenceHalfWidth * magnitude / ROUND_SWING_TRACK_LIMIT;
   const overflow = Math.max(1, overflowLimit - ROUND_SWING_TRACK_LIMIT);
-  return referenceHalfWidth +
-    (outerHalfWidth - referenceHalfWidth) * (magnitude - ROUND_SWING_TRACK_LIMIT) / overflow;
+  return Math.min(
+    outerHalfWidth,
+    referenceHalfWidth +
+      (outerHalfWidth - referenceHalfWidth) * (magnitude - ROUND_SWING_TRACK_LIMIT) / overflow,
+  );
 }
 
 export function roundSwingBarRadii(
@@ -285,6 +290,49 @@ export function visibleRadarPointDistance(
   );
 }
 
+/**
+ * Convert a metric value to a radar radius fraction. A floor is optional so
+ * existing radar and overlay rendering continue to use zero as their center.
+ * If a custom axis maximum falls below its requested floor, reduce the floor
+ * just below that maximum to keep geometry finite and preserve the custom cap.
+ */
+export function normalizeRadarMetricValue(
+  value: number | null | undefined,
+  maximum: number,
+  floor = 0,
+) {
+  const upper = Math.max(Number.EPSILON, maximum);
+  const requestedFloor = Number.isFinite(floor) ? Math.max(0, floor) : 0;
+  const safeFloor = Math.min(
+    requestedFloor,
+    Math.max(0, upper - Math.max(Number.EPSILON, upper * 0.000001)),
+  );
+  return Math.max(0, ((value ?? 0) - safeFloor) / Math.max(Number.EPSILON, upper - safeFloor));
+}
+
+function radarAxisLimit(
+  props: RadarCanvasProps,
+  dimension: string,
+  maximum: number,
+) {
+  return props.radarScaleMode === "axis"
+    ? props.radarAxisScale?.[dimension] ?? maximum
+    : maximum * (props.radarScale ?? 1);
+}
+
+function radarNormalizedValue(
+  props: RadarCanvasProps,
+  dimension: string,
+  value: number | null | undefined,
+  maximum: number,
+) {
+  return normalizeRadarMetricValue(
+    value,
+    radarAxisLimit(props, dimension, maximum),
+    props.radarFloorValues?.[dimension],
+  );
+}
+
 function radarPoints(
   radar: RadarResponse,
   dimensions: string[],
@@ -301,14 +349,7 @@ function radarPoints(
     const value = sourceIndex >= 0 ? radar.radar.values[sourceIndex] : null;
     const maximum =
       sourceIndex >= 0 ? radar.radar.max_values[sourceIndex] || 1 : 1;
-    const limit =
-      props.radarScaleMode === "axis"
-        ? props.radarAxisScale?.[dimension] ?? maximum
-        : maximum * (props.radarScale ?? 1);
-    const normalized = Math.max(
-      0,
-      (value ?? 0) / Math.max(Number.EPSILON, limit),
-    );
+    const normalized = radarNormalizedValue(props, dimension, value, maximum);
     const clearance = Math.max(
       props.showBestMarkers && props.bestMetricIndexes?.includes(index)
         ? width * (props.compact ? 0.075 : 0.055)
@@ -488,8 +529,8 @@ export function renderRadarCanvas(
   width: number,
   height: number,
 ) {
-  canvas.width = width;
-  canvas.height = height;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
   const ctx = canvas2D(canvas);
   if (!ctx) return;
   ctx.clearRect(0, 0, width, height);
@@ -661,12 +702,9 @@ export function renderRadarCanvas(
     const sourceIndex = labelRadar.radar.dimensions.indexOf(label);
     const value = sourceIndex >= 0 ? labelRadar.radar.values[sourceIndex] : null;
     const maximum = sourceIndex >= 0 ? labelRadar.radar.max_values[sourceIndex] || 1 : 1;
-    const limit = props.radarScaleMode === "axis"
-      ? props.radarAxisScale?.[label] ?? maximum
-      : maximum * (props.radarScale ?? 1);
     const normalized = props.fixedLabelPlacement
       ? 0
-      : Math.max(0, (value ?? 0) / Math.max(Number.EPSILON, limit));
+      : radarNormalizedValue(props, label, value, maximum);
     const clearance = Math.max(
       layout.line * (layout.bestOffset != null ? 3.5 : 2.05),
       layout.footprint.bottom - layout.footprint.top,
@@ -786,14 +824,7 @@ function drawBestMarkers(
     const sourceIndex = valueDataset?.radar.radar.dimensions.indexOf(dimension) ?? -1;
     const value = sourceIndex >= 0 ? valueDataset?.radar.radar.values[sourceIndex] : null;
     const maximum = sourceIndex >= 0 ? valueDataset?.radar.radar.max_values[sourceIndex] || 1 : 1;
-    const limit =
-      props.radarScaleMode === "axis"
-        ? props.radarAxisScale?.[dimension] ?? maximum
-        : maximum * (props.radarScale ?? 1);
-    const normalized = Math.max(
-      0,
-      (value ?? 0) / Math.max(Number.EPSILON, limit),
-    );
+    const normalized = radarNormalizedValue(props, dimension, value, maximum);
     const { labelDistance } = metricDistances(
       props,
       width,
@@ -971,10 +1002,13 @@ export function renderSwingCanvas(
   textOpacity = 1,
   valueOpacity = textOpacity,
   displayValueColor?: string,
-  overflowReferenceValue?: number | null,
+  overflowLimit?: number | null,
   metricLabelFontSize?: number,
+  targetCanvas?: HTMLCanvasElement | OffscreenCanvas,
 ) {
-  const canvas = createRadarCanvas(width, height);
+  const canvas = targetCanvas ?? createRadarCanvas(width, height);
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
   const ctx = canvas2D(canvas);
   if (!ctx) return canvas;
   ctx.clearRect(0, 0, width, height);
@@ -986,16 +1020,21 @@ export function renderSwingCanvas(
   const y = height * 0.5 - trackHeight / 2;
   const fontSize = metricLabelFontSize ?? Math.max(12, width * 0.012) * fontScale;
   const averageValue = average?.radar.round_swing;
-  const overflowLimit = roundSwingOverflowLimit([value, averageValue, overflowReferenceValue]);
+  const effectiveOverflowLimit = Math.max(
+    ROUND_SWING_TRACK_LIMIT,
+    overflowLimit != null && Number.isFinite(overflowLimit)
+      ? Math.abs(overflowLimit)
+      : ROUND_SWING_TRACK_LIMIT,
+  );
   const overflowHalfWidth = Math.max(
     trackHalfWidth,
-    Math.min(width / 2 - Math.max(6, width * 0.03), trackHalfWidth + width * 0.15),
+    width / 2 - Math.max(6, width * 0.03),
   );
   const barWidth = roundSwingBarDistance(
     value ?? 0,
     trackHalfWidth,
     overflowHalfWidth,
-    overflowLimit,
+    effectiveOverflowLimit,
   );
   const positive = (value ?? 0) >= 0;
   const color = positive ? "#35d07f" : "#f05252";
@@ -1034,7 +1073,7 @@ export function renderSwingCanvas(
       averageValue,
       trackHalfWidth,
       overflowHalfWidth,
-      overflowLimit,
+      effectiveOverflowLimit,
     );
     const averageX = centerX + (averageValue < 0 ? -averageDistance : averageDistance);
     ctx.save();

@@ -1,6 +1,7 @@
 import {
   ensureShowcaseFonts,
   loadImage,
+  retainShowcaseImages,
   renderShowcaseFrame,
 } from "./showcaseRender";
 import type {
@@ -25,6 +26,7 @@ type ExportConfig = {
   showRatingWatermark: boolean;
   fontScale: number;
   metricLabelFontSize: number;
+  radarFloorValues?: Record<string, number>;
   animations: {
     showIntroAnimation: boolean;
     showBestEntranceAnimation: boolean;
@@ -45,6 +47,7 @@ type WorkerResponse =
 
 let config: ExportConfig | null = null;
 let cancelled = false;
+let renderCanvas: OffscreenCanvas | null = null;
 
 function post(message: WorkerResponse) {
   (self as unknown as { postMessage(m: WorkerResponse): void }).postMessage(
@@ -57,9 +60,14 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
   if (message.type === "init") {
     config = message.config;
     cancelled = false;
+    renderCanvas = new OffscreenCanvas(
+      SHOWCASE_EXPORT_WIDTH,
+      SHOWCASE_EXPORT_HEIGHT,
+    );
     void (async () => {
       try {
         await ensureShowcaseFonts();
+        retainShowcaseImages(message.imageUrls);
         await Promise.all(
           message.imageUrls.map((url) => loadImage(url).catch(() => undefined)),
         );
@@ -92,10 +100,8 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
       }
       const frameIndex = message.start + index;
       const timeMs = (frameIndex / active.fps) * 1000;
-      const canvas = new OffscreenCanvas(
-        SHOWCASE_EXPORT_WIDTH,
-        SHOWCASE_EXPORT_HEIGHT,
-      );
+      const canvas = renderCanvas;
+      if (!canvas) throw new Error("视频渲染画布未初始化。");
       renderShowcaseFrame(
         active.slides,
         active.layout,
@@ -112,6 +118,7 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
         active.fontScale,
         active.metricLabelFontSize,
         active.animations,
+        active.radarFloorValues,
       );
       blobs.push(await canvas.convertToBlob({ type: "image/png" }));
     }

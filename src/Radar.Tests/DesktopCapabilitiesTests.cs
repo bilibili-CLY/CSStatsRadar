@@ -17,6 +17,21 @@ public class DesktopCapabilitiesTests
     }
 
     [Fact]
+    public void Showcase_Expected_Frame_Count_Uses_Ceiling_For_Fractional_Durations()
+    {
+        Assert.Equal(60, ShowcaseVideo.ExpectedFrameCount(new VideoExportRequest
+        {
+            FPS = 60,
+            DurationMS = 1000,
+        }));
+        Assert.Equal(31, ShowcaseVideo.ExpectedFrameCount(new VideoExportRequest
+        {
+            FPS = 30,
+            DurationMS = 1001,
+        }));
+    }
+
+    [Fact]
     public void Mac_MultiFile_Output_Uses_Explicit_Separator()
     {
         var parser = typeof(NativeDialogs).GetMethod(

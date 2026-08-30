@@ -1,10 +1,12 @@
 import type {
   OverlayEntry,
   RadarResponse,
+  RatingVersion,
   ShowcaseLayoutDraft,
   ShowcaseSlide,
 } from "../../types";
 import { radarOuterRingDiameter } from "../../lib/radarGeometry";
+import { ROUND_SWING_TRACK_LIMIT } from "../../components/RadarCanvas";
 
 export type ShowcaseTarget = "radar" | "title" | "subtitle" | "image" | "swing";
 export type ShowcaseTransform = { x: number; y: number; scale: number };
@@ -37,10 +39,35 @@ export const SHOWCASE_BEST_HANDOFF_MS = 1000;
 export const SHOWCASE_TRANSITION_MS = 1000;
 export const SHOWCASE_EXPORT_WIDTH = 1920;
 export const SHOWCASE_EXPORT_HEIGHT = 1080;
+/** Rating 3.0 values represented by the center of a showcase radar. */
+export const SHOWCASE_RATING_3_RADAR_FLOORS: Readonly<Record<string, number>> = {
+  KPR: 0.42,
+  Surviving: 0.157,
+  ADR: 47.5,
+  KAST: 0.545,
+  "Multi-Kill": 0.07,
+  Rating: 0.55,
+};
+
+export function showcaseRadarFloorValues(
+  ratingVersion: RatingVersion,
+  overrides?: Record<string, number>,
+) {
+  if (ratingVersion !== "rating_3") return undefined;
+  if (!overrides) return SHOWCASE_RATING_3_RADAR_FLOORS;
+  const merged: Record<string, number> = {
+    ...SHOWCASE_RATING_3_RADAR_FLOORS,
+  };
+  for (const [key, value] of Object.entries(overrides)) merged[key] = value;
+  return merged;
+}
 // The ±5% reference span matches the actual outer ring, not the radar canvas.
 // The wider canvas
 // reserves independent room for overflow fills and endpoint labels.
 export const SHOWCASE_SWING_CANVAS_WIDTH_RATIO = 1.3;
+// Overflow beyond ±5% grows proportionally with the queue's largest swing,
+// capped so the composition stays sane.
+export const SHOWCASE_SWING_OVERFLOW_MULTIPLIER = 2;
 
 export function showcaseOuterRadarRingDiameter(radarCanvasSize: number) {
   return radarOuterRingDiameter(
@@ -54,8 +81,40 @@ export function showcaseSwingReferenceHalfWidth(outerRingDiameter: number) {
   return outerRingDiameter / 2;
 }
 
-export function showcaseSwingCanvasWidth(outerRingDiameter: number) {
-  return outerRingDiameter * SHOWCASE_SWING_CANVAS_WIDTH_RATIO;
+export function showcaseSwingOverflowLimit(maxSwingMagnitude: number) {
+  return Math.min(
+    Math.max(ROUND_SWING_TRACK_LIMIT, maxSwingMagnitude),
+    ROUND_SWING_TRACK_LIMIT * (1 + SHOWCASE_SWING_OVERFLOW_MULTIPLIER),
+  );
+}
+
+export function showcaseSwingCanvasWidth(
+  outerRingDiameter: number,
+  maxSwingMagnitude = ROUND_SWING_TRACK_LIMIT,
+) {
+  const trackHalfWidth = outerRingDiameter / 2;
+  const overflowLimit = showcaseSwingOverflowLimit(maxSwingMagnitude);
+  const overflowSpace =
+    (trackHalfWidth * (overflowLimit - ROUND_SWING_TRACK_LIMIT)) /
+    ROUND_SWING_TRACK_LIMIT;
+  const margin = Math.max(12, outerRingDiameter * 0.1);
+  const minimumHalf = (outerRingDiameter * SHOWCASE_SWING_CANVAS_WIDTH_RATIO) / 2;
+  return Math.max(minimumHalf, trackHalfWidth + overflowSpace + margin) * 2;
+}
+
+export function showcaseMaxSwingMagnitude(
+  slides: ShowcaseSlide[],
+  ratingVersion: RatingVersion,
+) {
+  const magnitudes = slides.flatMap((slide) => {
+    const profile =
+      ratingVersion === "rating_3"
+        ? slide.radar.profiles?.rating_3
+        : slide.radar.profiles?.rating_2;
+    const value = profile?.round_swing ?? slide.radar.radar.round_swing;
+    return value != null && Number.isFinite(value) ? [Math.abs(value)] : [];
+  });
+  return Math.max(ROUND_SWING_TRACK_LIMIT, ...magnitudes);
 }
 
 export function showcasePreviewSize(availableWidth: number, availableHeight: number) {
@@ -86,12 +145,12 @@ export function targetBounds(target: ShowcaseTarget, transform: ShowcaseTransfor
   const halfX = base.x*transform.scale/100, halfY = base.y*transform.scale/100;
   return { left: transform.x-halfX, right: transform.x+halfX, top: transform.y-halfY, bottom: transform.y+halfY };
 }
-export function selectionBounds(target: ShowcaseTarget, transform: ShowcaseTransform, width: number, height: number, layout: ShowcaseLayoutDraft) {
+export function selectionBounds(target: ShowcaseTarget, transform: ShowcaseTransform, width: number, height: number, layout: ShowcaseLayoutDraft, maxSwingMagnitude?: number) {
   if (target !== "swing") return targetBounds(target, transform);
   const radarSize = (Math.min(width * 0.48, height * 0.78) * layout.radarScale) / 100;
   const swingScale = transform.scale / 100;
   const outerRingDiameter = showcaseOuterRadarRingDiameter(radarSize);
-  const swingCanvasW = showcaseSwingCanvasWidth(outerRingDiameter) * swingScale;
+  const swingCanvasW = showcaseSwingCanvasWidth(outerRingDiameter, maxSwingMagnitude) * swingScale;
   const swingCanvasH = radarSize * 0.22 * swingScale;
   const trackCenterY = transform.y;
   const trackHalfX = Math.max(14, ((swingCanvasW / 2) / width) * 100);
@@ -104,8 +163,20 @@ export function clampShowcaseTransform(target: ShowcaseTarget, transform: Showca
 function animationsEnabled(options?: ShowcaseAnimationOptions) {
   return !options?.reduceMotion;
 }
+// 每帧都会查询 BEST 入场；按幻灯片数组身份缓存，避免 O(S²) 逐帧重算。
+const bestIndexesCache = new WeakMap<ShowcaseSlide[], number[][]>();
+export function bestMetricIndexesBySlide(slides: ShowcaseSlide[]): number[][] {
+  let cached = bestIndexesCache.get(slides);
+  if (!cached) {
+    cached = slides.map((_, index) => bestMetricIndexesForSlide(slides, index));
+    bestIndexesCache.set(slides, cached);
+  }
+  return cached;
+}
 function hasBestEntrance(slides: ShowcaseSlide[], index: number, options?: ShowcaseAnimationOptions) {
-  return animationsEnabled(options) && Boolean(options?.showBestEntranceAnimation) && bestMetricIndexesForSlide(slides, index).length > 0;
+  return animationsEnabled(options)
+    && Boolean(options?.showBestEntranceAnimation)
+    && (bestMetricIndexesBySlide(slides)[index]?.length ?? 0) > 0;
 }
 export function showcaseIntroDuration(options?: ShowcaseAnimationOptions) {
   return animationsEnabled(options) && options?.showIntroAnimation ? SHOWCASE_INTRO_MS : 0;

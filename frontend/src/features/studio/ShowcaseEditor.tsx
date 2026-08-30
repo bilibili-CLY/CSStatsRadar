@@ -27,6 +27,7 @@ import {
 import {
   ensureShowcaseFonts,
   loadImage,
+  retainShowcaseImages,
   renderShowcaseFrame,
   showcasePlayerImageUrl,
 } from "./showcaseRender";
@@ -330,7 +331,11 @@ export function ShowcaseEditor({
   }
   function togglePlayback() {
     if (!draft.slides.length) return;
-    if (!playing && previewTime >= totalDuration) setPreviewTime(0);
+    if (!playing && previewTime >= totalDuration) {
+      // 必须同时重置 rAF 时钟的 ref，否则第一拍会把时间钳回结尾导致无法重播。
+      previewTimeRef.current = 0;
+      setPreviewTime(0);
+    }
     playbackStopAt.current = null;
     setPlaying((current) => !current);
   }
@@ -430,14 +435,6 @@ export function ShowcaseEditor({
     // opener and each qualifying BEST entrance/handoff, not only slide holds.
     const durationMs = totalDuration;
     const frameCount = Math.ceil((durationMs / 1000) * draft.fps);
-    if (frameCount > 7200) {
-      setExportState({
-        running: false,
-        progress: 0,
-        message: "轮播超过 7200 帧，请降低帧率或缩短时长。",
-      });
-      return;
-    }
     if (typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined")
       return exportVideoWithWorker(frameCount, durationMs);
     return exportVideoMainThread(frameCount, durationMs);
@@ -478,6 +475,7 @@ export function ShowcaseEditor({
             showRatingWatermark: config.show_rating_watermark,
             fontScale: 1,
             metricLabelFontSize: draft.layout.metricLabelFontSize ?? 12,
+            radarFloorValues: config.showcase.radar_floor ?? {},
             animations: animationOptions,
           },
           imageUrls: Array.from(
@@ -512,11 +510,14 @@ export function ShowcaseEditor({
         const blobs = await new Promise<Blob[]>((resolve, reject) => {
           const onMessage = (event: MessageEvent) => {
             const message = event.data as
-              | { type: "frames"; blobs: Blob[] }
+              | { type: "frames"; start: number; blobs: Blob[] }
               | { type: "cancelled" }
               | { type: "error"; message: string };
             worker!.removeEventListener("message", onMessage);
-            if (message.type === "frames") resolve(message.blobs);
+            if (message.type === "frames" && message.start === frame)
+              resolve(message.blobs);
+            else if (message.type === "frames")
+              reject(new Error("视频帧批次顺序异常。"));
             else if (message.type === "cancelled")
               reject(new Error("视频导出已取消"));
             else reject(new Error(message.message));
@@ -567,13 +568,13 @@ export function ShowcaseEditor({
         message: "正在预加载人物资源…",
       });
       await ensureShowcaseFonts();
-      await Promise.all(
-        draft.slides.flatMap((item) =>
-          [showcasePlayerImageUrl(item), item.backgroundUrl]
-            .filter(Boolean)
-            .map((url) => loadImage(url!)),
+      const imageUrls = draft.slides.flatMap((item) =>
+        [showcasePlayerImageUrl(item), item.backgroundUrl].filter(
+          (url): url is string => Boolean(url),
         ),
       );
+      retainShowcaseImages(imageUrls);
+      await Promise.all(imageUrls.map(loadImage));
       exportId = await bridge.beginVideoExport(
         SHOWCASE_EXPORT_WIDTH,
         SHOWCASE_EXPORT_HEIGHT,
@@ -589,16 +590,17 @@ export function ShowcaseEditor({
       exportID.current = exportId;
       const batch: string[] = [];
       let batchStart = 0;
+      const frameCanvas = document.createElement("canvas");
       for (let frame = 0; frame < frameCount; frame++) {
         if (cancelRequested.current) throw new Error("视频导出已取消");
         const timeMs = (frame / draft.fps) * 1000;
-        const frameCanvas = renderShowcaseFrame(
+        renderShowcaseFrame(
           draft.slides,
           draft.layout,
           SHOWCASE_EXPORT_WIDTH,
           SHOWCASE_EXPORT_HEIGHT,
           timeMs,
-          undefined,
+          frameCanvas,
           config.showcase.show_best_markers,
           config.showcase.radar_scale_mode,
           config.showcase.radar_scale,
@@ -608,9 +610,10 @@ export function ShowcaseEditor({
           1,
           draft.layout.metricLabelFontSize ?? 12,
           animationOptions,
+          config.showcase.radar_floor ?? {},
         );
         if (!batch.length) batchStart = frame;
-        batch.push((frameCanvas as HTMLCanvasElement).toDataURL("image/png"));
+        batch.push(frameCanvas.toDataURL("image/png"));
         if (batch.length === 10 || frame === frameCount - 1) {
           await bridge.appendVideoFrames(exportId, batchStart, batch.splice(0));
           setExportState({
@@ -804,6 +807,7 @@ export function ShowcaseEditor({
           showRatingWatermark={config.show_rating_watermark}
           metricLabelFontSize={draft.layout.metricLabelFontSize ?? 12}
           animations={animationOptions}
+          radarFloorValues={config.showcase.radar_floor ?? {}}
           onLayoutChange={(layout) =>
             setDraft((current) => ({ ...current, layout }))
           }
@@ -915,7 +919,7 @@ export function ShowcaseEditor({
                       style={{ flex: `0 0 ${(introDuration / 1000) * timelinePixelsPerSecond}px` }}
                     >
                       <span className="clip-title">开场动画</span>
-                      <small>6.0s</small>
+                      <small>{(introDuration / 1000).toFixed(1)}s</small>
                     </div>
                   )}
                   {draft.slides.map((item, index) => (

@@ -5,6 +5,7 @@ Thumbs.db
 *.swo
 .idea/
 .vscode/
+.opencode/
 
 # Local environment and tool caches
 .env

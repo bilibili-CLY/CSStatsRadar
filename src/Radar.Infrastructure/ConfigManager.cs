@@ -51,6 +51,15 @@ public class ConfigManager
             RadarScaleMode = "global",
             RadarScale = 1.0,
             RadarAxisScale = new Dictionary<string, double>(),
+            RadarFloor = new Dictionary<string, double>
+            {
+                ["KPR"] = 0.42,
+                ["Surviving"] = 0.157,
+                ["ADR"] = 47.5,
+                ["KAST"] = 0.545,
+                ["Multi-Kill"] = 0.07,
+                ["Rating"] = 0.55,
+            },
             Layout = new ShowcaseLayout
             {
                 RadarPosition = new NormalizedPoint { X = 0.36, Y = 0.56 },
@@ -135,6 +144,18 @@ public class ConfigManager
         ["Rating"] = (0.75, 3),
     };
 
+    // Floors are normalized values the radar center represents; they must stay
+    // well below the outer-ring maximum so exceptional values can still extend out.
+    public static readonly Dictionary<string, (double Min, double Max)> RadarFloorRanges = new()
+    {
+        ["KPR"] = (0, 1),
+        ["Surviving"] = (0, 0.6),
+        ["ADR"] = (0, 100),
+        ["KAST"] = (0, 0.7),
+        ["Multi-Kill"] = (0, 0.2),
+        ["Rating"] = (0, 1.5),
+    };
+
     public string? Validate(AppConfig cfg)
     {
         if (cfg.ExportWidth <= 0 || cfg.ExportWidth > 8192 || cfg.ExportHeight <= 0 || cfg.ExportHeight > 8192)
@@ -164,6 +185,11 @@ public class ConfigManager
                 if (!RadarAxisLimitRanges.TryGetValue(kv.Key, out var range)) continue;
                 if (kv.Value < range.Min || kv.Value > range.Max) return $"雷达轴 {kv.Key} 缩放超出范围。";
             }
+        }
+        foreach (var kv in cfg.Showcase.RadarFloor)
+        {
+            if (!RadarFloorRanges.TryGetValue(kv.Key, out var range)) continue;
+            if (kv.Value < range.Min || kv.Value > range.Max) return $"雷达圆心最小值 {kv.Key} 超出范围。";
         }
         foreach (var pos in new[] { cfg.Showcase.Layout.RadarPosition, cfg.Showcase.Layout.NamePosition, cfg.Showcase.Layout.ImagePosition })
             if (pos.X is < 0 or > 1 || pos.Y is < 0 or > 1) return "展示布局坐标必须在 0 到 1 之间。";

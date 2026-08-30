@@ -3,6 +3,7 @@ import {
   CalendarClock,
   ChevronRight,
   Layers3,
+  RefreshCw,
   Search,
   Star,
   StarOff,
@@ -11,7 +12,7 @@ import {
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { BusyMessage, Spinner } from "../../components/Busy";
-import { PlayerAvatarView } from "../../components/PlayerAvatar";
+import { PlayerAvatarView, applyAvatar } from "../../components/PlayerAvatar";
 import { useAppStore } from "../../stores/appStore";
 import { useStudioStore } from "../../stores/studioStore";
 import { saveSeedToDraft, studioToastLabels } from "../studio/draftMutations";
@@ -205,6 +206,24 @@ export function LibraryView() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+  async function refreshAvatarFromMenu(player: SavedPlayer) {
+    setMenu(null);
+    try {
+      setBusyAction("avatar");
+      const values = await bridge.refreshPlayerAvatars([player.steam_id]);
+      const avatar = values[0];
+      if (avatar) applyAvatar(avatar);
+      useAppStore.getState().showToast(
+        avatar?.status === "ready"
+          ? `已刷新头像：${player.name}`
+          : `头像刷新失败：${player.name}（详见 ~/.csplayerstatsradar/logs/avatars.log）`,
+      );
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+    } finally {
+      setBusyAction("");
+    }
   }
   async function deletePlayerFromMenu(player: SavedPlayer) {
     setMenu(null);
@@ -533,7 +552,7 @@ export function LibraryView() {
           role="menu"
           style={{
             left: Math.min(menu.x, window.innerWidth - 180),
-            top: Math.min(menu.y, window.innerHeight - 96),
+            top: Math.min(menu.y, window.innerHeight - 132),
           }}
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -548,6 +567,14 @@ export function LibraryView() {
               <Star size={15} />
             )}
             {menu.player.followed ? "取消关注" : "关注"}
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => refreshAvatarFromMenu(menu.player)}
+            disabled={busyAction === "avatar"}
+          >
+            <RefreshCw size={15} />
+            刷新头像
           </button>
           <button
             role="menuitem"

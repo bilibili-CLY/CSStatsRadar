@@ -137,6 +137,7 @@ public class ShowcaseConfig
     [JsonPropertyName("radar_scale_mode")] public string RadarScaleMode { get; set; } = "global";
     [JsonPropertyName("radar_scale")] public double RadarScale { get; set; } = 1.0;
     [JsonPropertyName("radar_axis_scale")] public Dictionary<string, double> RadarAxisScale { get; set; } = new();
+    [JsonPropertyName("radar_floor")] public Dictionary<string, double> RadarFloor { get; set; } = new();
 }
 
 public class AppConfig

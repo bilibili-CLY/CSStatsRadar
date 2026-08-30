@@ -56,6 +56,8 @@ public class LargeBridgePayloadTests
             var frames = new List<string> { tinyPng, tinyPng };
             var append = await Call(client, server, "AppendVideoFrames", id, 0, frames);
             Assert.True(append.Contains("\"error\":null"), append);
+            var finish = await Call(client, server, "FinishVideoExport", id);
+            Assert.Contains("invalid_showcase_video", finish);
         }
         finally
         {
@@ -70,7 +72,7 @@ public class LargeBridgePayloadTests
         var fakeDir = Path.Combine(Path.GetTempPath(), "radar-fakebin-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(fakeDir);
         var script = Path.Combine(fakeDir, "ffmpeg");
-        File.WriteAllText(script, "#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then echo \"ffmpeg version fake\"; exit 0; fi\nexit 1\n");
+        File.WriteAllText(script, "#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then echo \"ffmpeg version fake\"; exit 0; fi\ncat >/dev/null\n");
         File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var oldPath = Environment.GetEnvironmentVariable("PATH") ?? "";
         Environment.SetEnvironmentVariable("PATH", fakeDir + Path.PathSeparator + oldPath);
@@ -103,8 +105,13 @@ public class LargeBridgePayloadTests
 
             var frame = "data:image/png;base64," +
                 "iVBORw0KGgoAAAANSUhEUgAAAUAAAAC0CAYAAADl5PURAAABlElEQVR42u3TAQkAAAzDsIm4iIu4f13XMQhEQaGZPaBUJAADAwYGDAwGBgwMGBgwMBgYMDBgYDAwYGDAwICBwcCAgQEDAwYGAwMGBgwMBgYMDBgYMDAYGDAwYGDAwGBgwMCAgcHAgIEBAwMGBgMDBgYMDAZWAQwMGBgwMBgYMDBgYMDAYGDAwICBwcCAgQEDAwYGAwMGBgwMGBgMDBgYMDAYGDAwYGDAwGBgwMCAgQEDg4EBAwMGBgMDBgYMDBgYDAwYGDAwGBgwMGBgwMBgYMDAgIEBA4OBAQMDBgYDAwYGDAwYGAwMGBgwMGBgMDBgYMDAYGDAwICBAQODgQEDAwYGDAwGBgwMGBgMDBgYMDBgYDAwYGDAwGBgwMCAgQEDg4EBAwMGBgwMBgYMDBgYDAwYGDAwYGAwMGBgwMCAgcHAgIEBA4OBAQMDBgYMDAYGDAwYGAysAhgYMDBgYDAwYGDAwICBwcCAgQEDg4EBAwMGBgwMBgYMDBgYMDAYGDAwYGAwMGBgwMCAgcHAgIEBAwMGhm4P/9V+KBhtu+4AAAAASUVORK5CYII=";
-            var frames = Enumerable.Range(0, 10).Select(_ => frame).ToList();
-            var append = await Call(client, server, "AppendVideoFrames", id, 0, frames);
+            var png = Convert.FromBase64String(frame.Substring("data:image/png;base64,".Length));
+            var append = await AppendBinaryFrames(
+                client,
+                server,
+                id,
+                0,
+                Enumerable.Range(0, 10).Select(_ => png).ToArray());
             Assert.True(append.Contains("\"error\":null"), append);
 
             var finishJson = await Call(client, server, "FinishVideoExport", id);
@@ -148,5 +155,36 @@ public class LargeBridgePayloadTests
         var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var resp = await client.PostAsync(server.BaseUrl + "/__bridge", content);
         return await resp.Content.ReadAsStringAsync();
+    }
+
+    private static async Task<string> AppendBinaryFrames(
+        HttpClient client,
+        BridgeServer server,
+        string exportID,
+        int startIndex,
+        byte[][] frames)
+    {
+        using var bytes = new MemoryStream();
+        WriteBigEndian(bytes, frames.Length);
+        WriteBigEndian(bytes, startIndex);
+        foreach (var frame in frames)
+        {
+            WriteBigEndian(bytes, frame.Length);
+            bytes.Write(frame);
+        }
+        using var content = new ByteArrayContent(bytes.ToArray());
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        var response = await client.PostAsync(
+            server.BaseUrl + "/__bridge-bin?exportId=" + Uri.EscapeDataString(exportID),
+            content);
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    private static void WriteBigEndian(Stream stream, int value)
+    {
+        stream.WriteByte((byte)(value >> 24));
+        stream.WriteByte((byte)(value >> 16));
+        stream.WriteByte((byte)(value >> 8));
+        stream.WriteByte((byte)value);
     }
 }

@@ -126,7 +126,7 @@ public class DesktopApp : IDisposable
         repo.SaveEditorDraft(new EditorDraft { Kind = kind, Payload = payload });
     }
 
-    public AppConfig SavePreferences(int exportWidth, int exportHeight, int videoFPS, string ffmpegPath, bool reduceMotion, bool showBestMarkers, bool showIntroAnimation, bool showBestEntranceAnimation, int audioOffsetMS, string radarScaleMode, double radarScale, Dictionary<string, double> radarAxisScale, string ratingVersion, bool showRatingWatermark)
+    public AppConfig SavePreferences(int exportWidth, int exportHeight, int videoFPS, string ffmpegPath, bool reduceMotion, bool showBestMarkers, bool showIntroAnimation, bool showBestEntranceAnimation, int audioOffsetMS, string radarScaleMode, double radarScale, Dictionary<string, double> radarAxisScale, string ratingVersion, bool showRatingWatermark, Dictionary<string, double> radarFloor)
     {
         cfg.ExportWidth = exportWidth;
         cfg.ExportHeight = exportHeight;
@@ -140,6 +140,7 @@ public class DesktopApp : IDisposable
         cfg.Showcase.RadarScaleMode = radarScaleMode;
         cfg.Showcase.RadarScale = radarScale;
         cfg.Showcase.RadarAxisScale = radarAxisScale;
+        cfg.Showcase.RadarFloor = radarFloor;
         cfg.RatingVersion = ratingVersion;
         cfg.ShowRatingWatermark = showRatingWatermark;
         var err = config.Validate(cfg);
@@ -261,7 +262,7 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
             {
                 results[i] = new PlayerAvatar { SteamID = id, DataURL = MediaFiles.FileDataURL(cached.CachePath), Status = "ready", UpdatedAt = cached.UpdatedAt.ToString("o") };
             }
-            else if (cached != null && cached.Status == "fallback" && (DateTimeOffset.UtcNow - cached.UpdatedAt).TotalHours < 24)
+            else if (cached != null && cached.Status == "fallback" && (DateTimeOffset.UtcNow - cached.UpdatedAt).TotalHours < 1)
             {
                 results[i] = new PlayerAvatar { SteamID = id, Status = "fallback", UpdatedAt = cached.UpdatedAt.ToString("o") };
             }
@@ -274,22 +275,34 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         {
             Parallel.ForEach(fetches, new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
             {
-                var (index, id) = item;
-                var source = SteamAvatars.FetchAvatarURL(id);
-                var path = source == null ? null : SteamAvatars.DownloadAvatar(source, id);
-                if (path != null)
-                {
-                    repo.SavePlayerAvatar(new PlayerAvatarCache { SteamID = id, SourceURL = source!, CachePath = path, Status = "ready", UpdatedAt = DateTimeOffset.UtcNow });
-                    results[index] = new PlayerAvatar { SteamID = id, DataURL = MediaFiles.FileDataURL(path), Status = "ready", UpdatedAt = DateTimeOffset.UtcNow.ToString("o") };
-                }
-                else
-                {
-                    repo.SavePlayerAvatar(new PlayerAvatarCache { SteamID = id, SourceURL = "", CachePath = "", Status = "fallback", UpdatedAt = DateTimeOffset.UtcNow });
-                    results[index] = new PlayerAvatar { SteamID = id, Status = "fallback" };
-                }
+                results[item.Index] = FetchAndStoreAvatar(item.SteamID);
             });
         }
         return results.ToList();
+    }
+
+    /// <summary>忽略缓存 TTL，立即重新拉取指定玩家的头像（资料库右键“刷新头像”）。</summary>
+    public List<PlayerAvatar> RefreshPlayerAvatars(List<string> steamIDs)
+    {
+        var results = new PlayerAvatar[steamIDs.Count];
+        Parallel.ForEach(steamIDs.Select((id, index) => (id, index)), new ParallelOptions { MaxDegreeOfParallelism = 4 }, item =>
+        {
+            results[item.index] = FetchAndStoreAvatar(item.id);
+        });
+        return results.ToList();
+    }
+
+    private PlayerAvatar FetchAndStoreAvatar(string id)
+    {
+        var source = SteamAvatars.FetchAvatarURL(id);
+        var path = source == null ? null : SteamAvatars.DownloadAvatar(source, id);
+        if (path != null)
+        {
+            repo.SavePlayerAvatar(new PlayerAvatarCache { SteamID = id, SourceURL = source!, CachePath = path, Status = "ready", UpdatedAt = DateTimeOffset.UtcNow });
+            return new PlayerAvatar { SteamID = id, DataURL = MediaFiles.FileDataURL(path), Status = "ready", UpdatedAt = DateTimeOffset.UtcNow.ToString("o") };
+        }
+        repo.SavePlayerAvatar(new PlayerAvatarCache { SteamID = id, SourceURL = "", CachePath = "", Status = "fallback", UpdatedAt = DateTimeOffset.UtcNow });
+        return new PlayerAvatar { SteamID = id, Status = "fallback" };
     }
 
     public void FollowDemoPlayers(string demoID, List<string> steamIDs)
@@ -500,11 +513,13 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
 
     public string BeginVideoExport(int width, int height, int fps, int durationMS, int audioOffsetMS, string suggestedName)
     {
-        DetectFFmpeg();
+        var ffmpegPath = DetectFFmpeg();
         var request = new VideoExportRequest { Width = width, Height = height, FPS = fps, DurationMS = durationMS, AudioOffsetMS = audioOffsetMS };
         var validateErr = ShowcaseVideo.Validate(request);
         if (validateErr != null) throw AppErrors.New(validateErr, AppErrors.StatusBadRequest);
         if (!suggestedName.ToLowerInvariant().EndsWith(".mp4")) suggestedName += ".mp4";
+        string musicPath;
+        lock (cfgLock) musicPath = cfg.Showcase.MusicPath;
         var tempDir = Path.Combine(Path.GetTempPath(), "cs-radar-video-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
         var id = "video_" + HistoryService.RandomHex(8);
@@ -513,9 +528,47 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
             TempDir = tempDir,
             OutputPath = Path.Combine(tempDir, suggestedName),
             Request = request,
+            MusicPath = musicPath,
         };
+        try
+        {
+            // ffmpeg 以 image2pipe 从 stdin 读帧，立即启动；帧经 Append 写入管道。
+            session.Encoder = ShowcaseVideo.StartEncoder(ffmpegPath, session.OutputPath, musicPath, request, session);
+        }
+        catch
+        {
+            try { Directory.Delete(tempDir, true); } catch { /* ignore */ }
+            throw;
+        }
         lock (videoLock) videoExports[id] = session;
         return id;
+    }
+
+    /// <summary>校验会话仍可接收帧（未取消且编码进程存活）。</summary>
+    private static void EnsureAcceptingFrames(VideoExportSession session)
+    {
+        if (session.Cts.IsCancellationRequested)
+            throw AppErrors.New("video_export_cancelled", AppErrors.StatusBadRequest, "视频导出已取消。");
+        if (session.Encoder == null || session.Encoder.HasExited)
+            throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "ffmpeg 编码进程已退出：" + session.LastStderr());
+    }
+
+    private static void WriteFrame(VideoExportSession session, byte[] data)
+    {
+        var stream = session.Encoder?.StandardInput.BaseStream;
+        if (stream == null)
+            throw AppErrors.New("video_export_cancelled", AppErrors.StatusBadRequest, "视频导出已取消。");
+        try
+        {
+            stream.Write(data, 0, data.Length);
+            stream.Flush();
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+            if (session.Cts.IsCancellationRequested)
+                throw AppErrors.New("video_export_cancelled", AppErrors.StatusBadRequest, "视频导出已取消。");
+            throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "ffmpeg 编码进程已退出：" + session.LastStderr());
+        }
     }
 
     public void AppendVideoFrames(string exportID, int startIndex, List<string> frames)
@@ -523,18 +576,21 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         VideoExportSession session;
         lock (videoLock) videoExports.TryGetValue(exportID, out session!);
         if (session == null) throw AppErrors.New("video_export_not_found", AppErrors.StatusBadRequest, "视频导出任务不存在。");
+        if (frames.Count > ShowcaseVideo.MaxBatchFrames)
+            throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "单批帧数量超过限制。");
         lock (session.Lock)
         {
-            if (session.Cts.IsCancellationRequested) throw AppErrors.New("video_export_cancelled", AppErrors.StatusBadRequest, "视频导出已取消。");
-            if (startIndex < 0 || startIndex + frames.Count > ShowcaseVideo.MaxShowcaseVideoFrames)
-                throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "视频帧数量超过限制。");
-            for (var i = 0; i < frames.Count; i++)
+            EnsureAcceptingFrames(session);
+            if (startIndex != session.FramesWritten)
+                throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, $"视频帧必须按顺序上传：期望第 {session.FramesWritten} 帧，收到第 {startIndex} 帧。");
+            foreach (var frame in frames)
             {
                 byte[] data;
-                try { data = ShowcaseVideo.DecodePNGDataURL(frames[i]); }
+                try { data = ShowcaseVideo.DecodePNGDataURL(frame); }
                 catch { throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "只支持 PNG data URL。"); }
-                File.WriteAllBytes(Path.Combine(session.TempDir, $"frame_{startIndex + i + 1:000000}.png"), data);
+                WriteFrame(session, data);
             }
+            session.FramesWritten += frames.Count;
         }
     }
 
@@ -543,13 +599,16 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         VideoExportSession session;
         lock (videoLock) videoExports.TryGetValue(exportID, out session!);
         if (session == null) throw AppErrors.New("video_export_not_found", AppErrors.StatusBadRequest, "视频导出任务不存在。");
+        if (frames.Length > ShowcaseVideo.MaxBatchFrames)
+            throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "单批帧数量超过限制。");
         lock (session.Lock)
         {
-            if (session.Cts.IsCancellationRequested) throw AppErrors.New("video_export_cancelled", AppErrors.StatusBadRequest, "视频导出已取消。");
-            if (startIndex < 0 || startIndex + frames.Length > ShowcaseVideo.MaxShowcaseVideoFrames)
-                throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "视频帧数量超过限制。");
-            for (var i = 0; i < frames.Length; i++)
-                File.WriteAllBytes(Path.Combine(session.TempDir, $"frame_{startIndex + i + 1:000000}.png"), frames[i]);
+            EnsureAcceptingFrames(session);
+            if (startIndex != session.FramesWritten)
+                throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, $"视频帧必须按顺序上传：期望第 {session.FramesWritten} 帧，收到第 {startIndex} 帧。");
+            foreach (var frame in frames)
+                WriteFrame(session, frame);
+            session.FramesWritten += frames.Length;
         }
     }
 
@@ -558,29 +617,41 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         VideoExportSession session;
         lock (videoLock) videoExports.TryGetValue(exportID, out session!);
         if (session == null) throw AppErrors.New("video_export_not_found", AppErrors.StatusBadRequest, "视频导出任务不存在。");
-        lock (session.Lock) session.Finishing = true;
+        lock (session.Lock)
+        {
+            session.Finishing = true;
+            var expectedFrames = ShowcaseVideo.ExpectedFrameCount(session.Request);
+            if (session.FramesWritten != expectedFrames)
+                throw AppErrors.New(
+                    "invalid_showcase_video",
+                    AppErrors.StatusBadRequest,
+                    $"视频帧数量不完整：期望 {expectedFrames} 帧，收到 {session.FramesWritten} 帧。");
+        }
         try
         {
-            var ffmpegPath = DetectFFmpeg();
-            string musicPath;
-            lock (cfgLock) musicPath = cfg.Showcase.MusicPath;
+            var encoder = session.Encoder;
+            if (encoder == null)
+                throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "视频编码进程未启动。");
             try
             {
-                ShowcaseVideo.EncodeShowcaseMP4(session.Cts.Token, ffmpegPath, session.TempDir, session.OutputPath, musicPath, session.Request);
+                // 关闭 stdin：ffmpeg 收到 EOF 后完成编码并写出 MP4。
+                encoder.StandardInput.Close();
             }
-            catch (OperationCanceledException)
-            {
-                throw AppErrors.New("video_export_cancelled", AppErrors.StatusBadRequest, "视频导出已取消。");
-            }
-            var token = "dl_" + HistoryService.RandomHex(16);
+            catch { /* 进程可能已退出 */ }
+            ShowcaseVideo.CompleteEncoder(encoder, session.Cts.Token, () => session.LastStderr());
+            var downloadToken = "dl_" + HistoryService.RandomHex(16);
             var name = Path.GetFileName(session.OutputPath);
-            lock (downloadLock) videoDownloads[token] = new VideoDownload
+            lock (downloadLock) videoDownloads[downloadToken] = new VideoDownload
             {
                 Path = session.OutputPath,
                 Name = name,
                 ExpiresUtc = DateTime.UtcNow.AddHours(1),
             };
-            return new { url = $"/video-download?token={token}", name };
+            return new { url = $"/video-download?token={downloadToken}", name };
+        }
+        catch (OperationCanceledException)
+        {
+            throw AppErrors.New("video_export_cancelled", AppErrors.StatusBadRequest, "视频导出已取消。");
         }
         catch
         {
@@ -599,14 +670,15 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         VideoExportSession session;
         lock (videoLock) videoExports.TryGetValue(exportID, out session!);
         if (session == null) return;
-        lock (session.Lock)
+        // 不获取 session.Lock：写入线程可能正阻塞在管道写上，Kill 会解除其阻塞。
+        session.Cts.Cancel();
+        ShowcaseVideo.TryKill(session.Encoder);
+        bool finishing;
+        lock (session.Lock) finishing = session.Finishing;
+        if (!finishing)
         {
-            session.Cts.Cancel();
-            if (!session.Finishing)
-            {
-                videoExports.Remove(exportID);
-                try { Directory.Delete(session.TempDir, true); } catch { /* ignore */ }
-            }
+            lock (videoLock) videoExports.Remove(exportID);
+            try { Directory.Delete(session.TempDir, true); } catch { /* ignore */ }
         }
     }
 

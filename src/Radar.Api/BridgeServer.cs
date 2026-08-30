@@ -194,6 +194,7 @@ public class BridgeServer
     ReparseDemoAnalysis: function(demoId){ return post('ReparseDemoAnalysis', [demoId]); },
     ChooseReplacementDemo: function(demoId){ return post('ChooseReplacementDemo', [demoId]); },
     GetPlayerAvatars: function(steamIds){ return post('GetPlayerAvatars', [steamIds]); },
+    RefreshPlayerAvatars: function(steamIds){ return post('RefreshPlayerAvatars', [steamIds]); },
     FollowDemoPlayers: function(demoId, steamIds){ return post('FollowDemoPlayers', [demoId, steamIds]); },
     ListPlayers: function(){ return post('ListPlayers'); },
     GetPlayerMatches: function(steamId){ return post('GetPlayerMatches', [steamId]); },
@@ -206,7 +207,7 @@ public class BridgeServer
     GetRatingMethodology: function(){ return post('GetRatingMethodology'); },
     LoadDraft: function(kind){ return post('LoadDraft', [kind]); },
     SaveDraft: function(kind, payload){ return post('SaveDraft', [kind, payload]); },
-    SavePreferences: function(w,h,fps,ffmpeg,reduced,best,intro,bestEntrance,offset,scaleMode,scale,axis,ratingVersion,showWatermark){ return post('SavePreferences',[w,h,fps,ffmpeg,reduced,best,intro,bestEntrance,offset,scaleMode,scale,axis,ratingVersion,showWatermark]); },
+    SavePreferences: function(w,h,fps,ffmpeg,reduced,best,intro,bestEntrance,offset,scaleMode,scale,axis,ratingVersion,showWatermark,floor){ return post('SavePreferences',[w,h,fps,ffmpeg,reduced,best,intro,bestEntrance,offset,scaleMode,scale,axis,ratingVersion,showWatermark,floor]); },
     ChooseFFmpeg: function(){ return post('ChooseFFmpeg'); },
     ExportPNG: function(dataURL, name){ return post('ExportPNG', [dataURL, name]); },
     GetPlayerMedia: function(steamId){ return post('GetPlayerMedia', [steamId]); },
@@ -296,8 +297,8 @@ public class BridgeServer
                 throw AppErrors.New("video_export_not_found", AppErrors.StatusBadRequest, "视频导出任务不存在。");
             var frameCount = ReadInt32(body, 0);
             var startIndex = ReadInt32(body, 4);
-            if (frameCount < 0 || frameCount > ShowcaseVideo.MaxShowcaseVideoFrames)
-                throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "视频帧数量超过限制。");
+            if (frameCount < 0 || frameCount > ShowcaseVideo.MaxBatchFrames)
+                throw AppErrors.New("invalid_showcase_video", AppErrors.StatusBadRequest, "单批帧数量超过限制。");
             var frames = new byte[frameCount][];
             var offset = 8;
             for (var i = 0; i < frameCount; i++)

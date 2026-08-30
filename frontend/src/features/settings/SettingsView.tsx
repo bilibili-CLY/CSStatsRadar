@@ -29,6 +29,21 @@ const radarAxisLimits: Array<{
   { name: "Rating", min: 0.75, max: 3, step: 0.05, defaultValue: 1.5 },
 ];
 
+const radarFloorLimits: Array<{
+  name: string;
+  min: number;
+  max: number;
+  step: number;
+  defaultValue: number;
+}> = [
+  { name: "KPR", min: 0, max: 1, step: 0.01, defaultValue: 0.42 },
+  { name: "Surviving", min: 0, max: 0.6, step: 0.005, defaultValue: 0.157 },
+  { name: "ADR", min: 0, max: 100, step: 0.5, defaultValue: 47.5 },
+  { name: "KAST", min: 0, max: 0.7, step: 0.005, defaultValue: 0.545 },
+  { name: "Multi-Kill", min: 0, max: 0.2, step: 0.005, defaultValue: 0.07 },
+  { name: "Rating", min: 0, max: 1.5, step: 0.01, defaultValue: 0.55 },
+];
+
 export function SettingsView() {
   const config = useAppStore((state) => state.config);
   const sources = useAppStore((state) => state.sources);
@@ -60,6 +75,7 @@ export function SettingsView() {
         draft.showcase.radar_axis_scale ?? {},
         draft.rating_version,
         draft.show_rating_watermark,
+        draft.showcase.radar_floor ?? {},
       );
       setDraft(next);
       setConfig(next);
@@ -387,6 +403,39 @@ export function SettingsView() {
                 ))}
               </div>
             )}
+            <h3>雷达圆心最小值</h3>
+            <p className="field-note">
+              圆心代表的最低基准值：低于或等于它的数据停在圆心，高于它的数据向外延伸。仅影响 Rating 3.0 轮播雷达。
+            </p>
+            <div className="two-fields">
+              {radarFloorLimits.map((axis) => (
+                <label className="field" key={axis.name}>
+                  <span>{axis.name}</span>
+                  <input
+                    type="number"
+                    min={axis.min}
+                    max={axis.max}
+                    step={axis.step}
+                    value={
+                      draft.showcase.radar_floor?.[axis.name] ??
+                      axis.defaultValue
+                    }
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        showcase: {
+                          ...draft.showcase,
+                          radar_floor: {
+                            ...draft.showcase.radar_floor,
+                            [axis.name]: Number(e.target.value),
+                          },
+                        },
+                      })
+                    }
+                  />
+                </label>
+              ))}
+            </div>
           </div>
         </section>
         <section className="card settings-section">

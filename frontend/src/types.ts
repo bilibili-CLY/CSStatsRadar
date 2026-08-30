@@ -37,6 +37,7 @@ export interface AppConfig {
     radar_scale_mode: "global" | "axis";
     radar_scale: number;
     radar_axis_scale?: Record<string, number>;
+    radar_floor?: Record<string, number>;
   };
 }
 export interface BootstrapState {
@@ -275,6 +276,7 @@ export const defaultConfig: AppConfig = {
     radar_scale_mode: "global",
     radar_scale: 1,
     radar_axis_scale: {},
+    radar_floor: {},
   },
   import_sources: [],
 };

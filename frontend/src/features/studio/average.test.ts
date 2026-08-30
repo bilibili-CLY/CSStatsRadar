@@ -28,6 +28,7 @@ import {
   showcaseReferenceRadar,
   showcaseZeroRadar,
   showcasePaintOrder,
+  showcaseRadarFloorValues,
   showcaseSegment,
   showcaseSlideStart,
   showcaseOuterRadarRingDiameter,
@@ -44,6 +45,7 @@ import {
   roundSwingTrackHeight,
   roundSwingOverflowLimit,
   visibleRadarPointDistance,
+  normalizeRadarMetricValue,
 } from "../../components/RadarCanvas";
 import {
   bestEntranceSidePattern,
@@ -349,5 +351,32 @@ describe("showcase timeline", () => {
     };
     expect(rating3Available(response)).toBe(true);
     expect(rating3Available(radar("plain", [1, 2]))).toBe(false);
+  });
+});
+
+describe("Rating 3.0 showcase center floors", () => {
+  it("maps the specified Rating 3.0 values to the center by metric name", () => {
+    const floors = showcaseRadarFloorValues("rating_3");
+    expect(floors).toEqual({
+      KPR: 0.42,
+      Surviving: 0.157,
+      ADR: 47.5,
+      KAST: 0.545,
+      "Multi-Kill": 0.07,
+      Rating: 0.55,
+    });
+    expect(showcaseRadarFloorValues("rating_2")).toBeUndefined();
+  });
+
+  it("keeps values at or below the floor at center and preserves the outer maximum", () => {
+    expect(normalizeRadarMetricValue(0.42, 1, 0.42)).toBe(0);
+    expect(normalizeRadarMetricValue(0.2, 1, 0.42)).toBe(0);
+    expect(normalizeRadarMetricValue(1, 1, 0.42)).toBe(1);
+  });
+
+  it("keeps a finite normalization when a custom cap falls below its floor", () => {
+    const normalized = normalizeRadarMetricValue(0.545, 0.35, 0.545);
+    expect(Number.isFinite(normalized)).toBe(true);
+    expect(normalized).toBeGreaterThan(0);
   });
 });

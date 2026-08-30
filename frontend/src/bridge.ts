@@ -57,6 +57,7 @@ export const bridge = {
   reparseDemoAnalysis: (demoId: string) => call<DemoAnalysis>("ReparseDemoAnalysis", demoId),
   chooseReplacementDemo: (demoId: string) => call<DemoAnalysis>("ChooseReplacementDemo", demoId),
   getPlayerAvatars: (steamIds: string[]) => call<PlayerAvatar[]>("GetPlayerAvatars", steamIds),
+  refreshPlayerAvatars: (steamIds: string[]) => call<PlayerAvatar[]>("RefreshPlayerAvatars", steamIds),
   followDemoPlayers: (demoId: string, steamIds: string[]) => call<void>("FollowDemoPlayers", demoId, steamIds),
   listPlayers: () => call<SavedPlayer[]>("ListPlayers"),
   getMatches: (steamId: string) =>
@@ -91,6 +92,7 @@ export const bridge = {
     radarAxisScale: Record<string, number>,
     ratingVersion: string,
     showRatingWatermark: boolean,
+    radarFloor: Record<string, number>,
   ) =>
     call<AppConfig>(
       "SavePreferences",
@@ -108,6 +110,7 @@ export const bridge = {
       radarAxisScale,
       ratingVersion,
       showRatingWatermark,
+      radarFloor,
     ),
   chooseFFmpeg: () => call<string>("ChooseFFmpeg"),
   exportPNG: (dataURL: string, name: string) =>

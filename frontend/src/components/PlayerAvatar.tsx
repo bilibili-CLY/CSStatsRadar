@@ -29,6 +29,11 @@ function queue(steamId: string) {
   }, 20);
 }
 
+export function applyAvatar(value: PlayerAvatar) {
+  cache.set(value.steam_id, value);
+  listeners.get(value.steam_id)?.forEach((notify) => notify());
+}
+
 export function PlayerAvatarView({ name, steamId, large = false }: { name: string; steamId: string; large?: boolean }) {
   const [, refresh] = useState(0);
   const avatar = cache.get(steamId);

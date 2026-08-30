@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { selectRatingProfile } from "../../components/RadarCanvas";
 import type { RatingVersion, ShowcaseLayoutDraft, ShowcaseSlide } from "../../types";
@@ -8,6 +8,7 @@ import {
   selectionBounds,
   SHOWCASE_EXPORT_HEIGHT,
   SHOWCASE_EXPORT_WIDTH,
+  showcaseMaxSwingMagnitude,
   showcasePreviewSize,
   showcaseSegment,
   targetBaseBounds,
@@ -20,6 +21,7 @@ import {
   drawShowcaseSelection,
   ensureShowcaseFonts,
   loadImage,
+  retainShowcaseImages,
   renderShowcaseFrame,
   showcasePlayerImageUrl,
 } from "./showcaseRender";
@@ -37,6 +39,7 @@ export function ShowcasePreview({
   showRatingWatermark,
   metricLabelFontSize,
   animations,
+  radarFloorValues,
   onLayoutChange,
   onImageTransformChange,
   previewTimeRef,
@@ -53,6 +56,7 @@ export function ShowcasePreview({
   showRatingWatermark: boolean;
   metricLabelFontSize: number;
   animations: ShowcaseAnimationOptions;
+  radarFloorValues?: Record<string, number>;
   onLayoutChange: (layout: ShowcaseLayoutDraft) => void;
   onImageTransformChange: (transform: { x: number; y: number; scale: number }) => void;
   previewTimeRef?: React.MutableRefObject<number>;
@@ -74,10 +78,15 @@ export function ShowcasePreview({
   const dragNeedsRedraw = useRef(false);
   const drawRef = useRef<((forceTimeMs?: number) => void) | null>(null);
   const sizeRef = useRef({ width: 0, height: 0 });
+  const maxSwing = useMemo(
+    () => showcaseMaxSwingMagnitude(slides, ratingVersion),
+    [slides, ratingVersion],
+  );
   useEffect(() => {
     const urls = slides.flatMap(
       (item) => [showcasePlayerImageUrl(item), item.backgroundUrl].filter(Boolean) as string[],
     );
+    retainShowcaseImages(urls);
     if (!urls.length) return;
     let active = true;
     Promise.allSettled(urls.map(loadImage)).then(() => {
@@ -146,11 +155,12 @@ export function ShowcasePreview({
         1,
         metricLabelFontSize,
         animations,
+        radarFloorValues,
       );
       const currentSelection = selectionRef.current;
       if (currentSelection) {
         const t = dragState?.pendingTransform && dragState.target === currentSelection ? dragState.pendingTransform : currentTransform(currentSelection);
-        drawShowcaseSelection(canvas, currentSelection, t, selectionBounds(currentSelection, t, canvas.width, canvas.height, effectiveLayout));
+        drawShowcaseSelection(canvas, currentSelection, t, selectionBounds(currentSelection, t, canvas.width, canvas.height, effectiveLayout, maxSwing));
       }
       if (dragNeedsRedraw.current) {
         dragNeedsRedraw.current = false;
@@ -171,7 +181,7 @@ export function ShowcasePreview({
     const observer = new ResizeObserver(() => { measure(); draw(); });
     observer.observe(container);
     return () => { drawRef.current = null; observer.disconnect(); if (rafId) cancelAnimationFrame(rafId); };
-  }, [slides, layout, assetRevision, fontState, showBestMarkers, radarScaleMode, radarScale, radarAxisScale, ratingVersion, showRatingWatermark, metricLabelFontSize, animations, playing, previewTimeRef]);
+  }, [slides, layout, assetRevision, fontState, showBestMarkers, radarScaleMode, radarScale, radarAxisScale, ratingVersion, showRatingWatermark, metricLabelFontSize, animations, radarFloorValues, playing, previewTimeRef]);
   useEffect(() => {
     if (playing) return;
     drawRef.current?.();
@@ -223,13 +233,13 @@ export function ShowcasePreview({
         null
     ) {
       const swing = currentTransform("swing");
-      const bounds = selectionBounds("swing", swing, canvasWidth, canvasHeight, layout);
+      const bounds = selectionBounds("swing", swing, canvasWidth, canvasHeight, layout, maxSwing);
       if (point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom) return "swing";
     }
     return available.find((target) => {
       if (target === "swing") return false;
       if (target === "image" && !showcasePlayerImageUrl(currentSlide())) return false;
-      const bounds = selectionBounds(target, currentTransform(target), canvasWidth, canvasHeight, layout);
+      const bounds = selectionBounds(target, currentTransform(target), canvasWidth, canvasHeight, layout, maxSwing);
       return point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom;
     }) ?? null;
   }
@@ -257,7 +267,7 @@ export function ShowcasePreview({
           const point = pointerPercent(event);
           if (selectedTarget) {
             const transform = currentTransform(selectedTarget);
-            const bounds = selectionBounds(selectedTarget, transform, event.currentTarget.width, event.currentTarget.height, layout);
+            const bounds = selectionBounds(selectedTarget, transform, event.currentTarget.width, event.currentTarget.height, layout, maxSwing);
             if (nearestCornerDistance(point, bounds) <= 3) {
               event.currentTarget.setPointerCapture(event.pointerId);
               drag.current = { pointerId: event.pointerId, target: selectedTarget, mode: "resize", offsetX: 0, offsetY: 0, initialScale: transform.scale, initialDistance: Math.max(1, Math.hypot(point.x-transform.x, point.y-transform.y)), initialTransform: transform, pendingTransform: null };

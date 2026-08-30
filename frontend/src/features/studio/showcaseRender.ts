@@ -9,17 +9,20 @@ import type {
   ShowcaseSlide,
 } from "../../types";
 import {
-  bestMetricIndexesForSlide,
+  bestMetricIndexesBySlide,
   easeInOut,
   interpolateRadarResponse,
   showcaseAverageRadar,
+  showcaseMaxSwingMagnitude,
   showcaseOuterRadarRingDiameter,
   showcaseSwingCanvasWidth,
+  showcaseSwingOverflowLimit,
   showcaseSwingReferenceHalfWidth,
   showcaseCanvasTextAlign,
   showcaseIntroState,
   showcasePaintOrder,
   showcaseReferenceRadar,
+  showcaseRadarFloorValues,
   showcaseZeroRadar,
   showcaseSegment,
   showcaseTransitionProgress,
@@ -29,12 +32,29 @@ import {
   type ShowcaseAnimationOptions,
   type ShowcaseTransform,
 } from "./showcaseMath";
+import type { RadarResponse } from "../../types";
 
 export function drawShowcaseSelection(canvas: HTMLCanvasElement, target: ShowcaseTarget, transform: ShowcaseTransform, bounds: ReturnType<typeof targetBounds>) {
   const ctx=canvas.getContext("2d"); if(!ctx)return; const sx=canvas.width/100, sy=canvas.height/100; ctx.save(); ctx.strokeStyle="#f3f5f7"; ctx.lineWidth=Math.max(1,canvas.width/1200); ctx.setLineDash([6,5]); ctx.strokeRect(bounds.left*sx,bounds.top*sy,(bounds.right-bounds.left)*sx,(bounds.bottom-bounds.top)*sy); ctx.setLineDash([]); ctx.fillStyle="#f3f5f7"; ctx.strokeStyle="#111418"; const size=Math.max(5,canvas.width/240); for(const [x,y] of [[bounds.left,bounds.top],[bounds.right,bounds.top],[bounds.left,bounds.bottom],[bounds.right,bounds.bottom]]) { ctx.fillRect(x*sx-size/2,y*sy-size/2,size,size); ctx.strokeRect(x*sx-size/2,y*sy-size/2,size,size); } ctx.font=`600 ${Math.max(9,canvas.width/140)}px "Noto Sans SC",system-ui`; ctx.fillStyle="#f3f5f7"; ctx.fillText(({radar:"雷达",title:"主标题",subtitle:"副标题",image:"人物图",swing:"Round Swing"} as Record<string,string>)[target],bounds.left*sx,bounds.top*sy-size); ctx.restore(); void transform;
 }
 type ShowcaseImage = HTMLImageElement | ImageBitmap;
 const showcaseImageCache = new Map<string, ShowcaseImage>();
+type ShowcaseCanvas = HTMLCanvasElement | OffscreenCanvas;
+
+export function retainShowcaseImages(urls: Iterable<string>) {
+  const retained = new Set(urls);
+  for (const [url, image] of showcaseImageCache) {
+    if (retained.has(url)) continue;
+    if ("close" in image && typeof image.close === "function") image.close();
+    else {
+      const element = image as HTMLImageElement;
+      element.onload = null;
+      element.onerror = null;
+      element.src = "";
+    }
+    showcaseImageCache.delete(url);
+  }
+}
 export function showcasePlayerImageUrl(
   slide?: Pick<ShowcaseSlide, "imageUrl" | "avatarUrl"> | null,
 ) {
@@ -46,7 +66,7 @@ function imageWidth(image: ShowcaseImage) {
 function imageHeight(image: ShowcaseImage) {
   return "naturalHeight" in image ? image.naturalHeight : image.height;
 }
-function createCanvas(width: number, height: number) {
+function createCanvas(width: number, height: number): ShowcaseCanvas {
   const canvas =
     typeof document !== "undefined"
       ? document.createElement("canvas")
@@ -56,9 +76,14 @@ function createCanvas(width: number, height: number) {
   return canvas;
 }
 function canvas2D(
-  canvas: HTMLCanvasElement | OffscreenCanvas,
+  canvas: ShowcaseCanvas,
 ): CanvasRenderingContext2D {
   return canvas.getContext("2d") as CanvasRenderingContext2D;
+}
+function resizeCanvas(canvas: ShowcaseCanvas, width: number, height: number) {
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  return canvas;
 }
 export function loadImage(url: string): Promise<ShowcaseImage> {
   if (typeof document === "undefined") {
@@ -223,25 +248,51 @@ function interpolateHexColor(previous: string, next: string, progress: number) {
 function wrap(value: number, size: number) {
   return ((value % size) + size) % size;
 }
-const particleSpriteCache = new Map<string, HTMLCanvasElement | OffscreenCanvas>();
-function particleGlowSprite(color: string, bloom: number): HTMLCanvasElement | OffscreenCanvas {
-  const key = `${color}|${bloom}`;
-  const cached = particleSpriteCache.get(key);
+const particleSpriteCache = new Map<number, ShowcaseCanvas>();
+function particleGlowSprite(bloom: number): ShowcaseCanvas {
+  const cached = particleSpriteCache.get(bloom);
   if (cached) return cached;
   const size = Math.ceil(bloom * 2) + 2;
   const sprite = createCanvas(size, size);
   const ctx = canvas2D(sprite);
   const cx = size / 2;
   const glow = ctx.createRadialGradient(cx, cx, 0, cx, cx, bloom);
-  glow.addColorStop(0, colorAlpha(color, 1));
-  glow.addColorStop(0.3, colorAlpha(color, 0.35));
+  glow.addColorStop(0, "rgba(255,255,255,1)");
+  glow.addColorStop(0.3, "rgba(255,255,255,.35)");
   glow.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
   ctx.arc(cx, cx, bloom, 0, Math.PI * 2);
   ctx.fill();
-  particleSpriteCache.set(key, sprite);
+  particleSpriteCache.set(bloom, sprite);
   return sprite;
+}
+
+type ShowcaseRenderResources = {
+  radar: ShowcaseCanvas;
+  swing: ShowcaseCanvas;
+  particleMask: ShowcaseCanvas;
+  particleTint: ShowcaseCanvas;
+};
+const renderResources = new WeakMap<ShowcaseCanvas, ShowcaseRenderResources>();
+function resourcesFor(canvas: ShowcaseCanvas, width: number, height: number) {
+  let resources = renderResources.get(canvas);
+  if (!resources) {
+    resources = {
+      radar: createCanvas(1, 1),
+      swing: createCanvas(1, 1),
+      particleMask: createCanvas(width, height),
+      particleTint: createCanvas(width, height),
+    };
+    renderResources.set(canvas, resources);
+  }
+  resizeCanvas(resources.particleMask, width, height);
+  resizeCanvas(resources.particleTint, width, height);
+  return resources;
+}
+
+export function showcaseParticleSpriteCacheSize() {
+  return particleSpriteCache.size;
 }
 function drawShowcaseParticles(
   ctx: CanvasRenderingContext2D,
@@ -249,9 +300,13 @@ function drawShowcaseParticles(
   height: number,
   color: string,
   timeMs: number,
+  resources: ShowcaseRenderResources,
 ) {
   const frame = timeMs / 16.67;
-  ctx.save();
+  const mask = resources.particleMask;
+  const maskContext = canvas2D(mask);
+  maskContext.clearRect(0, 0, width, height);
+  maskContext.save();
   for (let index = 0; index < 75; index += 1) {
     const nebula = index >= 50;
     const seedA = Math.sin(index * 43.7) * 0.5 + 0.5;
@@ -268,19 +323,51 @@ function drawShowcaseParticles(
     const alpha =
       Math.max(0.05, Math.min(1, distance)) * (nebula ? 0.22 : 0.65);
     const bloom = size * (nebula ? 15 : 10);
-    const sprite = particleGlowSprite(color, bloom);
-    ctx.globalAlpha = alpha;
-    ctx.drawImage(sprite, x - sprite.width / 2, y - sprite.height / 2);
-    ctx.globalAlpha = 1;
+    const sprite = particleGlowSprite(bloom);
+    maskContext.globalAlpha = alpha;
+    maskContext.drawImage(sprite, x - sprite.width / 2, y - sprite.height / 2);
+    maskContext.globalAlpha = 1;
     if (!nebula) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.75, alpha)})`;
-      ctx.beginPath();
-      ctx.arc(x, y, size, 0, Math.PI * 2);
-      ctx.fill();
+      maskContext.fillStyle = `rgba(255,255,255,${Math.min(0.75, alpha)})`;
+      maskContext.beginPath();
+      maskContext.arc(x, y, size, 0, Math.PI * 2);
+      maskContext.fill();
     }
   }
-  ctx.restore();
+  maskContext.restore();
+  const tint = resources.particleTint;
+  const tintContext = canvas2D(tint);
+  tintContext.clearRect(0, 0, width, height);
+  tintContext.drawImage(mask, 0, 0);
+  tintContext.save();
+  tintContext.globalCompositeOperation = "source-in";
+  tintContext.fillStyle = colorAlpha(color, 1);
+  tintContext.fillRect(0, 0, width, height);
+  tintContext.restore();
+  ctx.drawImage(tint, 0, 0);
 }
+// 每帧渲染的派生数据按 slides 数组身份 + rating 版本缓存：
+// 预览与导出的整个时间线内 slides 身份稳定，单帧成本因此与轮播页数解耦。
+type RatedDerivation = { rated: ShowcaseSlide[]; average: RadarResponse | null; maxSwing: number };
+const ratedDerivationCache = new WeakMap<ShowcaseSlide[], Map<string, RatedDerivation>>();
+function deriveRatedSlides(slides: ShowcaseSlide[], ratingVersion: RatingVersion): RatedDerivation {
+  let perVersion = ratedDerivationCache.get(slides);
+  if (!perVersion) {
+    perVersion = new Map();
+    ratedDerivationCache.set(slides, perVersion);
+  }
+  const existing = perVersion.get(ratingVersion);
+  if (existing) return existing;
+  const rated = slides.map((item) => ({ ...item, radar: selectRatingProfile(item.radar, ratingVersion) }));
+  const entry: RatedDerivation = {
+    rated,
+    average: showcaseAverageRadar(rated, ratingVersion),
+    maxSwing: showcaseMaxSwingMagnitude(rated, ratingVersion),
+  };
+  perVersion.set(ratingVersion, entry);
+  return entry;
+}
+
 export function renderShowcaseFrame(
   slides: ShowcaseSlide[],
   layout: ShowcaseLayoutDraft,
@@ -297,13 +384,15 @@ export function renderShowcaseFrame(
   fontScale = 1,
   metricLabelFontSize = 12,
   animations: ShowcaseAnimationOptions = {},
+  radarFloorValues?: Record<string, number>,
 ) {
-  const ratedSlides = slides.map((item) => ({ ...item, radar: selectRatingProfile(item.radar, ratingVersion) }));
+  const derived = deriveRatedSlides(slides, ratingVersion);
+  const ratedSlides = derived.rated;
   const segment = showcaseSegment(ratedSlides, timeMs, animations);
   const slide = ratedSlides[segment.index];
   const canvas = targetCanvas ?? createCanvas(width, height);
-  canvas.width = width;
-  canvas.height = height;
+  resizeCanvas(canvas, width, height);
+  const resources = resourcesFor(canvas, width, height);
   const ctx = canvas2D(canvas);
   const previousSlide =
     segment.phase === "intro" ||
@@ -344,7 +433,7 @@ export function renderShowcaseFrame(
     ctx.fillStyle = "rgba(5,7,9,.46)";
     ctx.fillRect(0, 0, width, height);
   }
-  drawShowcaseParticles(ctx, width, height, accent, timeMs);
+  drawShowcaseParticles(ctx, width, height, accent, timeMs, resources);
   if (!slide) {
     ctx.fillStyle = "#88a0ad";
     ctx.textAlign = "center";
@@ -357,7 +446,7 @@ export function renderShowcaseFrame(
     drawBestEntrance(ctx, slide, width, height, segment.entranceProgress);
     return canvas;
   }
-  const average = showcaseAverageRadar(ratedSlides, ratingVersion);
+  const average = derived.average;
   const intro = segment.phase === "intro" ? showcaseIntroState(timeMs) : null;
   const referenceRadar = showcaseReferenceRadar(slide.radar);
   referenceRadar.radar.round_swing = 5;
@@ -425,7 +514,11 @@ export function renderShowcaseFrame(
   const sceneOpacity = segment.phase === "handoff" ? handoffProgress : 1;
   const radarSize =
     (Math.min(width * 0.48, height * 0.78) * layout.radarScale) / 100;
-  const radar = createCanvas(Math.round(radarSize), Math.round(radarSize));
+  const radar = resizeCanvas(
+    resources.radar,
+    Math.round(radarSize),
+    Math.round(radarSize),
+  );
   renderRadarCanvas(
     radar,
     {
@@ -443,12 +536,13 @@ export function renderShowcaseFrame(
       bestMetricIndexes: segment.phase === "intro"
         ? []
         : morphProgress > 0.65
-          ? bestMetricIndexesForSlide(ratedSlides, segment.index)
+          ? bestMetricIndexesBySlide(ratedSlides)[segment.index] ?? []
           : [],
       showBestMarkers,
       radarScaleMode,
       radarScale,
       radarAxisScale,
+      radarFloorValues: showcaseRadarFloorValues(ratingVersion, radarFloorValues),
       ratingVersion,
       showRatingWatermark: false,
       fontScale,
@@ -472,7 +566,7 @@ export function renderShowcaseFrame(
   );
   // Render swing separately
   const outerRingDiameter = showcaseOuterRadarRingDiameter(radarSize);
-  const swingWidth = Math.round(showcaseSwingCanvasWidth(outerRingDiameter));
+  const swingWidth = Math.round(showcaseSwingCanvasWidth(outerRingDiameter, derived.maxSwing));
   const swingStage = intro?.stage ?? "player";
   const swingCanvas = ratingVersion === "rating_3" && (swingStage !== "player" || renderedRadar.radar.round_swing != null)
     ? renderSwingCanvas(
@@ -500,8 +594,13 @@ export function renderShowcaseFrame(
         intro?.stage === "average" ? intro.progress : 1,
         outroValueOpacity,
         intro?.stage === "average" ? introColor : playerColor,
-        slide.radar.radar.round_swing,
+        showcaseSwingOverflowLimit(derived.maxSwing),
         metricLabelFontSize,
+        resizeCanvas(
+          resources.swing,
+          swingWidth,
+          Math.round(radarSize * 0.22),
+        ),
       )
     : null;
   const drawRadar = () => {
