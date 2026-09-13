@@ -4,7 +4,7 @@ namespace Radar.Application;
 
 public class Rating3
 {
-    public const string AlgorithmVersion = "local-r3-2026.08-v2";
+    public const string AlgorithmVersion = "local-r3-2026.09-v1";
 
     public const double SideBiasT = -0.08;
     public const double SideBiasCT = 0.08;
@@ -29,7 +29,8 @@ public class Rating3
         new WeaponCategory { ID = "smg_shotgun", Label = "SMG / 霰弹枪", Strength = 1.05, Weapons = new List<string>{ "mp9", "mac-10", "mac10", "ump-45", "ump45", "mp7", "mp5-sd", "mp5sd", "p90", "pp-bizon", "bizon", "nova", "xm1014", "mag-7", "mag7", "sawed-off", "sawedoff", "m249", "negev" } },
         new WeaponCategory { ID = "tier2_rifle", Label = "二级步枪", Strength = 1.45, Weapons = new List<string>{ "galil ar", "galilar", "famas" } },
         new WeaponCategory { ID = "tier1_rifle", Label = "一级步枪", Strength = 2, Weapons = new List<string>{ "ak-47", "ak47", "m4a4", "m4a1-s", "m4a1", "aug", "sg 553", "sg553" } },
-        new WeaponCategory { ID = "sniper", Label = "狙击枪", Strength = 2.59, Weapons = new List<string>{ "awp", "ssg 08", "ssg08", "scar-20", "scar20", "g3sg1" } },
+        new WeaponCategory { ID = "sniper", Label = "狙击枪", Strength = 2.59, Weapons = new List<string>{ "awp", "scar-20", "scar20", "g3sg1" } },
+        new WeaponCategory { ID = "scout", Label = "侦察步枪", Strength = 1.3, Weapons = new List<string>{ "ssg 08", "ssg08" } },
     };
 
     public static RatingMethodology GetMethodology()

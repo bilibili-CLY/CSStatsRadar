@@ -106,7 +106,7 @@ public class LiveEndToEndTests
             var bootstrap = await CallOk(server, "Bootstrap");
             Assert.Equal(0, bootstrap.GetProperty("players").GetArrayLength());
             var meth = await CallOk(server, "GetRatingMethodology");
-            Assert.Equal("local-r3-2026.08-v2", meth.GetProperty("algorithm_version").GetString());
+            Assert.Equal("local-r3-2026.09-v1", meth.GetProperty("algorithm_version").GetString());
 
             // Import via the bridge and poll until completed
             if (File.Exists(DemoPath))

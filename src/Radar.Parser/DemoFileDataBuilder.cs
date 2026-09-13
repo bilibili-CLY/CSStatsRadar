@@ -15,6 +15,9 @@ public class DemoFileDataBuilder
     private readonly List<DamageEvent> _damages = new();
     private readonly List<SurvivalState> _survivals = new();
 
+    /// <summary>受害者血条追踪：每 (回合, 受害者) 从 100 起步，逐事件扣减；用于把 GOTV 上报的毛伤害折算为实际扣血。</summary>
+    private readonly Dictionary<(int Round, string Victim), int> _victimHp = new();
+
     public void OnRoundStart(CsDemoParser demo)
     {
         if (demo.GameRules.WarmupPeriod) return;
@@ -97,6 +100,11 @@ public class DemoFileDataBuilder
         var victimSide = PlayerSide(e.Player);
         if (attacker == victim || (!string.IsNullOrEmpty(attackerSide) && attackerSide == victimSide)) return;
 
+        var hpKey = (roundNumber, victim);
+        var prevHp = _victimHp.GetValueOrDefault(hpKey, 100);
+        var postHp = Math.Clamp(e.Health, 0, prevHp);
+        _victimHp[hpKey] = postHp;
+
         CollectPlayer(e.Attacker);
         CollectPlayer(e.Player);
         _damages.Add(new DamageEvent
@@ -105,7 +113,7 @@ public class DemoFileDataBuilder
             Tick = CurrentTick(demo),
             AttackerSteamID = attacker,
             VictimSteamID = victim,
-            Damage = e.DmgHealth,
+            Damage = Math.Max(0, prevHp - postHp),
             AttackerSide = attackerSide,
             VictimSide = victimSide,
             Weapon = MapEquipmentName(e.Weapon),

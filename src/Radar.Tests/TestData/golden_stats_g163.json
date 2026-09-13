@@ -18,7 +18,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -27,6 +29,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -35,7 +38,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -43,7 +48,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -52,6 +59,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -60,7 +68,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -71,6 +81,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -79,7 +90,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -88,6 +101,7 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
@@ -97,7 +111,8 @@
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -106,6 +121,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -114,11 +130,14 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": 2.32,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   },
   {
     "steam_id": "76561198322733550",
@@ -139,7 +158,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -148,6 +169,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -156,7 +178,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -164,7 +188,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -173,6 +199,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -181,7 +208,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -192,6 +221,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -200,7 +230,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -209,6 +241,7 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
@@ -218,7 +251,8 @@
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -227,6 +261,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -235,11 +270,14 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": 2.47,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   },
   {
     "steam_id": "76561198969603907",
@@ -260,7 +298,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -269,6 +309,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -277,7 +318,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -285,7 +328,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -294,6 +339,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -302,7 +348,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -313,6 +361,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -321,7 +370,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -330,16 +381,18 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 0.0,
+        "value": 0,
         "display_type": "percentage",
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -348,6 +401,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -356,11 +410,14 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": -13.64,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   },
   {
     "steam_id": "76561198213920660",
@@ -381,7 +438,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -390,6 +449,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -398,7 +458,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -406,7 +468,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -415,6 +479,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -423,7 +488,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -434,6 +501,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -442,7 +510,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -451,16 +521,18 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 0.0,
+        "value": 0,
         "display_type": "percentage",
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -469,6 +541,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -477,11 +550,14 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": -6.05,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   },
   {
     "steam_id": "76561198349492715",
@@ -502,7 +578,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -511,6 +589,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -519,7 +598,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -527,7 +608,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -536,6 +619,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -544,7 +628,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -555,6 +641,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -563,7 +650,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -572,6 +661,7 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
@@ -581,7 +671,8 @@
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -590,6 +681,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -598,11 +690,14 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": 5.45,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   },
   {
     "steam_id": "76561198165602682",
@@ -623,7 +718,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -632,6 +729,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -640,7 +738,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -648,7 +748,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -657,6 +759,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -665,7 +768,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -676,6 +781,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -684,7 +790,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -693,6 +801,7 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
@@ -702,7 +811,8 @@
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -711,6 +821,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -719,11 +830,14 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": 25.26,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   },
   {
     "steam_id": "76561198436531748",
@@ -744,7 +858,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -753,6 +869,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -761,7 +878,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -769,7 +888,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -778,6 +899,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -786,7 +908,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -797,6 +921,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -805,7 +930,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -814,6 +941,7 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
@@ -823,7 +951,8 @@
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -832,6 +961,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -840,11 +970,14 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": 3.28,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   },
   {
     "steam_id": "76561199849909959",
@@ -865,7 +998,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -874,6 +1009,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -882,7 +1018,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -890,7 +1028,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -899,6 +1039,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -907,7 +1048,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -918,6 +1061,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -926,7 +1070,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -935,16 +1081,18 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 0.0,
+        "value": 0,
         "display_type": "percentage",
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -953,6 +1101,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -961,11 +1110,14 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": -8.88,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   },
   {
     "steam_id": "76561199827944234",
@@ -986,7 +1138,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -995,6 +1149,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -1003,7 +1158,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -1011,7 +1168,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -1020,6 +1179,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -1028,7 +1188,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -1039,6 +1201,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -1047,7 +1210,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -1056,6 +1221,7 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
@@ -1065,7 +1231,8 @@
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -1074,6 +1241,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -1082,11 +1250,14 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": -6.93,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   },
   {
     "steam_id": "76561199118574276",
@@ -1107,7 +1278,9 @@
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Impact": {
         "name": "Impact",
@@ -1116,6 +1289,7 @@
         "max_value": 2,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制影响力算法第一版。"
       },
       "KAST": {
@@ -1124,7 +1298,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -1132,7 +1308,9 @@
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "Rating": {
         "name": "Rating",
@@ -1141,6 +1319,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "本地自制综合评分算法第一版。"
       },
       "Surviving": {
@@ -1149,7 +1328,9 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "rating_3_metrics": {
@@ -1160,6 +1341,7 @@
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "KAST": {
@@ -1168,7 +1350,9 @@
         "display_type": "percentage",
         "max_value": 0.7,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       },
       "KPR": {
         "name": "KPR",
@@ -1177,16 +1361,18 @@
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "已按枪械对位修正。"
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
-        "value": 0.0,
+        "value": 0,
         "display_type": "percentage",
         "max_value": 0.2,
         "min_value": 0,
         "status": "ok",
-        "note": "经济修正后的多杀子评分。"
+        "reason": "",
+        "note": "多杀回合占比（每回合≥2杀）。"
       },
       "Rating": {
         "name": "Rating",
@@ -1195,6 +1381,7 @@
         "max_value": 1.5,
         "min_value": 0,
         "status": "ok",
+        "reason": "",
         "note": "Rating 3.0 本地近似。"
       },
       "Surviving": {
@@ -1203,10 +1390,13 @@
         "display_type": "percentage",
         "max_value": 0.6,
         "min_value": 0,
-        "status": "ok"
+        "status": "ok",
+        "reason": "",
+        "note": ""
       }
     },
     "round_swing": -3.27,
-    "rating_3_available": true
+    "rating_3_available": true,
+    "rating_3_reason": ""
   }
 ]
