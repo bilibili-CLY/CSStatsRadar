@@ -1,0 +1,95 @@
+name: Desktop
+
+# 新桌面链（Tauri 壳 + Kestrel sidecar + FFmpeg 内嵌）。
+# 与旧 release.yml（Radar.App zip）并存，切换前互不干扰。
+on:
+  push:
+    branches:
+      - main
+      - 'refactor/**'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate dev path (backend tests + frontend build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Backend tests
+        run: dotnet test src/Radar.Tests --nologo -v q
+
+      - name: Frontend build and tests
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run stamp:versions
+          npm run build
+          npm run test
+
+  build-windows-nsis:
+    name: Build Windows NSIS (Tauri + sidecar + FFmpeg)
+    runs-on: windows-latest
+    needs: validate
+    env:
+      VITE_CS_RADAR_URL: http://127.0.0.1:19871
+      CS_RADAR_FFMPEG_EXE: C:\ProgramData\chocolatey\bin\ffmpeg.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install FFmpeg (full build via Chocolatey)
+        run: choco install ffmpeg --no-progress -y
+
+      - name: Verify FFmpeg
+        run: ffmpeg -version
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Stamp versions
+        working-directory: frontend
+        run: npm run stamp:versions
+
+      - name: Stage Tauri resources (sidecar + FFmpeg)
+        working-directory: frontend
+        run: npm run stage:resources
+
+      - name: Runtime size budget
+        working-directory: frontend
+        run: npm run report:size
+
+      - name: Build Tauri NSIS
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: frontend

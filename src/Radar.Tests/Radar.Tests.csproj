@@ -21,6 +21,7 @@
     <ProjectReference Include="..\Radar.Domain\Radar.Domain.csproj" />
     <ProjectReference Include="..\Radar.Infrastructure\Radar.Infrastructure.csproj" />
     <ProjectReference Include="..\Radar.Api\Radar.Api.csproj" />
+    <ProjectReference Include="..\Radar.Server\Radar.Server.csproj" />
   </ItemGroup>
 
 </Project>

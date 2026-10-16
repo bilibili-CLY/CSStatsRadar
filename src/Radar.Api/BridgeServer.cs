@@ -166,7 +166,7 @@ public class BridgeServer
     private static readonly byte[] NotFound = Encoding.UTF8.GetBytes("Not Found");
     private static readonly byte[] BridgeScriptBytes = Encoding.UTF8.GetBytes(BridgeScript);
 
-    private const string BridgeScript = @"(function(){
+    public const string BridgeScript = @"(function(){
   function post(method, args){
     return fetch('/__bridge', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({method:method, args:args || []})})
@@ -198,6 +198,11 @@ public class BridgeServer
     FollowDemoPlayers: function(demoId, steamIds){ return post('FollowDemoPlayers', [demoId, steamIds]); },
     ListPlayers: function(){ return post('ListPlayers'); },
     GetPlayerMatches: function(steamId){ return post('GetPlayerMatches', [steamId]); },
+    ListMatchGroups: function(steamId){ return post('ListMatchGroups', [steamId]); },
+    CreateMatchGroup: function(steamId, name){ return post('CreateMatchGroup', [steamId, name]); },
+    RenameMatchGroup: function(groupId, name){ return post('RenameMatchGroup', [groupId, name]); },
+    DeleteMatchGroup: function(groupId){ return post('DeleteMatchGroup', [groupId]); },
+    AssignMatchGroup: function(steamId, demoId, groupId){ return post('AssignMatchGroup', [steamId, demoId, groupId]); },
     SetPlayerFollowed: function(player, followed){ return post('SetPlayerFollowed', [player, followed]); },
     DeletePlayerData: function(steamId){ return post('DeletePlayerData', [steamId]); },
     DeletePlayerMatches: function(steamId, ids){ return post('DeletePlayerMatches', [steamId, ids]); },

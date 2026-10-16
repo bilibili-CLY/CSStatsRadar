@@ -185,4 +185,101 @@ public class HistoryServiceIntegrationTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void MatchGroups_Create_Assign_Move_And_Remove()
+    {
+        var (repo, history, dir) = CreateRepo();
+        try
+        {
+            var demo = LoadDemo("legacy_g163.json");
+            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, null);
+            var steamID = demo.Players[0].SteamID;
+            var demoID = result.SavedDemo!.DemoRecordID;
+            var otherSteamID = demo.Players[1].SteamID;
+
+            var first = repo.CreateMatchGroup(steamID, "小组赛");
+            var second = repo.CreateMatchGroup(steamID, "淘汰赛");
+            Assert.Empty(repo.ListMatchGroups(otherSteamID));
+            Assert.Equal(new[] { "小组赛", "淘汰赛" }, repo.ListMatchGroups(steamID).Select(group => group.Name));
+
+            repo.AssignMatchGroup(steamID, demoID, first.ID);
+            Assert.Equal(new[] { demoID }, repo.ListMatchGroups(steamID).Single(group => group.ID == first.ID).DemoIDs);
+
+            repo.AssignMatchGroup(steamID, demoID, second.ID);
+            Assert.Equal(new[] { demoID }, repo.ListMatchGroups(steamID).Single(group => group.ID == second.ID).DemoIDs);
+            Assert.Empty(repo.ListMatchGroups(steamID).Single(group => group.ID == first.ID).DemoIDs);
+
+            repo.RenameMatchGroup(second.ID, "半决赛");
+            Assert.Contains(repo.ListMatchGroups(steamID), group => group.ID == second.ID && group.Name == "半决赛");
+
+            repo.AssignMatchGroup(steamID, demoID, null);
+            Assert.Empty(repo.ListMatchGroups(steamID).SelectMany(group => group.DemoIDs));
+
+            repo.DeleteMatchGroup(second.ID);
+            Assert.DoesNotContain(repo.ListMatchGroups(steamID), group => group.ID == second.ID);
+        }
+        finally
+        {
+            repo.Close();
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MatchGroup_Assign_Rejects_Other_Players_Match_And_Group()
+    {
+        var (repo, history, dir) = CreateRepo();
+        try
+        {
+            var demo = LoadDemo("legacy_g163.json");
+            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, null);
+            var steamID = demo.Players[0].SteamID;
+            var otherSteamID = demo.Players[1].SteamID;
+            var demoID = result.SavedDemo!.DemoRecordID;
+
+            var group = repo.CreateMatchGroup(otherSteamID, "私组");
+            Assert.Throws<InvalidOperationException>(() => repo.AssignMatchGroup(steamID, demoID, group.ID));
+            Assert.Throws<InvalidOperationException>(() => repo.AssignMatchGroup(otherSteamID, "demo_record_unknown", group.ID));
+        }
+        finally
+        {
+            repo.Close();
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MatchGroups_Are_Cascaded_On_Cleanup()
+    {
+        var (repo, history, dir) = CreateRepo();
+        try
+        {
+            var demo = LoadDemo("legacy_g163.json");
+            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, null);
+            var steamID = demo.Players[0].SteamID;
+            var otherSteamID = demo.Players[1].SteamID;
+            var demoID = result.SavedDemo!.DemoRecordID;
+
+            var group = repo.CreateMatchGroup(steamID, "档");
+            repo.CreateMatchGroup(steamID, "另一个档");
+            repo.AssignMatchGroup(steamID, demoID, group.ID);
+
+            repo.DeletePlayerMatch(steamID, demoID);
+            Assert.Empty(repo.ListMatchGroups(steamID).Single(entry => entry.ID == group.ID).DemoIDs);
+
+            repo.DeletePlayer(steamID);
+            Assert.Empty(repo.ListMatchGroups(steamID));
+
+            var second = repo.CreateMatchGroup(otherSteamID, "另一档");
+            repo.AssignMatchGroup(otherSteamID, demoID, second.ID);
+            repo.DeleteDemos(new List<string> { demoID });
+            Assert.Empty(repo.ListMatchGroups(otherSteamID).Single().DemoIDs);
+        }
+        finally
+        {
+            repo.Close();
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

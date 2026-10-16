@@ -98,6 +98,29 @@ public class DesktopApp : IDisposable
             repo.DeletePlayerMatch(steamID, id);
     }
 
+    public List<MatchGroup> ListMatchGroups(string steamID) => repo.ListMatchGroups(steamID);
+
+    public MatchGroup CreateMatchGroup(string steamID, string name)
+    {
+        var trimmed = name.Trim();
+        if (trimmed == "")
+            throw AppErrors.New("invalid_match_group", AppErrors.StatusBadRequest, "分组名称不能为空。");
+        return repo.CreateMatchGroup(steamID, trimmed);
+    }
+
+    public void RenameMatchGroup(long groupID, string name)
+    {
+        var trimmed = name.Trim();
+        if (trimmed == "")
+            throw AppErrors.New("invalid_match_group", AppErrors.StatusBadRequest, "分组名称不能为空。");
+        repo.RenameMatchGroup(groupID, trimmed);
+    }
+
+    public void DeleteMatchGroup(long groupID) => repo.DeleteMatchGroup(groupID);
+
+    public void AssignMatchGroup(string steamID, string demoRecordID, long? groupID)
+        => repo.AssignMatchGroup(steamID, demoRecordID, groupID);
+
     public void ClearAllData() => repo.DeleteAllPlayers();
 
     public AggregateRadarResponse BuildRadar(string steamID, List<string> demoRecordIDs)

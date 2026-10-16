@@ -6,6 +6,7 @@ import type {
   DemoRecord,
   ImportSource,
   ImportSummary,
+  MatchGroup,
   MatchRecord,
   Player,
   PlayerAvatar,
@@ -28,17 +29,70 @@ declare global {
       ) => () => void;
     };
     __studioBridge?: Record<string, Method>;
+    // Tauri 壳或调试启动时注入的后端基地址，例如 http://127.0.0.1:19871。
+    __CSRADAR_BASE_URL?: string;
   }
+}
+
+// 后端基地址解析优先级：
+// 1. window.__CSRADAR_BASE_URL（Tauri 壳注入，端口由 sidecar 动态发现）；
+// 2. ?baseUrl= 查询参数（浏览器调试）；
+// 3. VITE_CS_RADAR_URL（vite dev / 打包配置，例如 npm run dev 时指向本机 sidecar）；
+// 4. 空字符串 = 同源相对路径（旧浏览器模式：页面由后端直接托管）。
+function resolveBaseUrl(): string {
+  if (typeof window !== "undefined" && window.__CSRADAR_BASE_URL)
+    return window.__CSRADAR_BASE_URL.replace(/\/+$/, "");
+  try {
+    const param = new URLSearchParams(window.location.search).get("baseUrl");
+    if (param) return param.replace(/\/+$/, "");
+  } catch {
+    /* ignore */
+  }
+  const env = import.meta.env.VITE_CS_RADAR_URL as string | undefined;
+  if (env) return env.replace(/\/+$/, "");
+  return "";
+}
+
+export const serverBaseUrl = resolveBaseUrl();
+
+// 把后端返回的相对 URL（如 /video-download?token=）解析为可导航地址。
+// 同源模式原样返回；Tauri/跨源模式补全基地址。
+export function resolveServerUrl(url: string): string {
+  if (!serverBaseUrl) return url;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  return `${serverBaseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+async function directCall<T>(name: string, ...args: unknown[]): Promise<T> {
+  const response = await fetch(`${serverBaseUrl}/__bridge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method: name, args }),
+  });
+  const payload = (await response.json()) as {
+    result: T;
+    error?: { code: string; message: string };
+  };
+  if (payload.error) {
+    const error = new Error(payload.error.message || "bridge error") as Error & {
+      code?: string;
+    };
+    error.code = payload.error.code;
+    throw error;
+  }
+  return payload.result;
 }
 
 async function call<T>(name: string, ...args: unknown[]): Promise<T> {
   const method =
     window.go?.radar?.DesktopApp?.[name] ?? window.__studioBridge?.[name];
-  if (!method) throw new Error(`桌面服务未连接：${name}`);
-  return method(...args) as Promise<T>;
+  if (method) return method(...args) as Promise<T>;
+  return directCall<T>(name, ...args);
 }
 
 export const bridge = {
+  serverBaseUrl,
+  resolveServerUrl,
   bootstrap: () => call<BootstrapState>("Bootstrap"),
   chooseDirectory: () => call<string>("ChooseImportDirectory"),
   chooseFiles: () => call<string[]>("ChooseImportFiles"),
@@ -62,6 +116,19 @@ export const bridge = {
   listPlayers: () => call<SavedPlayer[]>("ListPlayers"),
   getMatches: (steamId: string) =>
     call<MatchRecord[]>("GetPlayerMatches", steamId),
+  matchGroups: (steamId: string) =>
+    call<MatchGroup[]>("ListMatchGroups", steamId),
+  createMatchGroup: (steamId: string, name: string) =>
+    call<MatchGroup>("CreateMatchGroup", steamId, name),
+  renameMatchGroup: (groupId: number, name: string) =>
+    call<void>("RenameMatchGroup", groupId, name),
+  deleteMatchGroup: (groupId: number) =>
+    call<void>("DeleteMatchGroup", groupId),
+  assignMatchGroup: (
+    steamId: string,
+    demoId: string,
+    groupId: number | null,
+  ) => call<void>("AssignMatchGroup", steamId, demoId, groupId),
   setFollowed: (player: Player, followed: boolean) =>
     call<void>("SetPlayerFollowed", player, followed),
   deletePlayerData: (steamId: string) =>
@@ -159,7 +226,7 @@ export const bridge = {
       chunks.push(lengthHeader, frame);
     }
     const response = await fetch(
-      `/__bridge-bin?exportId=${encodeURIComponent(id)}`,
+      `${serverBaseUrl}/__bridge-bin?exportId=${encodeURIComponent(id)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },

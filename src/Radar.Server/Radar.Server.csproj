@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Radar.Server</RootNamespace>
+    <AssemblyName>CSStatsRadar.Server</AssemblyName>
+    <!-- 与 frontend/package.json、src-tauri/Cargo.toml 对齐，由 stamp:versions 门禁。 -->
+    <Version>2.0.0</Version>
+    <!-- 自包含单文件发布就绪：Tauri sidecar 形态，不依赖目标机 .NET 运行时。 -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <RollForward>LatestMajor</RollForward>
+    <!-- win-x64：Tauri 安装包内嵌；osx-*：Mac 本地调试。 -->
+    <RuntimeIdentifiers>win-x64;osx-arm64;osx-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Radar.Api\Radar.Api.csproj" />
+  </ItemGroup>
+
+</Project>

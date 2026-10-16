@@ -26,6 +26,11 @@ public interface IHistoryRepository
     void DeletePlayer(string steamID);
     void DeleteAllPlayers();
     void DeletePlayerMatch(string steamID, string demoRecordID);
+    List<MatchGroup> ListMatchGroups(string steamID);
+    MatchGroup CreateMatchGroup(string steamID, string name);
+    void RenameMatchGroup(long groupID, string name);
+    void DeleteMatchGroup(long groupID);
+    void AssignMatchGroup(string steamID, string demoRecordID, long? groupID);
     void UpdateRating3Stats(PlayerMatchRecord record);
     void SavePlayerAvatar(PlayerAvatarCache avatar);
     PlayerAvatarCache? GetPlayerAvatar(string steamID);

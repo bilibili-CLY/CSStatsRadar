@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MatchRecord } from "../../types";
-import { filterMatches, playersWithStats, recentMatchIDs, sortPlayers } from "./selection";
+import { filterMatches, playersWithStats, recentMatchIDs, sortGroupMatches, sortPlayers } from "./selection";
 
 const matches = [
   { demo_record_id: "3", map_name: "de_nuke", tags: ["赛事 A"] },
@@ -36,5 +36,18 @@ describe("library selection", () => {
       { steam_id: "c", name: "Charlie", followed: true, match_count: 1 },
     ] as Parameters<typeof playersWithStats>[0];
     expect(playersWithStats(players).map((player) => player.steam_id)).toEqual(["a", "c"]);
+  });
+
+  it("sorts matches inside a group across switchable keys", () => {
+    const groupMatches = [
+      { demo_record_id: "1", match_time: "2026-01-01", kills: 18, adr: 71.2, rating: 1.05 },
+      { demo_record_id: "2", match_time: "2026-03-01", kills: 31, adr: 92.4, rating: 1.42 },
+      { demo_record_id: "3", match_time: "2026-02-01", kills: 24, adr: null, rating: null },
+    ] as MatchRecord[];
+    expect(sortGroupMatches(groupMatches, "time_desc").map((match) => match.demo_record_id)).toEqual(["2", "3", "1"]);
+    expect(sortGroupMatches(groupMatches, "time_asc").map((match) => match.demo_record_id)).toEqual(["1", "3", "2"]);
+    expect(sortGroupMatches(groupMatches, "kills").map((match) => match.demo_record_id)).toEqual(["2", "3", "1"]);
+    expect(sortGroupMatches(groupMatches, "adr").map((match) => match.demo_record_id)).toEqual(["2", "1", "3"]);
+    expect(sortGroupMatches(groupMatches, "rating").map((match) => match.demo_record_id)).toEqual(["2", "1", "3"]);
   });
 });

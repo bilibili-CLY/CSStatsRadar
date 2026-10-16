@@ -46,3 +46,45 @@ export function recentMatchIDs(matches: MatchRecord[], count: number) {
     .slice(0, Math.max(1, count))
     .map((match) => match.demo_record_id);
 }
+
+export type MatchGroupSort =
+  | "time_desc"
+  | "time_asc"
+  | "kills"
+  | "adr"
+  | "rating";
+
+export function sortGroupMatches(
+  matches: MatchRecord[],
+  sort: MatchGroupSort,
+) {
+  return [...matches].sort((a, b) => {
+    let value = 0;
+    switch (sort) {
+      case "time_desc":
+        value = dateValue(b.match_time) - dateValue(a.match_time);
+        break;
+      case "time_asc":
+        value = dateValue(a.match_time) - dateValue(b.match_time);
+        break;
+      case "kills":
+        value = b.kills - a.kills;
+        break;
+      case "adr":
+        value = nullableDesc(a.adr, b.adr);
+        break;
+      case "rating":
+        value = nullableDesc(a.rating, b.rating);
+        break;
+    }
+    if (value) return value;
+    return dateValue(b.match_time) - dateValue(a.match_time);
+  });
+}
+
+function nullableDesc(a: number | null, b: number | null) {
+  if (a != null && b != null) return b - a;
+  if (a != null) return -1;
+  if (b != null) return 1;
+  return 0;
+}

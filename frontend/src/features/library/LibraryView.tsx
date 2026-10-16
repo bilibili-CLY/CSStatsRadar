@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
+  ChevronDown,
   ChevronRight,
   Layers3,
+  Pencil,
+  Plus,
   RefreshCw,
   Search,
   Star,
   StarOff,
   Trash2,
   Video,
+  X,
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { BusyMessage, Spinner } from "../../components/Busy";
@@ -17,6 +21,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useStudioStore } from "../../stores/studioStore";
 import { saveSeedToDraft, studioToastLabels } from "../studio/draftMutations";
 import type {
+  MatchGroup,
   MatchRecord,
   SavedPlayer,
   StudioKind,
@@ -26,7 +31,9 @@ import {
   filterMatches,
   playersWithStats,
   recentMatchIDs,
+  sortGroupMatches,
   sortPlayers,
+  type MatchGroupSort,
   type PlayerSort,
 } from "./selection";
 
@@ -42,6 +49,17 @@ export function LibraryView() {
   const [recentN, setRecentN] = useState(5);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [mapFilter, setMapFilter] = useState("all");
+  const [groupView, setGroupView] = useState<"all" | "grouped">("all");
+  const [groups, setGroups] = useState<MatchGroup[]>([]);
+  const [groupSort, setGroupSort] = useState<MatchGroupSort>("time_desc");
+  const [newGroupName, setNewGroupName] = useState("");
+  const [renaming, setRenaming] = useState<{
+    id: number;
+    value: string;
+  } | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [dragOver, setDragOver] = useState<number | "ungrouped" | null>(null);
+  const draggingDemo = useRef<string | null>(null);
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const [bulkProgress, setBulkProgress] = useState<{ processed: number; total: number } | null>(null);
@@ -71,20 +89,51 @@ export function LibraryView() {
     () => filterMatches(matches, mapFilter, ""),
     [matches, mapFilter],
   );
+  const grouped = useMemo(() => {
+    const assigned = new Set(groups.flatMap((group) => group.demo_ids));
+    const ungroupedMatches = sortGroupMatches(
+      filtered.filter((match) => !assigned.has(match.demo_record_id)),
+      groupSort,
+    );
+    const blocks = groups.map((group) => ({
+      group,
+      matches: sortGroupMatches(
+        filtered.filter((match) => group.demo_ids.includes(match.demo_record_id)),
+        groupSort,
+      ),
+    }));
+    return { ungroupedMatches, blocks };
+  }, [filtered, groups, groupSort]);
   const activeIds =
-    mode === "recent" ? recentMatchIDs(filtered, recentN) : Array.from(chosen);
+    groupView === "grouped"
+      ? Array.from(chosen)
+      : mode === "recent"
+        ? recentMatchIDs(filtered, recentN)
+        : Array.from(chosen);
   useEffect(() => {
     if (!selected) return;
+    let cancelled = false;
     setLoading(true);
     setError("");
-    bridge
-      .getMatches(selected.steam_id)
-      .then((values) => {
+    Promise.all([
+      bridge.getMatches(selected.steam_id),
+      bridge.matchGroups(selected.steam_id),
+    ])
+      .then(([values, groupValues]) => {
+        if (cancelled) return;
         setMatches(values);
+        setGroups(groupValues);
         setChosen(new Set());
       })
-      .catch((value) => setError(String(value)))
-      .finally(() => setLoading(false));
+      .catch((value) => {
+        if (!cancelled) setError(String(value));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selected]);
   useEffect(() => {
     if (!menu) return;
@@ -185,6 +234,7 @@ export function LibraryView() {
     await bridge.deletePlayerMatches(selected.steam_id, Array.from(chosen));
     setMatches(await bridge.getMatches(selected.steam_id).catch(() => []));
     setChosen(new Set());
+    refreshGroups(selected.steam_id);
     await refreshPlayers();
   }
   async function deletePlayerData() {
@@ -198,6 +248,7 @@ export function LibraryView() {
     await bridge.deletePlayerData(selected.steam_id);
     setSelected(null);
     setMatches([]);
+    setGroups([]);
     await refreshPlayers();
   }
   function toggleChosen(id: string) {
@@ -206,6 +257,100 @@ export function LibraryView() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+  async function refreshGroups(steamId: string) {
+    setGroups(await bridge.matchGroups(steamId).catch(() => []));
+  }
+  async function handleCreateGroup() {
+    if (!selected) return;
+    const name = newGroupName.trim();
+    if (!name) return;
+    try {
+      setBusyAction("group");
+      const group = await bridge.createMatchGroup(selected.steam_id, name);
+      setGroups((current) => [...current, group]);
+      setNewGroupName("");
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+    } finally {
+      setBusyAction("");
+    }
+  }
+  function beginRename(group: MatchGroup) {
+    setRenaming({ id: group.id, value: group.name });
+  }
+  async function saveRename(group: MatchGroup) {
+    const value = renaming?.value.trim() ?? "";
+    setRenaming(null);
+    if (!value || value === group.name) return;
+    try {
+      setBusyAction("group");
+      await bridge.renameMatchGroup(group.id, value);
+      setGroups((current) =>
+        current.map((entry) =>
+          entry.id === group.id ? { ...entry, name: value } : entry,
+        ),
+      );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction("");
+    }
+  }
+  async function handleDeleteGroup(group: MatchGroup) {
+    if (
+      !window.confirm(
+        `删除分组「${group.name}」？组内已归类的比赛会回到未分组。`,
+      )
+    )
+      return;
+    try {
+      setBusyAction("group");
+      await bridge.deleteMatchGroup(group.id);
+      setGroups((current) => current.filter((entry) => entry.id !== group.id));
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+    } finally {
+      setBusyAction("");
+    }
+  }
+  function toggleCollapsed(key: string) {
+    setCollapsed((current) => ({ ...current, [key]: !current[key] }));
+  }
+  function startDrag(match: MatchRecord) {
+    draggingDemo.current = match.demo_record_id;
+  }
+  function endDrag() {
+    draggingDemo.current = null;
+    setDragOver(null);
+  }
+  async function handleDrop(groupId: number | null) {
+    const demoId = draggingDemo.current;
+    setDragOver(null);
+    draggingDemo.current = null;
+    if (!demoId || !selected) return;
+    try {
+      setBusyAction("group");
+      await bridge.assignMatchGroup(selected.steam_id, demoId, groupId);
+      setGroups((current) =>
+        current.map((group) => {
+          if (group.id === groupId && !group.demo_ids.includes(demoId))
+            return { ...group, demo_ids: [...group.demo_ids, demoId] };
+          if (group.demo_ids.includes(demoId))
+            return {
+              ...group,
+              demo_ids: group.demo_ids.filter((id) => id !== demoId),
+            };
+          return group;
+        }),
+      );
+      setError("");
+    } catch (value) {
+      draggingDemo.current = demoId;
+      setError(value instanceof Error ? value.message : String(value));
+    } finally {
+      setBusyAction("");
+    }
   }
   async function refreshAvatarFromMenu(player: SavedPlayer) {
     setMenu(null);
@@ -238,11 +383,71 @@ export function LibraryView() {
       if (selected?.steam_id === player.steam_id) {
         setSelected(null);
         setMatches([]);
+        setGroups([]);
       }
       await refreshPlayers();
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
     }
+  }
+  function matchRow(
+    match: MatchRecord,
+    options: { selectable: boolean; rankIndex?: number },
+  ) {
+    const active = activeIds.includes(match.demo_record_id);
+    const selectable = options.selectable;
+    return (
+      <tr
+        key={match.demo_record_id}
+        className={`${active ? "selected" : ""} ${selectable ? "selectable" : ""} ${groupView === "grouped" ? "draggable-row" : ""}`}
+        tabIndex={selectable ? 0 : undefined}
+        draggable={groupView === "grouped"}
+        onDragStart={(event) => {
+          if (groupView !== "grouped") return;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", match.demo_record_id);
+          startDrag(match);
+        }}
+        onDragEnd={endDrag}
+        onClick={() => selectable && toggleChosen(match.demo_record_id)}
+        onKeyDown={(event) => {
+          if (selectable && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            toggleChosen(match.demo_record_id);
+          }
+        }}
+      >
+        <td>
+          {selectable ? (
+            <input
+              aria-label={`选择 ${match.file_name}`}
+              type="checkbox"
+              checked={active}
+              onClick={(event) => event.stopPropagation()}
+              onChange={() => toggleChosen(match.demo_record_id)}
+            />
+          ) : options.rankIndex != null && options.rankIndex < recentN ? (
+            <span className="rank-index">{options.rankIndex + 1}</span>
+          ) : null}
+        </td>
+        <td>
+          <strong>
+            {match.match_time_source === "unknown"
+              ? "比赛时间未知"
+              : formatDate(match.match_time)}
+          </strong>
+          <small>导入于 {formatDate(match.imported_at)}</small>
+        </td>
+        <td>{match.map_name || "未知地图"}</td>
+        <td>
+          <span className="mono">
+            {match.kills}/{match.deaths}/{match.assists}
+          </span>
+          <small>ADR {number(match.adr)}</small>
+        </td>
+        <td title={match.source_path}>{match.file_name}</td>
+      </tr>
+    );
   }
   return (
     <div className="page library-page">
@@ -357,31 +562,49 @@ export function LibraryView() {
               <div className="filter-toolbar">
                 <div className="segmented">
                   <button
-                    className={mode === "recent" ? "active" : ""}
-                    onClick={() => setMode("recent")}
+                    className={groupView === "all" ? "active" : ""}
+                    onClick={() => setGroupView("all")}
                   >
-                    最新 N 场
+                    全部场次
                   </button>
                   <button
-                    className={mode === "custom" ? "active" : ""}
-                    onClick={() => setMode("custom")}
+                    className={groupView === "grouped" ? "active" : ""}
+                    onClick={() => setGroupView("grouped")}
                   >
-                    自定义
+                    分组
                   </button>
                 </div>
-                {mode === "recent" && (
-                  <label className="compact-field">
-                    <span>场数</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={recentN}
-                      onChange={(event) =>
-                        setRecentN(Number(event.target.value))
-                      }
-                    />
-                  </label>
+                {groupView === "all" && (
+                  <>
+                    <div className="segmented">
+                      <button
+                        className={mode === "recent" ? "active" : ""}
+                        onClick={() => setMode("recent")}
+                      >
+                        最新 N 场
+                      </button>
+                      <button
+                        className={mode === "custom" ? "active" : ""}
+                        onClick={() => setMode("custom")}
+                      >
+                        自定义
+                      </button>
+                    </div>
+                    {mode === "recent" && (
+                      <label className="compact-field">
+                        <span>场数</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={recentN}
+                          onChange={(event) =>
+                            setRecentN(Number(event.target.value))
+                          }
+                        />
+                      </label>
+                    )}
+                  </>
                 )}
                 <select
                   aria-label="地图筛选"
@@ -394,110 +617,307 @@ export function LibraryView() {
                   ))}
                 </select>
               </div>
+              {groupView === "grouped" && (
+                <div className="group-toolbar">
+                  <label className="compact-field">
+                    <span>组内排序</span>
+                    <select
+                      aria-label="组内排序"
+                      value={groupSort}
+                      onChange={(event) =>
+                        setGroupSort(event.target.value as MatchGroupSort)
+                      }
+                    >
+                      <option value="time_desc">时间最新</option>
+                      <option value="time_asc">时间最早</option>
+                      <option value="kills">击杀 Kills</option>
+                      <option value="adr">ADR</option>
+                      <option value="rating">Rating</option>
+                    </select>
+                  </label>
+                  <form
+                    className="new-group-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      handleCreateGroup();
+                    }}
+                  >
+                    <input
+                      value={newGroupName}
+                      onChange={(event) => setNewGroupName(event.target.value)}
+                      placeholder="新建分组名称"
+                      aria-label="新建分组名称"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newGroupName.trim() || Boolean(busyAction)}
+                    >
+                      {busyAction === "group" ? <Spinner /> : <Plus size={16} />}
+                      新建分组
+                    </button>
+                  </form>
+                </div>
+              )}
               {error && (
                 <div className="notice danger" role="alert">
                   {error}
                 </div>
               )}
-              <div className="match-table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>{mode === "custom" ? "选择" : ""}</th>
-                      <th>比赛时间</th>
-                      <th>地图</th>
-                      <th>数据</th>
-                      <th>来源</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr>
-                        <td colSpan={5} className="table-loading-cell">
-                          <BusyMessage>正在读取比赛记录…</BusyMessage>
-                        </td>
-                      </tr>
-                    ) : (
-                      filtered.map((match, index) => {
-                        const active = activeIds.includes(match.demo_record_id);
-                        return (
-                          <tr
-                            key={match.demo_record_id}
-                            className={`${active ? "selected" : ""} ${mode === "custom" ? "selectable" : ""}`}
-                            tabIndex={mode === "custom" ? 0 : undefined}
-                            onClick={() =>
-                              mode === "custom" &&
-                              toggleChosen(match.demo_record_id)
+              {groupView === "grouped" ? (
+                <div className="match-groups">
+                  {loading ? (
+                    <BusyMessage>正在读取比赛记录…</BusyMessage>
+                  ) : (
+                    <>
+                      <section
+                        className={`match-group-block ${dragOver === "ungrouped" ? "drag-over" : ""}`}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                          setDragOver("ungrouped");
+                        }}
+                        onDragLeave={(event) => {
+                          const related = event.relatedTarget as Node | null;
+                          if (related && event.currentTarget.contains(related)) return;
+                          setDragOver((current) =>
+                            current === "ungrouped" ? null : current,
+                          );
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          handleDrop(null);
+                        }}
+                      >
+                        <header
+                          className={`match-group-header ${collapsed["ungrouped"] ? "collapsed" : ""}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleCollapsed("ungrouped")}
+                          onKeyDown={(event) => {
+                            if (
+                              event.target === event.currentTarget &&
+                              (event.key === "Enter" || event.key === " ")
+                            ) {
+                              event.preventDefault();
+                              toggleCollapsed("ungrouped");
                             }
-                            onKeyDown={(event) => {
-                              if (
-                                mode === "custom" &&
-                                (event.key === "Enter" || event.key === " ")
-                              ) {
-                                event.preventDefault();
-                                toggleChosen(match.demo_record_id);
-                              }
+                          }}
+                        >
+                          <ChevronDown size={15} className="chevron" />
+                          <strong>未分组</strong>
+                          <span className="match-group-count">
+                            {grouped.ungroupedMatches.length} 场
+                          </span>
+                          <span className="match-group-hint">
+                            拖入场次移出分组
+                          </span>
+                        </header>
+                        {!collapsed["ungrouped"] && (
+                          <div className="match-group-body">
+                            {grouped.ungroupedMatches.length === 0 ? (
+                              <p className="match-group-empty">暂无未分组比赛</p>
+                            ) : (
+                              <table className="data-table">
+                                <thead>
+                                  <tr>
+                                    <th>选择</th>
+                                    <th>比赛时间</th>
+                                    <th>地图</th>
+                                    <th>数据</th>
+                                    <th>来源</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {grouped.ungroupedMatches.map((match) =>
+                                    matchRow(match, { selectable: true }),
+                                  )}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        )}
+                      </section>
+                      {grouped.blocks.map(({ group, matches: blockMatches }) => {
+                        const key = String(group.id);
+                        const isCollapsed = Boolean(collapsed[key]);
+                        return (
+                          <section
+                            key={key}
+                            className={`match-group-block ${dragOver === group.id ? "drag-over" : ""}`}
+                            onDragOver={(event) => {
+                              event.preventDefault();
+                              event.dataTransfer.dropEffect = "move";
+                              setDragOver(group.id);
+                            }}
+                            onDragLeave={(event) => {
+                              const related = event.relatedTarget as Node | null;
+                              if (related && event.currentTarget.contains(related)) return;
+                              setDragOver((current) =>
+                                current === group.id ? null : current,
+                              );
+                            }}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              handleDrop(group.id);
                             }}
                           >
-                            <td>
-                              {mode === "custom" ? (
-                                <input
-                                  aria-label={`选择 ${match.file_name}`}
-                                  type="checkbox"
-                                  checked={active}
+                            <header
+                              className={`match-group-header ${isCollapsed ? "collapsed" : ""}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleCollapsed(key)}
+                              onKeyDown={(event) => {
+                                if (
+                                  event.target === event.currentTarget &&
+                                  (event.key === "Enter" || event.key === " ")
+                                ) {
+                                  event.preventDefault();
+                                  toggleCollapsed(key);
+                                }
+                              }}
+                            >
+                              <ChevronDown size={15} className="chevron" />
+                              {renaming?.id === group.id ? (
+                                <span
+                                  className="match-group-rename"
                                   onClick={(event) => event.stopPropagation()}
-                                  onChange={() =>
-                                    toggleChosen(match.demo_record_id)
-                                  }
-                                />
-                              ) : index < recentN ? (
-                                <span className="rank-index">{index + 1}</span>
-                              ) : null}
-                            </td>
-                            <td>
-                              <strong>
-                                {match.match_time_source === "unknown"
-                                  ? "比赛时间未知"
-                                  : formatDate(match.match_time)}
-                              </strong>
-                              <small>
-                                导入于 {formatDate(match.imported_at)}
-                              </small>
-                            </td>
-                            <td>{match.map_name || "未知地图"}</td>
-                            <td>
-                              <span className="mono">
-                                {match.kills}/{match.deaths}/{match.assists}
-                              </span>
-                              <small>ADR {number(match.adr)}</small>
-                            </td>
-                            <td title={match.source_path}>{match.file_name}</td>
-                          </tr>
+                                >
+                                  <input
+                                    autoFocus
+                                    value={renaming.value}
+                                    onChange={(event) =>
+                                      setRenaming({
+                                        id: group.id,
+                                        value: event.target.value,
+                                      })
+                                    }
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") saveRename(group);
+                                      if (event.key === "Escape")
+                                        setRenaming(null);
+                                    }}
+                                    onBlur={() => saveRename(group)}
+                                    aria-label={`重命名分组 ${group.name}`}
+                                  />
+                                  <button
+                                    className="group-header-button"
+                                    onClick={() => setRenaming(null)}
+                                    aria-label="取消重命名"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </span>
+                              ) : (
+                                <>
+                                  <strong>{group.name}</strong>
+                                  <span className="match-group-count">
+                                    {blockMatches.length} 场
+                                  </span>
+                                  <button
+                                    className="group-header-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      beginRename(group);
+                                    }}
+                                    aria-label={`重命名 ${group.name}`}
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button
+                                    className="group-header-button danger"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleDeleteGroup(group);
+                                    }}
+                                    aria-label={`删除分组 ${group.name}`}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </>
+                              )}
+                            </header>
+                            {!isCollapsed && (
+                              <div className="match-group-body">
+                                {blockMatches.length === 0 ? (
+                                  <p className="match-group-empty">
+                                    暂无比赛，拖入场次到这里
+                                  </p>
+                                ) : (
+                                  <table className="data-table">
+                                    <thead>
+                                      <tr>
+                                        <th>选择</th>
+                                        <th>比赛时间</th>
+                                        <th>地图</th>
+                                        <th>数据</th>
+                                        <th>来源</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {blockMatches.map((match) =>
+                                        matchRow(match, { selectable: true }),
+                                      )}
+                                    </tbody>
+                                  </table>
+                                )}
+                              </div>
+                            )}
+                          </section>
                         );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      })}
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="match-table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>{mode === "custom" ? "选择" : ""}</th>
+                        <th>比赛时间</th>
+                        <th>地图</th>
+                        <th>数据</th>
+                        <th>来源</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading ? (
+                        <tr>
+                          <td colSpan={5} className="table-loading-cell">
+                            <BusyMessage>正在读取比赛记录…</BusyMessage>
+                          </td>
+                        </tr>
+                      ) : (
+                        filtered.map((match, index) =>
+                          matchRow(match, {
+                            selectable: mode === "custom",
+                            rankIndex: index,
+                          }),
+                        )
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <div className="selection-bar">
                 <div>
                   <strong>已选 {activeIds.length} 场</strong>
                   <span>
-                    {mode === "recent"
-                      ? `当前筛选结果的最新 ${Math.min(recentN, filtered.length)} 场`
-                      : "手动选择"}
+                    {groupView === "grouped"
+                      ? "手动选择，可拖拽归组"
+                      : mode === "recent"
+                        ? `当前筛选结果的最新 ${Math.min(recentN, filtered.length)} 场`
+                        : "手动选择"}
                   </span>
                 </div>
-                {mode === "custom" && (
-                  <>
-                    <button
-                      className="danger-action"
-                      onClick={deleteSelectedMatches}
-                      disabled={!chosen.size}
-                    >
-                      删除所选
-                    </button>
-                  </>
+                {(mode === "custom" || groupView === "grouped") && (
+                  <button
+                    className="danger-action"
+                    onClick={deleteSelectedMatches}
+                    disabled={!chosen.size}
+                  >
+                    删除所选
+                  </button>
                 )}
                 <button
                   onClick={() => create("radar")}

@@ -435,7 +435,15 @@ export function ShowcaseEditor({
     // opener and each qualifying BEST entrance/handoff, not only slide holds.
     const durationMs = totalDuration;
     const frameCount = Math.ceil((durationMs / 1000) * draft.fps);
-    if (typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined")
+    // Worker + 二进制帧是唯一主路径（与 AGENTS  invariant 一致）；
+    // 仅当 VITE_SHOWCASE_EXPORT_MAIN_THREAD=1 时强制走主线程 base64 回退（调试用）。
+    const forceMainThread =
+      import.meta.env.VITE_SHOWCASE_EXPORT_MAIN_THREAD === "1";
+    if (
+      !forceMainThread &&
+      typeof Worker !== "undefined" &&
+      typeof OffscreenCanvas !== "undefined"
+    )
       return exportVideoWithWorker(frameCount, durationMs);
     return exportVideoMainThread(frameCount, durationMs);
   }
@@ -537,7 +545,7 @@ export function ShowcaseEditor({
       exportWorker.current = null;
       const result = await bridge.finishVideoExport(exportId);
       exportID.current = "";
-      window.location.href = result.url;
+      window.location.href = bridge.resolveServerUrl(result.url);
       setExportState({
         running: false,
         progress: 1,
@@ -626,7 +634,7 @@ export function ShowcaseEditor({
       }
       const result = await bridge.finishVideoExport(exportId);
       exportID.current = "";
-      window.location.href = result.url;
+      window.location.href = bridge.resolveServerUrl(result.url);
       setExportState({
         running: false,
         progress: 1,

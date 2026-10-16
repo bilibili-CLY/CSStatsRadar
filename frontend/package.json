@@ -6,7 +6,13 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "desktop:dev": "node scripts/with-sidecar-env.mjs -- tauri dev",
+    "desktop:build": "node scripts/with-sidecar-env.mjs -- tauri build",
+    "desktop:icon": "tauri icon public/logo.svg --output src-tauri/icons",
+    "stage:resources": "node scripts/stage-tauri-resources.mjs",
+    "stamp:versions": "node scripts/stamp-versions.mjs",
+    "report:size": "node scripts/report-runtime-size.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -16,6 +22,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5",
     "@testing-library/react": "^16.1.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

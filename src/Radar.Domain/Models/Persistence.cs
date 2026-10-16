@@ -81,6 +81,14 @@ public class SavedPlayer
     [JsonPropertyName("followed")] public bool Followed { get; set; }
 }
 
+public class MatchGroup
+{
+    [JsonPropertyName("id")] public long ID { get; set; }
+    [JsonPropertyName("steam_id")] public string SteamID { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("demo_ids")] public List<string> DemoIDs { get; set; } = new();
+}
+
 public class PlayerAvatar
 {
     [JsonPropertyName("steam_id")] public string SteamID { get; set; } = "";

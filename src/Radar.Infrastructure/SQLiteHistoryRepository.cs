@@ -129,10 +129,32 @@ CREATE TABLE IF NOT EXISTS demo_analysis (
   generated_at TEXT NOT NULL,
   FOREIGN KEY (demo_id) REFERENCES demos(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS match_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  steam_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS match_group_items (
+  group_id INTEGER NOT NULL,
+  demo_id TEXT NOT NULL,
+  steam_id TEXT NOT NULL,
+  PRIMARY KEY (group_id, demo_id, steam_id),
+  FOREIGN KEY (group_id) REFERENCES match_groups(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_match_groups_steam_id ON match_groups(steam_id);
+CREATE INDEX IF NOT EXISTS idx_match_group_items_demo_id ON match_group_items(demo_id);
 CREATE INDEX IF NOT EXISTS idx_demos_match_time ON demos(match_time);
 CREATE INDEX IF NOT EXISTS idx_demo_players_steam_id ON demo_players(steam_id);
 CREATE INDEX IF NOT EXISTS idx_player_match_stats_steam_id ON player_match_stats(steam_id);
 ";
+
+    /// <summary>
+    /// 全新 schema 初始化（refactor/app-shell-v3 起）：直接建表，不做旧库列迁移，
+    /// 不创建 .bak 备份。旧库如表结构兼容可直接打开，否则请重扫 Demo 建新库。
+    /// </summary>
+    public const int SchemaVersion = 1;
 
     public string? Init()
     {
@@ -144,7 +166,6 @@ CREATE INDEX IF NOT EXISTS idx_player_match_stats_steam_id ON player_match_stats
                 if (Directory.Exists(path)) return "database_open_failed";
                 var dir = System.IO.Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                var existed = File.Exists(path);
                 db = new SqliteConnection($"Data Source={path}");
                 db.Open();
                 using (var cmd = db.CreateCommand())
@@ -152,29 +173,14 @@ CREATE INDEX IF NOT EXISTS idx_player_match_stats_steam_id ON player_match_stats
                     cmd.CommandText = "PRAGMA foreign_keys = ON;";
                     cmd.ExecuteNonQuery();
                 }
-                long userVersion;
-                using (var cmd = db.CreateCommand())
-                {
-                    cmd.CommandText = "PRAGMA user_version;";
-                    userVersion = (long)(cmd.ExecuteScalar() ?? 0L);
-                }
-                if (userVersion < 5 && existed)
-                {
-                    db.Close();
-                    var backup = path + ".bak-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-                    File.Copy(path, backup, overwrite: false);
-                    db = new SqliteConnection($"Data Source={path}");
-                    db.Open();
-                }
                 using (var cmd = db.CreateCommand())
                 {
                     cmd.CommandText = Schema;
                     cmd.ExecuteNonQuery();
                 }
-                MigrateColumns(db);
                 using (var cmd = db.CreateCommand())
                 {
-                    cmd.CommandText = "PRAGMA user_version = 5;";
+                    cmd.CommandText = $"PRAGMA user_version = {SchemaVersion};";
                     cmd.ExecuteNonQuery();
                 }
                 return null;
@@ -194,41 +200,6 @@ CREATE INDEX IF NOT EXISTS idx_player_match_stats_steam_id ON player_match_stats
             db?.Dispose();
             db = null;
         }
-    }
-
-    private static void MigrateColumns(SqliteConnection db)
-    {
-        var columns = new (string Table, string Name, string Definition)[]
-        {
-            ("demos", "file_sha256", "TEXT NOT NULL DEFAULT ''"),
-            ("demos", "source_path", "TEXT NOT NULL DEFAULT ''"),
-            ("demos", "match_time_source", "TEXT NOT NULL DEFAULT 'unknown'"),
-            ("demos", "note", "TEXT NOT NULL DEFAULT ''"),
-            ("demos", "analysis_version", "TEXT NOT NULL DEFAULT ''"),
-            ("player_match_stats", "rating_3", "REAL"),
-            ("player_match_stats", "round_swing", "REAL"),
-            ("player_match_stats", "multi_kill", "REAL"),
-            ("player_match_stats", "rating_algorithm", "TEXT NOT NULL DEFAULT ''"),
-            ("player_match_stats", "rating_3_metrics_json", "TEXT NOT NULL DEFAULT '[]'"),
-        };
-        foreach (var column in columns)
-        {
-            if (ColumnExists(db, column.Table, column.Name)) continue;
-            using var cmd = db.CreateCommand();
-            cmd.CommandText = $"ALTER TABLE {column.Table} ADD COLUMN {column.Name} {column.Definition}";
-            cmd.ExecuteNonQuery();
-        }
-    }
-
-    private static bool ColumnExists(SqliteConnection db, string table, string column)
-    {
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = $"PRAGMA table_info({table})";
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
-                return true;
-        return false;
     }
 
     private SqliteConnection Conn()

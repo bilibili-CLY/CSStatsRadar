@@ -39,9 +39,14 @@ frontend/vite.config.js
 frontend/vite.config.d.ts
 frontend/package.json.md5
 
-# The desktop binary embeds the production frontend.
-!frontend/dist/
-!frontend/dist/**
+# The desktop shell embeds the production frontend at package time;
+# dist is a build artifact and must NOT be committed.
+frontend/dist/
+
+# Tauri build inputs/outputs (generated, never committed)
+frontend/src-tauri/staged/
+frontend/src-tauri/target/
+frontend/src-tauri/WixTools/
 
 # Local runtime data
 tmp/

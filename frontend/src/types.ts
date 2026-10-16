@@ -92,6 +92,12 @@ export interface MatchRecord {
   impact: number | null;
   rating: number | null;
 }
+export interface MatchGroup {
+  id: number;
+  steam_id: string;
+  name: string;
+  demo_ids: string[];
+}
 export interface DemoRecord {
   demo_record_id: string;
   file_name: string;

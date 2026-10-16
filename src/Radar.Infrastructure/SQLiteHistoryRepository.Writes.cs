@@ -151,6 +151,7 @@ VALUES ($did, $sid, $rounds, $kills, $deaths, $assists, $td, $adr, $kast, $impac
                 foreach (var id in demoIDs)
                 {
                     using (var cmd = NewCmd("DELETE FROM player_match_stats WHERE demo_id = $id")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$id", id); cmd.ExecuteNonQuery(); }
+                    using (var cmd = NewCmd("DELETE FROM match_group_items WHERE demo_id = $id")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$id", id); cmd.ExecuteNonQuery(); }
                     using (var cmd = NewCmd("DELETE FROM demo_players WHERE demo_id = $id")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$id", id); cmd.ExecuteNonQuery(); }
                     using (var cmd = NewCmd("DELETE FROM demo_participants WHERE demo_id = $id")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$id", id); cmd.ExecuteNonQuery(); }
                     using (var cmd = NewCmd("DELETE FROM demo_tags WHERE demo_id = $id")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$id", id); cmd.ExecuteNonQuery(); }
@@ -175,6 +176,8 @@ VALUES ($did, $sid, $rounds, $kills, $deaths, $assists, $td, $adr, $kast, $impac
             try
             {
                 using (var cmd = NewCmd("DELETE FROM player_match_stats WHERE steam_id = $sid")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$sid", steamID); cmd.ExecuteNonQuery(); }
+                using (var cmd = NewCmd("DELETE FROM match_group_items WHERE steam_id = $sid")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$sid", steamID); cmd.ExecuteNonQuery(); }
+                using (var cmd = NewCmd("DELETE FROM match_groups WHERE steam_id = $sid")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$sid", steamID); cmd.ExecuteNonQuery(); }
                 using (var cmd = NewCmd("DELETE FROM player_images WHERE steam_id = $sid")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$sid", steamID); cmd.ExecuteNonQuery(); }
                 using (var cmd = NewCmd("DELETE FROM player_mvp_backgrounds WHERE steam_id = $sid")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$sid", steamID); cmd.ExecuteNonQuery(); }
                 using (var cmd = NewCmd("DELETE FROM demo_players WHERE steam_id = $sid")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$sid", steamID); cmd.ExecuteNonQuery(); }
@@ -199,7 +202,7 @@ VALUES ($did, $sid, $rounds, $kills, $deaths, $assists, $td, $adr, $kast, $impac
             {
                 var tables = new[]
                 {
-                    "editor_drafts", "player_match_stats", "demo_analysis", "player_images",
+                    "editor_drafts", "player_match_stats", "match_group_items", "match_groups", "demo_analysis", "player_images",
                     "player_mvp_backgrounds", "player_avatars", "demo_players", "demo_participants",
                     "demo_tags", "players", "demos", "discovered_players", "followed_players", "tags",
                 };
@@ -227,6 +230,13 @@ VALUES ($did, $sid, $rounds, $kills, $deaths, $assists, $td, $adr, $kast, $impac
             try
             {
                 using (var cmd = NewCmd("DELETE FROM player_match_stats WHERE demo_id = $did AND steam_id = $sid"))
+                {
+                    cmd.Transaction = tx;
+                    cmd.Parameters.AddWithValue("$did", demoRecordID);
+                    cmd.Parameters.AddWithValue("$sid", steamID);
+                    cmd.ExecuteNonQuery();
+                }
+                using (var cmd = NewCmd("DELETE FROM match_group_items WHERE demo_id = $did AND steam_id = $sid"))
                 {
                     cmd.Transaction = tx;
                     cmd.Parameters.AddWithValue("$did", demoRecordID);
