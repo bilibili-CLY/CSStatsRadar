@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="DemoFile.Game.Cs" Version="0.43.1" />
+    <PackageReference Include="Cs2Demo.Analytics" Version="0.3.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -10,7 +10,7 @@ namespace Radar.Tests;
 
 public class LiveEndToEndTests
 {
-    private const string DemoPath = "/Users/cly/Documents/CSPlayerStatsRadar/doc/g163-20260710230853627924450_de_dust2.dem";
+    private const string DemoPath = "/Users/cly/Documents/CSPlayerStatsRadar/doc/perfect-world.dem";
     private const string FrontendDir = "/Users/cly/Documents/CSPlayerStatsRadar/frontend/dist";
 
     private static string TestDataPath(string name) => Path.Combine(AppContext.BaseDirectory, "TestData", name);
@@ -55,10 +55,10 @@ public class LiveEndToEndTests
             var steamID = players[0].SteamID;
             var matches = app.GetPlayerMatches(steamID);
             Assert.Single(matches);
-            Assert.Equal(7, matches[0].Rounds);
+            Assert.Equal(18, matches[0].Rounds);
             Assert.NotNull(matches[0].Rating3);
             Assert.NotNull(matches[0].RoundSwing);
-            Assert.Equal(Rating3.AlgorithmVersion, matches[0].RatingAlgorithm);
+            Assert.Equal("cs2demo-analytics/" + Cs2Demo.Analytics.StatsCalculator.Rating30Version, matches[0].RatingAlgorithm);
 
             // 4. BuildRadar aggregates and includes Rating 3.0 profile
             var radar = app.BuildRadar(steamID, new List<string> { demoID });
@@ -69,7 +69,7 @@ public class LiveEndToEndTests
 
             // 5. GetDemoAnalysis builds round-by-round analysis
             var analysis = app.GetDemoAnalysis(demoID);
-            Assert.Equal(7, analysis.Rounds);
+            Assert.Equal(18, analysis.Rounds);
             Assert.Equal(2, analysis.Teams.Count);
             Assert.Equal(10, analysis.Players.Count);
             Assert.All(analysis.Players, p => Assert.NotEmpty(p.Rounds));

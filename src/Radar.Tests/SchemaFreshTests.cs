@@ -11,7 +11,7 @@ namespace Radar.Tests;
 /// </summary>
 public class SchemaFreshTests
 {
-    private const string DemoPath = "/Users/cly/Documents/CSPlayerStatsRadar/doc/g163-20260710230853627924450_de_dust2.dem";
+    private const string DemoPath = "/Users/cly/Documents/CSPlayerStatsRadar/doc/perfect-world.dem";
 
     [Fact]
     public void Init_Creates_All_Tables_With_Expected_Columns()
@@ -83,7 +83,7 @@ public class SchemaFreshTests
             Assert.Equal(1, summary.Imported);
             var demos = app.ListDemos();
             Assert.Single(demos);
-            Assert.Contains(demos, d => d.FileName == "g163-20260710230853627924450_de_dust2.dem");
+            Assert.Contains(demos, d => d.FileName == "perfect-world.dem");
         }
         finally
         {

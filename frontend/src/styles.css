@@ -456,6 +456,70 @@ button:active:not(:disabled) {
   animation-duration: 0.001ms;
   transition-duration: 0.001ms;
 }
+.app-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(4px);
+  animation: backdrop-in 0.15s ease-out;
+}
+.app-dialog {
+  width: min(420px, 92vw);
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  animation: dialog-in 0.2s ease-out;
+}
+.app-dialog-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.app-dialog-message {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.app-dialog-error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--danger);
+}
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.app-dialog-actions button {
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+  will-change: transform;
+}
+.app-dialog-actions button:active {
+  transform: scale(0.98);
+}
+.app-dialog-actions button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.app-dialog-actions button.danger:hover:not(:disabled) {
+  background: var(--hover-bg-strong);
+}
 .context-menu {
   position: fixed;
   z-index: 220;

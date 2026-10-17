@@ -12,7 +12,7 @@ public class DesktopApp : IDisposable
     private AppConfig cfg;
     private readonly SQLiteHistoryRepository repo;
     private readonly HistoryService history;
-    private readonly DemoFileParser parser;
+    private readonly CsdaParser parser;
     private readonly ImportService imports;
     private readonly object cfgLock = new();
     private readonly object videoLock = new();
@@ -28,7 +28,7 @@ public class DesktopApp : IDisposable
         repo = new SQLiteHistoryRepository(cfg.DatabasePath);
         repo.Init();
         history = new HistoryService(repo);
-        parser = new DemoFileParser();
+        parser = new CsdaParser();
         imports = new ImportService(repo, history, ParseDemoFile);
     }
 
@@ -61,8 +61,8 @@ public class DesktopApp : IDisposable
         if (analysis != null) return analysis;
         var demo = repo.GetDemo(demoID);
         if (demo == null) throw AppErrors.New("demo_not_found", AppErrors.StatusNotFound);
-        var data = ParseDemoFile(demo.SourcePath);
-        analysis = DemoAnalysisBuilder.Build(demoID, data);
+        var parsed = ParseDemoFile(demo.SourcePath);
+        analysis = DemoAnalysisBuilder.Build(demoID, parsed.Demo);
         repo.SaveDemoAnalysis(demoID, analysis);
         return analysis;
     }
@@ -71,8 +71,8 @@ public class DesktopApp : IDisposable
     {
         var demo = repo.GetDemo(demoID);
         if (demo == null) throw AppErrors.New("demo_not_found", AppErrors.StatusNotFound);
-        var data = ParseDemoFile(demo.SourcePath);
-        var analysis = DemoAnalysisBuilder.Build(demoID, data);
+        var parsed = ParseDemoFile(demo.SourcePath);
+        var analysis = DemoAnalysisBuilder.Build(demoID, parsed.Demo);
         repo.SaveDemoAnalysis(demoID, analysis);
         return analysis;
     }
@@ -84,6 +84,79 @@ public class DesktopApp : IDisposable
     public List<PlayerMatchRecord> GetPlayerMatches(string steamID) => repo.ListPlayerMatches(steamID);
 
     public void SetPlayerFollowed(Player player, bool followed) => repo.SetPlayerFollowed(player, followed);
+
+    /// <summary>手动改名：仅更新显示名（players/followed/discovered 的名称字段），历史快照不动。</summary>
+    public void RenamePlayer(string steamID, string name)
+    {
+        var trimmed = (name ?? "").Trim();
+        if (trimmed == "") throw AppErrors.New("player_name_empty", AppErrors.StatusBadRequest, "名称不能为空。");
+        if (trimmed.Length > 64) throw AppErrors.New("player_name_too_long", AppErrors.StatusBadRequest, "名称最长 64 个字符。");
+        if (repo.GetPlayer(steamID) == null)
+            throw AppErrors.New("player_record_not_found", AppErrors.StatusNotFound);
+        repo.RenamePlayer(steamID, trimmed);
+    }
+
+    /// <summary>
+    /// 批量清洗「战队名 玩家名」前缀：对名称含空格的玩家，取其最近 ≤3 场可用 demo 重解析，
+    /// 依据该 demo 的聚类前缀（≥2 玩家共享的 1..3 词前缀）或 Settings 配置的 team_tags 判定；
+    /// 命中才改名，未命中跳过并给出原因。绝不使用裸空格启发式。
+    /// </summary>
+    public List<TeamPrefixCleanResult> CleanTeamPrefixNames()
+    {
+        var tags = TeamPrefix.ParseTags(cfg.TeamTags);
+        var results = new List<TeamPrefixCleanResult>();
+        var parsedByDemo = new Dictionary<string, ParsedDemo>(StringComparer.Ordinal);
+        foreach (var p in repo.ListPlayers())
+        {
+            var oldName = p.Name ?? "";
+            var (token, rest) = TeamPrefix.Split(oldName);
+            if (token == "" || rest == "") continue; // 无空格或空 token 的玩家不参与
+            var item = new TeamPrefixCleanResult { SteamID = p.SteamID, OldName = oldName };
+            var demos = repo.ListPlayerMatches(p.SteamID)
+                .Where(m => !string.IsNullOrWhiteSpace(m.SourcePath) && File.Exists(m.SourcePath))
+                .GroupBy(m => m.DemoRecordID, StringComparer.Ordinal)
+                .Select(g => g.First())
+                .OrderByDescending(m => m.MatchTime)
+                .Take(3);
+            var done = false;
+            var reason = "没有可用的 demo 文件。";
+            foreach (var demoRec in demos)
+            {
+                if (!parsedByDemo.TryGetValue(demoRec.DemoRecordID, out var parsed))
+                {
+                    try
+                    {
+                        parsed = ParseDemoFile(demoRec.SourcePath!);
+                        parsedByDemo[demoRec.DemoRecordID] = parsed;
+                    }
+                    catch (Exception ex)
+                    {
+                        reason = "demo 解析失败：" + ex.Message;
+                        continue;
+                    }
+                }
+                var cluster = TeamPrefix.ClusterPrefixes(parsed.Match);
+                if (!TeamPrefix.TryStrip(oldName, cluster, tags, out var stripped))
+                {
+                    reason = "未匹配已知战队前缀。";
+                    continue;
+                }
+                repo.RenamePlayer(p.SteamID, stripped);
+                item.NewName = stripped;
+                item.Status = "renamed";
+                results.Add(item);
+                done = true;
+                break;
+            }
+            if (!done)
+            {
+                item.Status = "skipped";
+                item.Reason = reason;
+                results.Add(item);
+            }
+        }
+        return results;
+    }
 
     public void DeletePlayerData(string steamID)
     {
@@ -149,7 +222,7 @@ public class DesktopApp : IDisposable
         repo.SaveEditorDraft(new EditorDraft { Kind = kind, Payload = payload });
     }
 
-    public AppConfig SavePreferences(int exportWidth, int exportHeight, int videoFPS, string ffmpegPath, bool reduceMotion, bool showBestMarkers, bool showIntroAnimation, bool showBestEntranceAnimation, int audioOffsetMS, string radarScaleMode, double radarScale, Dictionary<string, double> radarAxisScale, string ratingVersion, bool showRatingWatermark, Dictionary<string, double> radarFloor)
+    public AppConfig SavePreferences(int exportWidth, int exportHeight, int videoFPS, string ffmpegPath, bool reduceMotion, bool showBestMarkers, bool showIntroAnimation, bool showBestEntranceAnimation, int audioOffsetMS, string radarScaleMode, double radarScale, Dictionary<string, double> radarAxisScale, string ratingVersion, bool showRatingWatermark, Dictionary<string, double> radarFloor, string teamTags)
     {
         cfg.ExportWidth = exportWidth;
         cfg.ExportHeight = exportHeight;
@@ -166,6 +239,7 @@ public class DesktopApp : IDisposable
         cfg.Showcase.RadarFloor = radarFloor;
         cfg.RatingVersion = ratingVersion;
         cfg.ShowRatingWatermark = showRatingWatermark;
+        cfg.TeamTags = teamTags ?? "";
         var err = config.Validate(cfg);
         if (err != null) throw AppErrors.New(err, AppErrors.StatusBadRequest, err);
         var saveErr = config.Save(cfg);
@@ -188,14 +262,14 @@ public class DesktopApp : IDisposable
 
     public HistorySaveResult ImportDemo(string path, List<string>? allowedSteamIDs = null)
     {
-        var data = ParseDemoFile(path);
-        return history.SaveParsedDemoForPlayersAtSource(System.IO.Path.GetFileName(path), path, data, allowedSteamIDs);
+        var parsed = ParseDemoFile(path);
+        return history.SaveParsedDemoForPlayersAtSource(System.IO.Path.GetFileName(path), path, parsed, allowedSteamIDs);
     }
 
 public DemoAnalysis GetDemoAnalysisFromFile(string path)
     {
-        var data = ParseDemoFile(path);
-        return DemoAnalysisBuilder.Build(PathUtils.GetDemoId(), data);
+        var parsed = ParseDemoFile(path);
+        return DemoAnalysisBuilder.Build(PathUtils.GetDemoId(), parsed.Demo);
     }
 
     public string? ChooseImportDirectory() => NativeDialogs.ChooseDirectory("选择素材目录");
@@ -339,8 +413,8 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         foreach (var id in requested)
             if (!participants.Contains(id))
                 throw AppErrors.New("player_not_found", AppErrors.StatusBadRequest, "所选玩家不属于该场比赛。");
-        var data = ParseDemoFile(demo.SourcePath);
-        history.FollowParsedDemoPlayersAtSource(demo.FileName, demo.SourcePath, data, requested);
+        var parsed = ParseDemoFile(demo.SourcePath);
+        history.FollowParsedDemoPlayersAtSource(demo.FileName, demo.SourcePath, parsed, requested);
     }
 
     public DemoAnalysis ChooseReplacementDemo(string demoID)
@@ -349,8 +423,8 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         if (path == null) throw AppErrors.New("demo_parse_failed", AppErrors.StatusBadRequest, "未选择文件。");
         var demo = repo.GetDemo(demoID);
         if (demo == null) throw AppErrors.New("demo_not_found", AppErrors.StatusNotFound);
-        var data = ParseDemoFile(path);
-        var analysis = DemoAnalysisBuilder.Build(demo.DemoRecordID, data);
+        var parsed = ParseDemoFile(path);
+        var analysis = DemoAnalysisBuilder.Build(demo.DemoRecordID, parsed.Demo);
         repo.SaveDemoAnalysis(demo.DemoRecordID, analysis);
         repo.UpdateDemoSourcePath(demo.DemoRecordID, path);
         return analysis;
@@ -717,11 +791,11 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         }
     }
 
-    private DemoData ParseDemoFile(string path)
+    private ParsedDemo ParseDemoFile(string path)
     {
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
             throw AppErrors.New("demo_not_found", AppErrors.StatusNotFound);
-        var result = parser.Parse(path);
+        var result = parser.ParseAll(path);
         if (result == null)
             throw AppErrors.New("demo_parse_failed", AppErrors.StatusUnprocessable);
         return result;

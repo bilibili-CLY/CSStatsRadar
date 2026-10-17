@@ -15,6 +15,7 @@ import type {
   RatingMethodology,
   SavedPlayer,
   ShowcaseMusicInfo,
+  TeamPrefixCleanResult,
 } from "./types";
 
 type Method = (...args: unknown[]) => Promise<unknown>;
@@ -160,6 +161,7 @@ export const bridge = {
     ratingVersion: string,
     showRatingWatermark: boolean,
     radarFloor: Record<string, number>,
+    teamTags: string,
   ) =>
     call<AppConfig>(
       "SavePreferences",
@@ -178,7 +180,12 @@ export const bridge = {
       ratingVersion,
       showRatingWatermark,
       radarFloor,
+      teamTags,
     ),
+  renamePlayer: (steamId: string, name: string) =>
+    call<void>("RenamePlayer", steamId, name),
+  cleanTeamPrefixNames: () =>
+    call<TeamPrefixCleanResult[]>("CleanTeamPrefixNames"),
   chooseFFmpeg: () => call<string>("ChooseFFmpeg"),
   exportPNG: (dataURL: string, name: string) =>
     call<string>("ExportPNG", dataURL, name),

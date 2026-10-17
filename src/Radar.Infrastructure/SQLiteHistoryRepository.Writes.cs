@@ -168,6 +168,27 @@ VALUES ($did, $sid, $rounds, $kills, $deaths, $assists, $td, $adr, $kast, $impac
         }
     }
 
+    public void RenamePlayer(string steamID, string newName)
+    {
+        var name = newName.Trim();
+        lock (mu)
+        {
+            using var tx = Conn().BeginTransaction();
+            try
+            {
+                using (var cmd = NewCmd("UPDATE players SET latest_name = $name WHERE steam_id = $sid")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$name", name); cmd.Parameters.AddWithValue("$sid", steamID); cmd.ExecuteNonQuery(); }
+                using (var cmd = NewCmd("UPDATE followed_players SET display_name = $name WHERE steam_id = $sid")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$name", name); cmd.Parameters.AddWithValue("$sid", steamID); cmd.ExecuteNonQuery(); }
+                using (var cmd = NewCmd("UPDATE discovered_players SET latest_name = $name WHERE steam_id = $sid")) { cmd.Transaction = tx; cmd.Parameters.AddWithValue("$name", name); cmd.Parameters.AddWithValue("$sid", steamID); cmd.ExecuteNonQuery(); }
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+    }
+
     public void DeletePlayer(string steamID)
     {
         lock (mu)

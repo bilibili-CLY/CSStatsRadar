@@ -3,6 +3,7 @@ import {
   CalendarClock,
   ChevronDown,
   ChevronRight,
+  Eraser,
   Layers3,
   Pencil,
   Plus,
@@ -208,6 +209,47 @@ export function LibraryView() {
       setBulkProgress(null);
     }
   }
+  async function cleanTeamPrefixes() {
+    const confirmed = await useAppStore.getState().showConfirm({
+      title: "清洗战队前缀",
+      message:
+        "按「战队名 玩家名」规则清洗资料库中带前缀的玩家名？将逐个重解析最近最多 3 场比赛确定战队前缀，无法确定前缀的玩家会跳过并列出原因。",
+      confirmLabel: "开始清洗",
+      danger: true,
+    });
+    if (!confirmed) return;
+    try {
+      setBusyAction("clean:prefix");
+      setError("");
+      const results = await bridge.cleanTeamPrefixNames();
+      const renamed = results.filter((item) => item.status === "renamed");
+      const skipped = results.filter(
+        (item) => item.status === "skipped" || item.status === "failed",
+      );
+      await refreshPlayers();
+      useAppStore
+        .getState()
+        .showToast(
+          renamed.length
+            ? `已清洗 ${renamed.length} 个玩家名${skipped.length ? `；${skipped.length} 个跳过` : ""}`
+            : "没有玩家名被清洗（未匹配到战队前缀）。",
+        );
+      if (skipped.length) {
+        const reasons = skipped
+          .slice(0, 5)
+          .map((item) => `${item.old_name}：${item.reason}`);
+        setError(
+          `未清洗 ${skipped.length} 个：${reasons.join("；")}${
+            skipped.length > 5 ? " 等" : ""
+          }`,
+        );
+      }
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+    } finally {
+      setBusyAction("");
+    }
+  }
   async function toggleFollow(player: SavedPlayer) {
     try {
       setBusyAction("follow");
@@ -223,14 +265,14 @@ export function LibraryView() {
     }
   }
   async function deleteSelectedMatches() {
-    if (
-      !selected ||
-      !chosen.size ||
-      !window.confirm(
-        `永久删除已选 ${chosen.size} 场比赛统计？此操作不会取消关注。`,
-      )
-    )
-      return;
+    if (!selected || !chosen.size) return;
+    const confirmed = await useAppStore.getState().showConfirm({
+      title: "删除比赛统计",
+      message: `永久删除已选 ${chosen.size} 场比赛统计？此操作不会取消关注。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!confirmed) return;
     await bridge.deletePlayerMatches(selected.steam_id, Array.from(chosen));
     setMatches(await bridge.getMatches(selected.steam_id).catch(() => []));
     setChosen(new Set());
@@ -238,13 +280,14 @@ export function LibraryView() {
     await refreshPlayers();
   }
   async function deletePlayerData() {
-    if (
-      !selected ||
-      !window.confirm(
-        `永久删除 ${selected.name} 的全部比赛统计？关注状态、Demo 目录和媒体会保留。`,
-      )
-    )
-      return;
+    if (!selected) return;
+    const confirmed = await useAppStore.getState().showConfirm({
+      title: "删除玩家资历",
+      message: `永久删除 ${selected.name} 的全部比赛统计？关注状态、Demo 目录和媒体会保留。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!confirmed) return;
     await bridge.deletePlayerData(selected.steam_id);
     setSelected(null);
     setMatches([]);
@@ -298,12 +341,13 @@ export function LibraryView() {
     }
   }
   async function handleDeleteGroup(group: MatchGroup) {
-    if (
-      !window.confirm(
-        `删除分组「${group.name}」？组内已归类的比赛会回到未分组。`,
-      )
-    )
-      return;
+    const confirmed = await useAppStore.getState().showConfirm({
+      title: "删除分组",
+      message: `删除分组「${group.name}」？组内已归类的比赛会回到未分组。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       setBusyAction("group");
       await bridge.deleteMatchGroup(group.id);
@@ -370,14 +414,45 @@ export function LibraryView() {
       setBusyAction("");
     }
   }
+  async function renamePlayerFromMenu(player: SavedPlayer) {
+    setMenu(null);
+    const input = await useAppStore.getState().showPrompt({
+      title: "修改名称",
+      message: "为该玩家设置新的显示名称。",
+      inputLabel: "名称",
+      initialValue: player.name,
+      confirmLabel: "保存",
+    });
+    if (input === null) return;
+    const name = input.trim();
+    if (!name) {
+      useAppStore.getState().showToast("名称不能为空。");
+      return;
+    }
+    try {
+      setBusyAction("rename");
+      await bridge.renamePlayer(player.steam_id, name);
+      await refreshPlayers();
+      if (selected?.steam_id === player.steam_id)
+        setSelected({ ...player, name });
+      useAppStore
+        .getState()
+        .showToast(`已改名：${player.name} → ${name}`);
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+    } finally {
+      setBusyAction("");
+    }
+  }
   async function deletePlayerFromMenu(player: SavedPlayer) {
     setMenu(null);
-    if (
-      !window.confirm(
-        `永久删除 ${player.name} 的全部比赛统计？关注状态、Demo 目录和媒体会保留。`,
-      )
-    )
-      return;
+    const confirmed = await useAppStore.getState().showConfirm({
+      title: "删除玩家资历",
+      message: `永久删除 ${player.name} 的全部比赛统计？关注状态、Demo 目录和媒体会保留。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       await bridge.deletePlayerData(player.steam_id);
       if (selected?.steam_id === player.steam_id) {
@@ -472,6 +547,15 @@ export function LibraryView() {
             {busyAction === "studio:showcase-all"
               ? `正在加入 ${bulkProgress?.processed ?? 0}/${bulkProgress?.total ?? 0}`
               : "全部加入轮播"}
+          </button>
+          <button
+            className="quiet"
+            onClick={cleanTeamPrefixes}
+            disabled={!players.length || Boolean(busyAction)}
+            aria-label="按战队名前缀清洗玩家名"
+          >
+            {busyAction === "clean:prefix" ? <Spinner /> : <Eraser size={17} />}
+            {busyAction === "clean:prefix" ? "正在清洗" : "清洗战队前缀"}
           </button>
         </div>
       </header>
@@ -972,7 +1056,7 @@ export function LibraryView() {
           role="menu"
           style={{
             left: Math.min(menu.x, window.innerWidth - 180),
-            top: Math.min(menu.y, window.innerHeight - 132),
+            top: Math.min(menu.y, window.innerHeight - 164),
           }}
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -995,6 +1079,14 @@ export function LibraryView() {
           >
             <RefreshCw size={15} />
             刷新头像
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => renamePlayerFromMenu(menu.player)}
+            disabled={busyAction === "rename"}
+          >
+            <Pencil size={15} />
+            修改名称
           </button>
           <button
             role="menuitem"

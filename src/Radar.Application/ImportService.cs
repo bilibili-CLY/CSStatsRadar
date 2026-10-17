@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using Radar.Domain.Models;
+using Radar.Parser;
 
 namespace Radar.Application;
 
@@ -12,7 +13,7 @@ public class ImportService
 
     private readonly IHistoryRepository repo;
     private readonly HistoryService history;
-    private readonly Func<string, DemoData> parseDemo;
+    private readonly Func<string, ParsedDemo> parseDemo;
     private readonly object jobsLock = new();
     private readonly Dictionary<string, ImportJob> jobs = new();
     private Action<ImportSummary>? onProgress;
@@ -25,7 +26,7 @@ public class ImportService
         public ImportSummary Summary { get; set; } = new();
     }
 
-    public ImportService(IHistoryRepository repo, HistoryService history, Func<string, DemoData> parseDemo)
+    public ImportService(IHistoryRepository repo, HistoryService history, Func<string, ParsedDemo> parseDemo)
     {
         this.repo = repo;
         this.history = history;
@@ -203,10 +204,10 @@ public class ImportService
         try
         {
             token.ThrowIfCancellationRequested();
-            DemoData data;
+            ParsedDemo parseResult;
             try
             {
-                data = parseDemo(demoPath);
+                parseResult = parseDemo(demoPath);
             }
             catch
             {
@@ -214,6 +215,7 @@ public class ImportService
                 result.Message = "解析失败。";
                 return result;
             }
+            var data = parseResult.Demo;
             result.Players = data.Players;
             result.PlayerDetails = BuildImportPlayerDetails(data);
             result.MapName = data.Meta.MapName;
@@ -226,7 +228,7 @@ public class ImportService
                     allowed.Add(followed.SteamID);
             }
 
-            var saveResult = history.SaveParsedDemoForPlayersAtSource(Path.GetFileName(demoPath), path, data, allowed);
+            var saveResult = history.SaveParsedDemoForPlayersAtSource(Path.GetFileName(demoPath), path, parseResult, allowed);
             if (saveResult.SavedDemo != null) result.DemoID = saveResult.SavedDemo.DemoRecordID;
             foreach (var player in data.Players)
                 if (allowed.Contains(player.SteamID)) result.SavedCount++;

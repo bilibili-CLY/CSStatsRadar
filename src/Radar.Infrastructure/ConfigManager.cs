@@ -74,7 +74,7 @@ public class ConfigManager
         "export_width", "export_height", "theme_color", "color_preset",
         "last_player_identifier_type", "database_path", "showcase",
         "import_sources", "video_fps", "reduce_motion",
-        "rating_version", "show_rating_watermark",
+        "rating_version", "show_rating_watermark", "team_tags",
     };
 
     public AppConfig Read(out string? error)

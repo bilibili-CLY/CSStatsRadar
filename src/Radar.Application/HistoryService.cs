@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
+using Cs2Demo.Analytics;
 using Radar.Domain.Models;
+using Radar.Parser;
 
 namespace Radar.Application;
 
@@ -23,6 +25,7 @@ public interface IHistoryRepository
     SavedDemo SaveParsedDemo(SavedDemo demo, List<DemoPlayerSnapshot> participants, List<DemoPlayerSnapshot> players, List<PlayerMatchRecord> matchStats, DemoAnalysis? analysis, bool followPlayers);
     List<Player> ListFollowedPlayers();
     void SetPlayerFollowed(Player player, bool followed);
+    void RenamePlayer(string steamID, string newName);
     void DeletePlayer(string steamID);
     void DeleteAllPlayers();
     void DeletePlayerMatch(string steamID, string demoRecordID);
@@ -54,7 +57,6 @@ public interface IHistoryRepository
 public class HistoryService
 {
     private readonly IHistoryRepository repo;
-    private readonly PlayerStatsCalculator stats = new();
 
     public HistoryService(IHistoryRepository repo) => this.repo = repo;
 
@@ -73,13 +75,13 @@ public class HistoryService
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(joined))).ToLowerInvariant();
     }
 
-    public HistorySaveResult FollowParsedDemoPlayersAtSource(string fileName, string sourcePath, DemoData data, List<string>? allowedSteamIDs)
-        => SaveParsedDemoForPlayersAtSourceInternal(fileName, sourcePath, data, allowedSteamIDs, followPlayers: true);
+    public HistorySaveResult FollowParsedDemoPlayersAtSource(string fileName, string sourcePath, ParsedDemo parsed, List<string>? allowedSteamIDs)
+        => SaveParsedDemoForPlayersAtSourceInternal(fileName, sourcePath, parsed.Demo, parsed.Match, allowedSteamIDs, followPlayers: true);
 
-    public HistorySaveResult SaveParsedDemoForPlayersAtSource(string fileName, string sourcePath, DemoData data, List<string>? allowedSteamIDs)
-        => SaveParsedDemoForPlayersAtSourceInternal(fileName, sourcePath, data, allowedSteamIDs, followPlayers: false);
+    public HistorySaveResult SaveParsedDemoForPlayersAtSource(string fileName, string sourcePath, ParsedDemo parsed, List<string>? allowedSteamIDs)
+        => SaveParsedDemoForPlayersAtSourceInternal(fileName, sourcePath, parsed.Demo, parsed.Match, allowedSteamIDs, followPlayers: false);
 
-    private HistorySaveResult SaveParsedDemoForPlayersAtSourceInternal(string fileName, string sourcePath, DemoData data, List<string>? allowedSteamIDs, bool followPlayers)
+    private HistorySaveResult SaveParsedDemoForPlayersAtSourceInternal(string fileName, string sourcePath, DemoData data, MatchData match, List<string>? allowedSteamIDs, bool followPlayers)
     {
         var result = new HistorySaveResult();
         var fileHash = data.Meta.FileSHA256;
@@ -158,7 +160,7 @@ public class HistoryService
             .Select(p => new DemoPlayerSnapshot { DemoRecordID = demoRecordID, SteamID = p.SteamID, NameSnapshot = p.Name })
             .ToList();
         var matchStats = validPlayers
-            .Select(p => PlayerStatsToMatchRecord(demoRecordID, p, stats.Calculate(data, p)))
+            .Select(p => PlayerPackageStatsToMatchRecord(demoRecordID, p, match, data))
             .ToList();
 
         repo.SaveParsedDemo(savedDemo, participants, playerSnapshots, matchStats, analysis, followPlayers);
@@ -199,6 +201,107 @@ public class HistoryService
             record.Rating3Metrics = MetricsForOrder(stats.Rating3Metrics, MetricOrder.Rating3.ToList());
         }
         return record;
+    }
+
+    /// <summary>
+    /// match 级统计来自 Cs2Demo.Analytics（csda）口径。
+    /// 注意：Multi-Kill 仍按本项目口径（每回合 ≥2 杀的回合占比）在映射后的 DemoData 上本地计算；
+    /// 包 PlayerMatchStats30.MultiKill 为连杀强度口径（Σ i²·count/轮 ÷ 1.1693），不直接采用。
+    /// Rating3Metrics.ADR 采用包的原始 ADR（已发布的 0.3.0 未提供 eADR）。
+    /// </summary>
+    public static PlayerMatchRecord PlayerPackageStatsToMatchRecord(string demoRecordID, Player player, MatchData match, DemoData demo)
+    {
+        var s1 = StatsCalculator.Calculate(match, player.SteamID);
+        var s3 = StatsCalculator.Calculate30(match, player.SteamID);
+
+        var multiKill = MultiKillRoundShare(demo, player.SteamID);
+
+        var record = new PlayerMatchRecord
+        {
+            DemoRecordID = demoRecordID,
+            SteamID = player.SteamID,
+            Rounds = s1?.Rounds ?? 0,
+            Kills = s1?.Kills ?? 0,
+            Deaths = s1?.Deaths ?? 0,
+            Assists = s1?.Assists ?? 0,
+            TotalDamage = s1?.TotalDamage,
+            ADR = s1?.Adr,
+            KAST = s1?.Kast != null ? s1.Kast.Value / 100.0 : null,
+            Impact = s1?.Impact,
+            Rating = s1?.Rating20,
+            Metrics = BuildPackageMetrics(s1),
+        };
+
+        if (s1 != null && s3 != null && s3.Rounds > 0)
+        {
+            record.Rating3 = s3.Rating30;
+            record.RoundSwing = s3.RoundSwing;
+            record.MultiKill = multiKill;
+            record.RatingAlgorithm = "cs2demo-analytics/" + s3.Version;
+            record.Rating3Metrics = BuildPackageRating3Metrics(s1, s3, multiKill);
+        }
+        return record;
+    }
+
+    private static List<RadarMetric> BuildPackageMetrics(PlayerMatchStats? s1)
+    {
+        var metrics = new Dictionary<string, RadarMetric>();
+        if (s1 == null || s1.Rounds <= 0)
+        {
+            foreach (var name in MetricOrder.Values)
+            {
+                var displayType = "number";
+                if (name == "Surviving" || name == "KAST") displayType = "percentage";
+                metrics[name] = new RadarMetric
+                {
+                    Name = name,
+                    Value = null,
+                    DisplayType = displayType,
+                    MaxValue = PlayerStatsCalculator.MaxValue(name),
+                    MinValue = 0,
+                    Status = "unavailable",
+                    Reason = "Demo 中没有可统计回合。",
+                };
+            }
+        }
+        else
+        {
+            metrics["KPR"] = PlayerStatsCalculator.OkMetric("KPR", s1.Kpr ?? 0, "number", "");
+            metrics["Surviving"] = PlayerStatsCalculator.OkMetric("Surviving", (s1.Surviving ?? 0) / 100.0, "percentage", "");
+            metrics["ADR"] = PlayerStatsCalculator.OkMetric("ADR", s1.Adr ?? 0, "number", "");
+            metrics["KAST"] = PlayerStatsCalculator.OkMetric("KAST", (s1.Kast ?? 0) / 100.0, "percentage", "");
+            metrics["Impact"] = PlayerStatsCalculator.OkMetric("Impact", s1.Impact ?? 0, "number", "");
+            metrics["Rating"] = PlayerStatsCalculator.OkMetric("Rating", s1.Rating20 ?? 0, "number", "");
+        }
+        return MetricsInOrder(metrics);
+    }
+
+    private static List<RadarMetric> BuildPackageRating3Metrics(PlayerMatchStats s1, PlayerMatchStats30 s3, double? multiKill)
+        => MetricsForOrder(new Dictionary<string, RadarMetric>
+        {
+            ["KPR"] = PlayerStatsCalculator.OkMetric("KPR", s3.EKpr ?? 0, "number", ""),
+            ["Surviving"] = PlayerStatsCalculator.OkMetric("Surviving", (s1.Surviving ?? 0) / 100.0, "percentage", ""),
+            ["ADR"] = PlayerStatsCalculator.OkMetric("ADR", s3.EAdr ?? 0, "number", ""),
+            ["KAST"] = PlayerStatsCalculator.OkMetric("KAST", (s1.Kast ?? 0) / 100.0, "percentage", ""),
+            ["Multi-Kill"] = PlayerStatsCalculator.OkMetric("Multi-Kill", multiKill ?? 0, "percentage", "多杀回合占比（每回合≥2杀）。"),
+            ["Rating"] = PlayerStatsCalculator.OkMetric("Rating", s3.Rating30 ?? 0, "number", ""),
+        }, MetricOrder.Rating3.ToList());
+
+    private static double? MultiKillRoundShare(DemoData demo, string steamID)
+    {
+        var rounds = demo.Rounds.Count;
+        if (rounds == 0) return null;
+        var killsByRound = new Dictionary<int, int>();
+        foreach (var evt in demo.Kills)
+        {
+            if (evt.AttackerSteamID != steamID)
+                continue;
+            if (evt.AttackerSteamID == "" || evt.VictimSteamID == "" || evt.AttackerSteamID == evt.VictimSteamID || Rating3.SameSide(evt.AttackerSide, evt.VictimSide))
+                continue;
+            killsByRound[evt.RoundNumber] = killsByRound.GetValueOrDefault(evt.RoundNumber) + 1;
+        }
+        var multiKillRounds = killsByRound.Count(kv => kv.Value > 1);
+        return PlayerStatsCalculator.Round3((double)multiKillRounds / rounds);
     }
 
     private static double? MetricValue(Dictionary<string, RadarMetric> metrics, string name)

@@ -9,7 +9,7 @@ namespace Radar.Tests;
 
 public class ImportServiceTests
 {
-    private const string DemoPath = "/Users/cly/Documents/CSPlayerStatsRadar/doc/g163-20260710230853627924450_de_dust2.dem";
+    private const string DemoPath = "/Users/cly/Documents/CSPlayerStatsRadar/doc/perfect-world.dem";
 
     private static string TestDataPath(string name) => Path.Combine(AppContext.BaseDirectory, "TestData", name);
 
@@ -70,8 +70,8 @@ public class ImportServiceTests
             Assert.Single(summary.Items);
             Assert.Equal("imported", summary.Items[0].Status);
             Assert.Equal("packed.zip", summary.Items[0].FileName);
-            Assert.Equal("de_dust2", summary.Items[0].MapName);
-            Assert.Equal(7, summary.Items[0].Rounds);
+            Assert.Equal("de_nuke", summary.Items[0].MapName);
+            Assert.Equal(18, summary.Items[0].Rounds);
             Assert.Equal(10, summary.Items[0].Players.Count);
             Assert.Equal(10, summary.Items[0].PlayerDetails.Count);
 

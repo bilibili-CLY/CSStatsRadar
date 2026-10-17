@@ -34,6 +34,17 @@ public class ImportPlayerDetail
     [JsonPropertyName("assists")] public int Assists { get; set; }
 }
 
+/// <summary>批量清洗战队前缀的单个玩家结果（CleanTeamPrefixNames）。</summary>
+public class TeamPrefixCleanResult
+{
+    [JsonPropertyName("steam_id")] public string SteamID { get; set; } = "";
+    [JsonPropertyName("old_name")] public string OldName { get; set; } = "";
+    [JsonPropertyName("new_name")] public string NewName { get; set; } = "";
+    /// <summary>renamed / skipped / failed</summary>
+    [JsonPropertyName("status")] public string Status { get; set; } = "";
+    [JsonPropertyName("reason")] public string Reason { get; set; } = "";
+}
+
 public class ImportSummary
 {
     [JsonPropertyName("job_id")] public string JobID { get; set; } = "";
@@ -162,6 +173,7 @@ public class AppConfig
     [JsonPropertyName("reduce_motion")] public bool ReduceMotion { get; set; }
     [JsonPropertyName("rating_version")] public string RatingVersion { get; set; } = "rating_2";
     [JsonPropertyName("show_rating_watermark")] public bool ShowRatingWatermark { get; set; } = true;
+    [JsonPropertyName("team_tags")] public string TeamTags { get; set; } = "";
     [JsonPropertyName("warning")] public string Warning { get; set; } = "";
 }
 

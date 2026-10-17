@@ -76,6 +76,7 @@ export function SettingsView() {
         draft.rating_version,
         draft.show_rating_watermark,
         draft.showcase.radar_floor ?? {},
+        draft.team_tags ?? "",
       );
       setDraft(next);
       setConfig(next);
@@ -114,12 +115,14 @@ export function SettingsView() {
     }
   }
   async function clearData() {
-    if (
-      !window.confirm(
+    const confirmed = await useAppStore.getState().showConfirm({
+      title: "清空数据",
+      message:
         "永久清空比赛、玩家、关注列表、媒体、标签和编辑草稿？数据库文件本身会保留。",
-      )
-    )
-      return;
+      confirmLabel: "清空",
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       await bridge.clearAllData();
       await refreshPlayers();
@@ -479,6 +482,20 @@ export function SettingsView() {
                 <button onClick={chooseDatabase}>切换</button>
               </div>
             </label>
+            <label className="field">
+              <span>战队前缀清单</span>
+              <input
+                value={draft.team_tags ?? ""}
+                placeholder="例如：Alt, TY, SP"
+                onChange={(e) =>
+                  setDraft({ ...draft, team_tags: e.target.value })
+                }
+              />
+            </label>
+            <p className="field-note">
+              完美平台 demo 会把玩家名记为「战队名 玩家名」。逗号分隔的战队名会在导入时自动去掉；
+              同一场比赛中重复出现的前缀也会被自动识别。
+            </p>
             <label className="check-row">
               <input
                 type="checkbox"

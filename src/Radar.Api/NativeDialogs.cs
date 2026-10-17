@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Radar.Api;
@@ -67,10 +69,31 @@ public static class NativeDialogs
         return $"{string.Join(";", names)} 文件 ({patterns})|{patterns}|所有文件 (*.*)|*.*";
     }
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    /// <summary>
+    /// 取当前前台窗口句柄作为对话框属主：bridge/sidecar 进程弹窗时若无属主，
+    /// Windows 前台锁定会把它压到浏览器/应用主窗口之下（用户会以为没有反应）。
+    /// </summary>
+    private static long ForegroundWindowHandle()
+    {
+        if (!OperatingSystem.IsWindows()) return 0;
+        try
+        {
+            return GetForegroundWindow().ToInt64();
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     private static List<string>? RunWindowsDialog(string kind, string title, string initialPath, string filter, string defaultName, string defaultExt)
     {
         try
         {
+            var ownerHwnd = ForegroundWindowHandle();
             var scriptPath = Path.Combine(Path.GetTempPath(), "cs-radar-dialog-" + Guid.NewGuid().ToString("N") + ".ps1");
             File.WriteAllText(scriptPath, WinDialogScript, new UTF8Encoding(false));
             try
@@ -97,6 +120,7 @@ public static class NativeDialogs
                 psi.ArgumentList.Add("-Filter"); psi.ArgumentList.Add(filter);
                 psi.ArgumentList.Add("-DefaultName"); psi.ArgumentList.Add(defaultName ?? "");
                 psi.ArgumentList.Add("-DefaultExt"); psi.ArgumentList.Add(defaultExt ?? "");
+                psi.ArgumentList.Add("-OwnerHwnd"); psi.ArgumentList.Add(ownerHwnd.ToString(CultureInfo.InvariantCulture));
                 using var process = Process.Start(psi);
                 if (process == null) return null;
                 var stdout = process.StandardOutput.ReadToEnd();
@@ -121,7 +145,8 @@ public static class NativeDialogs
   [string]$InitialPath,
   [string]$Filter,
   [string]$DefaultName,
-  [string]$DefaultExt
+  [string]$DefaultExt,
+  [long]$OwnerHwnd = 0
 )
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
@@ -159,22 +184,44 @@ switch ($Kind) {
   }
 }
 if ($dialog -eq $null) { exit 1 }
-$owner = New-Object System.Windows.Forms.Form
-$owner.ShowInTaskbar = $false
-$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
-$owner.TopMost = $true
-$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-$owner.Location = New-Object System.Drawing.Point(-32000, -32000)
-$owner.Width = 1
-$owner.Height = 1
+$fallback = $null
+$showOwner = $null
+if ($OwnerHwnd -ne 0) {
+  # 用前台窗口（浏览器/应用主窗口）作为对话框属主，保证对话框位于其上方并获得焦点。
+  if (-not ('CsRadarWindowWrapper' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Windows.Forms;
+public class CsRadarWindowWrapper : IWin32Window
+{
+    private readonly IntPtr handle;
+    public CsRadarWindowWrapper(IntPtr h) { handle = h; }
+    public IntPtr Handle { get { return handle; } }
+}
+'@ -ReferencedAssemblies System.Windows.Forms
+  }
+  $showOwner = New-Object CsRadarWindowWrapper([IntPtr]$OwnerHwnd)
+}
+if ($showOwner -eq $null) {
+  # 取不到前台窗口时退回隐藏的 TopMost 窗口作为属主。
+  $fallback = New-Object System.Windows.Forms.Form
+  $fallback.ShowInTaskbar = $false
+  $fallback.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+  $fallback.TopMost = $true
+  $fallback.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+  $fallback.Location = New-Object System.Drawing.Point(-32000, -32000)
+  $fallback.Width = 1
+  $fallback.Height = 1
+  $showOwner = $fallback
+}
 $output = $null
 try {
-  $result = $dialog.ShowDialog($owner)
+  $result = $dialog.ShowDialog($showOwner)
   if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
     if ($Kind -eq 'openmulti') { $output = $dialog.FileNames } else { $output = @($dialog.FileName) }
   }
 } finally {
-  $owner.Dispose()
+  if ($fallback -ne $null) { $fallback.Dispose() }
   $dialog.Dispose()
 }
 if ($output -eq $null) { exit 0 }

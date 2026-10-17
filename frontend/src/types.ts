@@ -12,6 +12,14 @@ export interface SavedPlayer extends Player {
   latest_imported_at: string;
   followed: boolean;
 }
+export interface TeamPrefixCleanResult {
+  steam_id: string;
+  old_name: string;
+  new_name: string;
+  /** renamed / skipped / failed */
+  status: string;
+  reason: string;
+}
 export interface ImportSource {
   id: string;
   name: string;
@@ -27,6 +35,7 @@ export interface AppConfig {
   reduce_motion: boolean;
   rating_version: RatingVersion;
   show_rating_watermark: boolean;
+  team_tags: string;
   showcase: {
     ffmpeg_path?: string;
     default_duration_ms: number;
@@ -273,6 +282,7 @@ export const defaultConfig: AppConfig = {
   reduce_motion: false,
   rating_version: "rating_2",
   show_rating_watermark: true,
+  team_tags: "",
   showcase: {
     default_duration_ms: 4000,
     show_best_markers: true,

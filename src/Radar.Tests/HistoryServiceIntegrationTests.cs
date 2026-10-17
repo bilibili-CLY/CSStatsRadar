@@ -3,6 +3,12 @@ using Radar.Application;
 using Radar.Domain.Models;
 using Radar.Infrastructure;
 using Xunit;
+using PackagePlayerInfo = Cs2Demo.Analytics.PlayerInfo;
+using PackageMatchMeta = Cs2Demo.Analytics.MatchMeta;
+using PackageRoundInfo = Cs2Demo.Analytics.RoundInfo;
+using PackageKillEvent = Cs2Demo.Analytics.KillEvent;
+using PackageDamageEvent = Cs2Demo.Analytics.DamageEvent;
+using PackageSurvivalInfo = Cs2Demo.Analytics.SurvivalInfo;
 
 namespace Radar.Tests;
 
@@ -32,6 +38,49 @@ public class HistoryServiceIntegrationTests
         return demo;
     }
 
+    /// <summary>
+    /// legacy fixture 是旧解析器产出的 DemoData；为 HistoryService 构造一份镜像的 MatchData
+    /// （csda 事件列表 + 全零 PlayerCsdaStats），使包口径统计可计算。
+    /// </summary>
+    private static Radar.Parser.ParsedDemo ToParsed(DemoData demo)
+    {
+        var match = new Cs2Demo.Analytics.MatchData
+        {
+            Meta = new PackageMatchMeta { MapName = demo.Meta.MapName, FileSha256 = demo.Meta.FileSHA256 },
+            Players = demo.Players.Select(p => new PackagePlayerInfo { Name = p.Name, SteamId = p.SteamID, Csda = new Cs2Demo.Analytics.PlayerCsdaStats() }).ToList(),
+            Rounds = demo.Rounds.Select(r => new PackageRoundInfo { RoundNumber = r.RoundNumber, StartTick = r.StartTick, EndTick = r.EndTick, WinnerSide = r.WinnerSide }).ToList(),
+            Kills = demo.Kills.Select(k => new PackageKillEvent
+            {
+                RoundNumber = k.RoundNumber,
+                Tick = k.Tick,
+                AttackerSteamId = k.AttackerSteamID,
+                VictimSteamId = k.VictimSteamID,
+                AssisterSteamId = k.AssisterSteamID,
+                AttackerSide = k.AttackerSide,
+                VictimSide = k.VictimSide,
+                Weapon = k.Weapon,
+            }).ToList(),
+            Damages = (demo.Damages ?? new List<DamageEvent>()).Select(d => new PackageDamageEvent
+            {
+                RoundNumber = d.RoundNumber,
+                AttackerSteamId = d.AttackerSteamID,
+                VictimSteamId = d.VictimSteamID,
+                Damage = d.Damage,
+                AttackerSide = d.AttackerSide,
+                VictimSide = d.VictimSide,
+                Weapon = d.Weapon,
+            }).ToList(),
+            Survivals = demo.Survivals.Select(s => new PackageSurvivalInfo
+            {
+                RoundNumber = s.RoundNumber,
+                SteamId = s.SteamID,
+                Survived = s.Survived,
+                Side = s.Side,
+            }).ToList(),
+        };
+        return new Radar.Parser.ParsedDemo { Demo = demo, Match = match };
+    }
+
     [Fact]
     public void SaveParsedDemo_Then_ListPlayers_And_Matches()
     {
@@ -39,7 +88,7 @@ public class HistoryServiceIntegrationTests
         try
         {
             var demo = LoadDemo("legacy_g163.json");
-            var result = history.SaveParsedDemoForPlayersAtSource("legacy_g163.json", "", demo, null);
+            var result = history.SaveParsedDemoForPlayersAtSource("legacy_g163.json", "", ToParsed(demo), null);
             Assert.Equal("saved", result.SaveStatus);
             Assert.NotNull(result.SavedDemo);
 
@@ -58,7 +107,7 @@ public class HistoryServiceIntegrationTests
             Assert.Equal(result.SavedDemo!.DemoRecordID, match.DemoRecordID);
             Assert.NotNull(match.Rating3);
             Assert.NotNull(match.RoundSwing);
-            Assert.Equal(Rating3.AlgorithmVersion, match.RatingAlgorithm);
+            Assert.Equal("cs2demo-analytics/" + Cs2Demo.Analytics.StatsCalculator.Rating30Version, match.RatingAlgorithm);
             Assert.Equal(6, match.Metrics.Count);
         }
         finally
@@ -75,9 +124,9 @@ public class HistoryServiceIntegrationTests
         try
         {
             var demo = LoadDemo("legacy_g163.json");
-            var first = history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, null);
+            var first = history.SaveParsedDemoForPlayersAtSource("a.dem", "", ToParsed(demo), null);
             Assert.Equal("saved", first.SaveStatus);
-            var second = history.SaveParsedDemoForPlayersAtSource("b.dem", "", demo, null);
+            var second = history.SaveParsedDemoForPlayersAtSource("b.dem", "", ToParsed(demo), null);
             Assert.Equal("duplicate", second.SaveStatus);
             Assert.Equal(first.SavedDemo!.DemoRecordID, second.SavedDemo!.DemoRecordID);
             Assert.Single(repo.ListDemos());
@@ -97,7 +146,7 @@ public class HistoryServiceIntegrationTests
         {
             var demo = LoadDemo("legacy_g163.json");
             var firstSteamID = demo.Players[0].SteamID;
-            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, new List<string> { firstSteamID });
+            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", ToParsed(demo), new List<string> { firstSteamID });
             Assert.Equal("saved", result.SaveStatus);
             var players = repo.ListPlayers();
             Assert.Single(players);
@@ -119,14 +168,14 @@ public class HistoryServiceIntegrationTests
             var demo = LoadDemo("legacy_g163.json");
             var first = demo.Players[0];
             var second = demo.Players[1];
-            history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, new List<string> { first.SteamID });
+            history.SaveParsedDemoForPlayersAtSource("a.dem", "", ToParsed(demo), new List<string> { first.SteamID });
 
             var before = repo.ListDemos().Single();
             Assert.Contains(first.SteamID, before.PlayerStatSteamIDs);
             Assert.DoesNotContain(second.SteamID, before.PlayerStatSteamIDs);
 
-            history.FollowParsedDemoPlayersAtSource("a.dem", "", demo, new List<string> { second.SteamID });
-            history.FollowParsedDemoPlayersAtSource("a.dem", "", demo, new List<string> { second.SteamID });
+            history.FollowParsedDemoPlayersAtSource("a.dem", "", ToParsed(demo), new List<string> { second.SteamID });
+            history.FollowParsedDemoPlayersAtSource("a.dem", "", ToParsed(demo), new List<string> { second.SteamID });
 
             var after = repo.ListDemos().Single();
             Assert.Equal(new[] { first.SteamID, second.SteamID }.OrderBy(id => id), after.PlayerStatSteamIDs.OrderBy(id => id));
@@ -146,7 +195,7 @@ public class HistoryServiceIntegrationTests
         try
         {
             var demo = LoadDemo("legacy_g163.json");
-            history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, null);
+            history.SaveParsedDemoForPlayersAtSource("a.dem", "", ToParsed(demo), null);
             Assert.Equal(10, repo.ListPlayers().Count);
             var steamID = demo.Players[0].SteamID;
             repo.DeletePlayer(steamID);
@@ -167,7 +216,7 @@ public class HistoryServiceIntegrationTests
         try
         {
             var demo = LoadDemo("legacy_g163.json");
-            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, null);
+            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", ToParsed(demo), null);
             var steamID = demo.Players[0].SteamID;
             var player = repo.GetPlayer(steamID)!;
             var records = repo.GetMetricSnapshots(steamID, new List<string> { result.SavedDemo!.DemoRecordID });
@@ -193,7 +242,7 @@ public class HistoryServiceIntegrationTests
         try
         {
             var demo = LoadDemo("legacy_g163.json");
-            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, null);
+            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", ToParsed(demo), null);
             var steamID = demo.Players[0].SteamID;
             var demoID = result.SavedDemo!.DemoRecordID;
             var otherSteamID = demo.Players[1].SteamID;
@@ -233,7 +282,7 @@ public class HistoryServiceIntegrationTests
         try
         {
             var demo = LoadDemo("legacy_g163.json");
-            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, null);
+            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", ToParsed(demo), null);
             var steamID = demo.Players[0].SteamID;
             var otherSteamID = demo.Players[1].SteamID;
             var demoID = result.SavedDemo!.DemoRecordID;
@@ -256,7 +305,7 @@ public class HistoryServiceIntegrationTests
         try
         {
             var demo = LoadDemo("legacy_g163.json");
-            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", demo, null);
+            var result = history.SaveParsedDemoForPlayersAtSource("a.dem", "", ToParsed(demo), null);
             var steamID = demo.Players[0].SteamID;
             var otherSteamID = demo.Players[1].SteamID;
             var demoID = result.SavedDemo!.DemoRecordID;

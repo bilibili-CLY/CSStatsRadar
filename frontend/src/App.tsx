@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { BusyMessage } from "./components/Busy";
 import { RatingMethodologyDialog } from "./components/RatingMethodologyDialog";
+import { AppDialog } from "./components/ui";
 import { useAppStore } from "./stores/appStore";
 import type { Page } from "./types";
 
@@ -147,6 +148,7 @@ export default function App() {
         open={methodologyOpen}
         onClose={() => setMethodologyOpen(false)}
       />
+      <AppDialog />
       {toast && (
         <div className="app-toast" role="status">
           {toast}
