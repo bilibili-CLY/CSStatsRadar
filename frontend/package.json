@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "tauri": "tauri",
     "desktop:dev": "node scripts/with-sidecar-env.mjs -- tauri dev",
     "desktop:build": "node scripts/with-sidecar-env.mjs -- tauri build",
     "desktop:icon": "tauri icon public/logo.svg --output src-tauri/icons",
