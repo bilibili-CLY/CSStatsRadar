@@ -34,7 +34,7 @@ export function RatingMethodologyDialog({ open, onClose }: { open: boolean; onCl
       <section ref={dialogRef} className="methodology-dialog" role="dialog" aria-modal="true" aria-labelledby="methodology-title">
         <header>
           <div><span className="eyebrow">算法透明度</span><h2 id="methodology-title">Rating 与 Round Swing 计算方式</h2></div>
-          <button ref={closeRef} className="icon-button" aria-label="关闭计算方式" onClick={onClose}><X /></button>
+          <button ref={closeRef} className="icon-button" aria-label="关闭计算方式" onClick={onClose}><X size={18} /></button>
         </header>
         <div className="methodology-meta"><span>算法版本</span><code>{data?.algorithm_version ?? "加载中…"}</code></div>
         <div className="methodology-tabs" role="tablist" aria-label="公式分类">
@@ -47,7 +47,7 @@ export function RatingMethodologyDialog({ open, onClose }: { open: boolean; onCl
         </div>
         <footer>
           <p>所有 3.0 数据均为本地近似，并非 HLTV 官方结果。</p>
-          <button disabled={!data} onClick={async () => { await navigator.clipboard.writeText(copyText); setCopied(true); }}>{copied ? <Check /> : <Copy />}{copied ? "已复制" : "复制当前公式"}</button>
+          <button disabled={!data} onClick={async () => { await navigator.clipboard.writeText(copyText); setCopied(true); }}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? "已复制" : "复制当前公式"}</button>
         </footer>
       </section>
     </div>

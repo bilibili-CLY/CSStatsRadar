@@ -45,7 +45,7 @@
   border: 0;
   background: transparent;
   color: #b97878;
-  font-size: 9px;
+  font-size: var(--font-xs);
   transition: color var(--transition-fast);
 }
 .text-danger-button:hover:not(:disabled) {

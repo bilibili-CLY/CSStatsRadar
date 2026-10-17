@@ -81,7 +81,7 @@ export function DemoCard({
             <span className="sr-only">选择 {demo.file_name}</span>
           </label>
         )}
-        <button className="persistent-demo-summary" tabIndex={-1}>
+        <div className="persistent-demo-summary">
           <span className="demo-file-icon">
             <FileArchive size={18} />
           </span>
@@ -94,15 +94,15 @@ export function DemoCard({
             <i>:</i>
             {demo.score_b}
           </b>
-        </button>
+        </div>
       </header>
-      <button className="persistent-demo-meta" tabIndex={-1}>
+      <div className="persistent-demo-meta">
         <span>{demo.rounds || "—"} 回合</span>
         <span>{demo.participants?.length ?? 0} 名玩家</span>
         <span title={demo.match_time_source}>
           {formatDemoDate(demo.match_time)}
         </span>
-      </button>
+      </div>
       {variant === "catalog" && editableNote && (
         <label
           className="demo-note-field"

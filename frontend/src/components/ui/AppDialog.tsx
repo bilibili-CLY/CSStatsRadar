@@ -101,7 +101,7 @@ export function AppDialog() {
             {dialog.cancelLabel}
           </button>
           <button
-            className={dialog.danger ? "danger" : ""}
+            className={dialog.danger ? "danger-action" : "primary"}
             onClick={confirm}
           >
             {dialog.confirmLabel}
