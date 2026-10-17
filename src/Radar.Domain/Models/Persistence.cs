@@ -45,6 +45,16 @@ public class TeamPrefixCleanResult
     [JsonPropertyName("reason")] public string Reason { get; set; } = "";
 }
 
+/// <summary>清空应用日志的结果（ClearLogs）。</summary>
+public class LogClearResult
+{
+    [JsonPropertyName("logs_dir")] public string LogsDir { get; set; } = "";
+    [JsonPropertyName("deleted_files")] public int DeletedFiles { get; set; }
+    [JsonPropertyName("freed_bytes")] public long FreedBytes { get; set; }
+    /// <summary>删除失败的文件与原因（Windows 上文件正被写入时可能出现）。</summary>
+    [JsonPropertyName("failed")] public List<string> Failed { get; set; } = new();
+}
+
 public class ImportSummary
 {
     [JsonPropertyName("job_id")] public string JobID { get; set; } = "";

@@ -1,20 +1,15 @@
 using System.Text;
+using Radar.Infrastructure;
 
 namespace Radar.Api;
 
 public static class MediaFiles
 {
-    private static string HomeDir()
-        => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) ?? ".";
+    public static string DefaultPlayerImageDir() => AppPaths.PlayerImageDir();
 
-    public static string DefaultPlayerImageDir()
-        => Path.Combine(HomeDir(), ".csplayerstatsradar", "player-images");
+    public static string DefaultPlayerMVPBackgroundDir() => AppPaths.PlayerMvpBackgroundDir();
 
-    public static string DefaultPlayerMVPBackgroundDir()
-        => Path.Combine(HomeDir(), ".csplayerstatsradar", "player-mvp-backgrounds");
-
-    public static string DefaultShowcaseMusicDir()
-        => Path.Combine(HomeDir(), ".csplayerstatsradar", "showcase-music");
+    public static string DefaultShowcaseMusicDir() => AppPaths.ShowcaseMusicDir();
 
     public static string? PlayerImageFileName(string steamID, DateTimeOffset now, string originalName)
     {

@@ -63,7 +63,12 @@ fn new_instance_id() -> String {
     format!("{}-{nanos}", std::process::id())
 }
 
-fn raw_http(method: &str, path: &str, port: u16, timeout: Duration) -> Option<String> {
+struct HttpResponse {
+    status: u16,
+    body: String,
+}
+
+fn raw_http(method: &str, path: &str, port: u16, timeout: Duration) -> Option<HttpResponse> {
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_millis(350)).ok()?;
     let _ = stream.set_read_timeout(Some(timeout));
@@ -72,14 +77,87 @@ fn raw_http(method: &str, path: &str, port: u16, timeout: Duration) -> Option<St
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
     );
     stream.write_all(request.as_bytes()).ok()?;
-    let mut response = String::new();
-    stream.read_to_string(&mut response).ok()?;
-    Some(response)
+    let mut raw = Vec::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(count) => raw.extend_from_slice(&buffer[..count]),
+            // 读超时或对端已关闭：已经读到的内容照样尝试解析。
+            Err(_) => break,
+        }
+    }
+    parse_http_response(&raw)
 }
 
-fn response_json(response: &str) -> Option<serde_json::Value> {
-    let (_, body) = response.split_once("\r\n\r\n")?;
-    serde_json::from_str(body).ok()
+/// 解析 HTTP/1.1 响应（保留状态码与去分帧后的 body）。
+///
+/// Kestrel 对 minimal-API 的 JSON 响应默认使用 `Transfer-Encoding: chunked`，
+/// 所以绝不能在第一个空行处切分就当成 body：那样拿到的是
+/// `77\r\n{json}\r\n0\r\n\r\n` 这类分帧数据，serde_json 必然解析失败，
+/// 身份握手（instance_id）和 prepare-exit 都会误判为失败。
+fn parse_http_response(raw: &[u8]) -> Option<HttpResponse> {
+    let split = raw.windows(4).position(|w| w == b"\r\n\r\n")?;
+    let head = std::str::from_utf8(&raw[..split]).ok()?;
+    let mut lines = head.split("\r\n");
+    let status = lines.next()?.split_whitespace().nth(1)?.parse::<u16>().ok()?;
+    let mut content_length: Option<usize> = None;
+    let mut chunked = false;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let name = name.trim().to_ascii_lowercase();
+        let value = value.trim().to_ascii_lowercase();
+        match name.as_str() {
+            "transfer-encoding" => {
+                chunked = value.split(',').any(|token| token.trim() == "chunked");
+            }
+            "content-length" => content_length = value.parse::<usize>().ok(),
+            _ => {}
+        }
+    }
+    let rest = &raw[split + 4..];
+    let body = if chunked {
+        dechunk(rest)?
+    } else {
+        match content_length {
+            Some(length) if length <= rest.len() => rest[..length].to_vec(),
+            _ => rest.to_vec(),
+        }
+    };
+    Some(HttpResponse {
+        status,
+        body: String::from_utf8_lossy(&body).into_owned(),
+    })
+}
+
+/// 去掉 chunked 分帧：`<hex 长度>[;扩展]\r\n<数据>\r\n` … `0\r\n\r\n`。
+fn dechunk(raw: &[u8]) -> Option<Vec<u8>> {
+    let mut rest = raw;
+    let mut body = Vec::new();
+    loop {
+        let line_end = rest.windows(2).position(|w| w == b"\r\n")?;
+        let size_text = std::str::from_utf8(&rest[..line_end]).ok()?;
+        let size = usize::from_str_radix(size_text.split(';').next()?.trim(), 16).ok()?;
+        rest = &rest[line_end + 2..];
+        if size == 0 {
+            return Some(body);
+        }
+        if rest.len() < size {
+            return None;
+        }
+        body.extend_from_slice(&rest[..size]);
+        rest = &rest[size..];
+        if rest.len() < 2 {
+            return None;
+        }
+        rest = &rest[2..];
+    }
+}
+
+fn response_json(response: &HttpResponse) -> Option<serde_json::Value> {
+    serde_json::from_str(&response.body).ok()
 }
 
 /// sidecar 可执行文件：release 用安装包内嵌（自包含单文件，无需目标机装 .NET）；
@@ -114,12 +192,16 @@ fn server_executable(app: &AppHandle) -> Result<(PathBuf, bool), String> {
     }
 }
 
+/// 日志目录：与 sidecar 共用 `<主目录>/.csplayerstatsradar/logs`
+/// （sidecar 的 backend.log 也在这里），解析不到主目录时退回 Tauri 应用数据目录。
+/// 绝不使用进程工作目录：那样日志会散落在安装器所在盘（例如 E:\）。
 fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
-        .app_data_dir()
-        .map_err(|error| format!("无法解析应用数据目录：{error}"))?
-        .join("logs");
+        .home_dir()
+        .map(|home| home.join(".csplayerstatsradar").join("logs"))
+        .or_else(|_| app.path().app_data_dir().map(|dir| dir.join("logs")))
+        .map_err(|error| format!("无法解析日志目录：{error}"))?;
     fs::create_dir_all(&dir).map_err(|error| format!("无法创建日志目录：{error}"))?;
     Ok(dir)
 }
@@ -146,6 +228,7 @@ fn pipe_to_log<R: std::io::Read + Send + 'static>(stream: R, dir: PathBuf, prefi
 fn start_sidecar(app: &AppHandle) -> Result<(), String> {
     let (exe, via_dotnet) = server_executable(app)?;
     let logs = logs_dir(app)?;
+    let log_hint = format!("日志目录：{}", logs.display());
     let instance_id = new_instance_id();
     append_log(
         &logs,
@@ -195,6 +278,7 @@ fn start_sidecar(app: &AppHandle) -> Result<(), String> {
 
     // 等身份确认：runtime-state 必须回显本次 instance_id。
     let mut ready = false;
+    let mut observed: Option<String> = None;
     for _ in 0..150 {
         {
             let state = app.state::<Sidecar>();
@@ -208,14 +292,17 @@ fn start_sidecar(app: &AppHandle) -> Result<(), String> {
             };
             if managed.child.try_wait().ok().flatten().is_some() {
                 *guard = None;
-                return Err("后端在启动阶段退出，请查看应用数据目录 logs/desktop.log。".to_string());
+                return Err(format!("后端在启动阶段退出。\n{log_hint}"));
             }
         }
         if let Some(response) = raw_http("GET", "/api/app/runtime-state", BACKEND_PORT, Duration::from_secs(2)) {
             if let Some(state) = response_json(&response) {
-                if state.get("instance_id").and_then(|v| v.as_str()) == Some(&instance_id) {
-                    ready = true;
-                    break;
+                if let Some(other) = state.get("instance_id").and_then(|v| v.as_str()) {
+                    if other == instance_id {
+                        ready = true;
+                        break;
+                    }
+                    observed = Some(other.to_string());
                 }
             }
         }
@@ -223,7 +310,13 @@ fn start_sidecar(app: &AppHandle) -> Result<(), String> {
     }
     if !ready {
         stop_sidecar(app);
-        return Err("后端启动超时（15s 未确认身份），请检查端口 19871 是否被占用。".to_string());
+        return Err(match observed {
+            // 端口上确实有别的 sidecar 应答（多数是上一次没退干净的实例）。
+            Some(other) => format!(
+                "端口 {BACKEND_PORT} 已被另一个后端实例占用（instance={other}）。\n请结束该进程后重新启动本程序。\n{log_hint}"
+            ),
+            None => format!("后端启动超时（15s 未确认身份），请检查端口 19871 是否被占用。\n{log_hint}"),
+        });
     }
     append_log(&logs, "[shell] sidecar ready");
     Ok(())
@@ -394,4 +487,57 @@ pub fn run() {
         RunEvent::Exit => stop_sidecar(handle),
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dechunk, parse_http_response, response_json};
+
+    /// 实测报文（Windows 上 v2.3.0 的崩溃现场）：Kestrel 对 minimal-API 的
+    /// `Results.Json` 响应使用 `Transfer-Encoding: chunked`。
+    const CHUNKED: &str = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\nDate: Sat, 17 Oct 2026 19:08:22 GMT\r\nServer: Kestrel\r\nTransfer-Encoding: chunked\r\n\r\n77\r\n{\"pid\":38637,\"instance_id\":\"test-instance-1\",\"version\":\"2.3.0.0\",\"data_dir\":\"/tmp/csr-probe\",\"recovery_required\":false}\r\n0\r\n\r\n";
+    const FIXED: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: 11\r\n\r\n{\"ok\":true}";
+
+    #[test]
+    fn parses_chunked_json() {
+        let response = parse_http_response(CHUNKED.as_bytes()).expect("chunked response");
+        assert_eq!(response.status, 200);
+        let json = response_json(&response).expect("json body");
+        assert_eq!(
+            json.get("instance_id").and_then(|v| v.as_str()),
+            Some("test-instance-1")
+        );
+    }
+
+    #[test]
+    fn parses_content_length_json() {
+        let response = parse_http_response(FIXED.as_bytes()).expect("fixed response");
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response_json(&response).and_then(|v| v.get("ok").and_then(|v| v.as_bool())),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn dechunk_joins_multiple_chunks() {
+        assert_eq!(
+            dechunk(b"3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n").as_deref(),
+            Some(&b"abcde"[..])
+        );
+    }
+
+    #[test]
+    fn keeps_status_code_from_error_response() {
+        let raw = "HTTP/1.1 409 Conflict\r\nContent-Length: 17\r\n\r\n{\"allowed\":false}";
+        let response = parse_http_response(raw.as_bytes()).expect("409 response");
+        assert_eq!(response.status, 409);
+    }
+
+    #[test]
+    fn missing_body_metadata_still_returns_remainder() {
+        let raw = "HTTP/1.1 200 OK\r\n\r\n{\"a\":1}";
+        let response = parse_http_response(raw.as_bytes()).expect("no metadata");
+        assert_eq!(response.body, "{\"a\":1}");
+    }
 }

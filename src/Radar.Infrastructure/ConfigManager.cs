@@ -17,18 +17,14 @@ public class ConfigManager
     {
         var env = Environment.GetEnvironmentVariable("CS_RADAR_CONFIG_PATH");
         if (!string.IsNullOrEmpty(env)) return env;
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrEmpty(home)) return System.IO.Path.Combine(home, ".csplayerstatsradar", "config.json");
-        return System.IO.Path.Combine(".", ".csplayerstatsradar", "config.json");
+        return AppPaths.DefaultConfigPath();
     }
 
     public static string DefaultDatabasePath()
     {
         var env = Environment.GetEnvironmentVariable("CS_RADAR_DB_PATH");
         if (!string.IsNullOrEmpty(env)) return env;
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrEmpty(home)) return System.IO.Path.Combine(home, ".csplayerstatsradar", "player_stats.db");
-        return "player_stats.db";
+        return AppPaths.DefaultDatabasePath();
     }
 
     public AppConfig DefaultConfig() => new()
@@ -107,6 +103,9 @@ public class ConfigManager
                 if (!showcase.TryGetProperty("show_intro_animation", out _)) merged.Showcase.ShowIntroAnimation = true;
                 if (!showcase.TryGetProperty("show_best_entrance_animation", out _)) merged.Showcase.ShowBestEntranceAnimation = true;
             }
+            // 历史 config 里可能是相对路径（旧版 UI 允许手填），按数据根目录解析，
+            // 避免随进程工作目录漂移；绝对路径（含盘根）原样保留，不静默迁移用户数据。
+            merged.DatabasePath = AppPaths.ResolveDatabasePath(merged.DatabasePath);
             return merged;
         }
         catch

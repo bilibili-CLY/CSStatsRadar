@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Xml.Linq;
+using Radar.Infrastructure;
 
 namespace Radar.Api;
 
@@ -29,11 +30,9 @@ public static class SteamAvatars
         return client;
     }
 
-    public static string DefaultAvatarDir()
-        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) ?? ".", ".csplayerstatsradar", "player-avatars");
+    public static string DefaultAvatarDir() => AppPaths.PlayerAvatarDir();
 
-    public static string LogDir()
-        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) ?? ".", ".csplayerstatsradar", "logs");
+    public static string LogDir() => AppPaths.LogsDir();
 
     internal static void Log(string message)
     {

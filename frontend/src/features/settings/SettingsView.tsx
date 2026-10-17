@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle2,
   Database,
@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { Spinner } from "../../components/Busy";
+import { errorMessage, formatBytes } from "../../lib/format";
 import { useAppStore } from "../../stores/appStore";
 import type { AppConfig, ImportSource } from "../../types";
 
@@ -56,6 +57,19 @@ export function SettingsView() {
     "idle",
   );
   const [error, setError] = useState("");
+  const [logsDir, setLogsDir] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    bridge
+      .logsDir()
+      .then((dir) => {
+        if (!cancelled) setLogsDir(dir);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   async function save() {
     try {
       setState("saving");
@@ -129,6 +143,41 @@ export function SettingsView() {
       setState("saved");
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value));
+    }
+  }
+  async function clearLogs() {
+    const confirmed = await useAppStore.getState().showConfirm({
+      title: "清除日志",
+      message:
+        "删除日志目录中的全部日志文件？日志由后端与桌面壳持续写入，删除后会自动重建。",
+      confirmLabel: "清除",
+      danger: true,
+    });
+    if (!confirmed) return;
+    try {
+      setError("");
+      const result = await bridge.clearLogs();
+      if (result.failed.length > 0) {
+        setError(`部分日志未能删除：${result.failed.join("；")}`);
+        return;
+      }
+      useAppStore
+        .getState()
+        .showToast(
+          result.deleted_files === 0
+            ? "日志目录已经是空的。"
+            : `已清除 ${result.deleted_files} 个日志文件（${formatBytes(result.freed_bytes)}）`,
+        );
+    } catch (value) {
+      setError(errorMessage(value));
+    }
+  }
+  async function openLogsDir() {
+    try {
+      setError("");
+      await bridge.openLogsDir();
+    } catch (value) {
+      setError(errorMessage(value));
     }
   }
   return (
@@ -483,6 +532,16 @@ export function SettingsView() {
               </div>
             </label>
             <label className="field">
+              <span>日志目录</span>
+              <div className="input-action">
+                <input value={logsDir || "读取中…"} disabled />
+                <button onClick={openLogsDir}>打开</button>
+              </div>
+            </label>
+            <p className="field-note">
+              后端与桌面壳的日志（backend.log、desktop.log、avatars.log）都在这里；导入失败、头像抓取失败等问题先看它。
+            </p>
+            <label className="field">
               <span>战队前缀清单</span>
               <input
                 value={draft.team_tags ?? ""}
@@ -506,9 +565,12 @@ export function SettingsView() {
               />
               <span>减少界面动态效果</span>
             </label>
-            <button className="danger-action" onClick={clearData}>
-              清空全部本地数据
-            </button>
+            <div className="settings-action-row">
+              <button onClick={clearLogs}>清除日志</button>
+              <button className="danger-action" onClick={clearData}>
+                清空全部本地数据
+              </button>
+            </div>
           </div>
         </section>
       </div>

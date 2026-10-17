@@ -72,6 +72,8 @@ public class ServerSidecarTests : IAsyncLifetime
         psi.Environment["CS_RADAR_INSTANCE_ID"] = instanceId;
         psi.Environment["CS_RADAR_CONFIG_PATH"] = Path.Combine(tempDir, "config.json");
         psi.Environment["CS_RADAR_DB_PATH"] = Path.Combine(tempDir, "test.db");
+        // 数据/日志/恢复标记根目录：测试必须与用户真实数据目录隔离。
+        psi.Environment["CS_RADAR_DATA_DIR"] = tempDir;
         psi.Environment["CS_RADAR_WEB_DIR"] = Path.Combine(tempDir, "web-empty");
         psi.Environment["DOTNET_NOLOGO"] = "1";
         var proc = Process.Start(psi)!;
@@ -117,6 +119,53 @@ public class ServerSidecarTests : IAsyncLifetime
         using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
         Assert.Equal(InstanceId, doc.RootElement.GetProperty("instance_id").GetString());
         Assert.False(doc.RootElement.GetProperty("recovery_required").GetBoolean());
+    }
+
+    /// <summary>
+    /// 数据目录必须由 CS_RADAR_DATA_DIR 决定，与数据库路径无关：
+    /// 否则历史 config 里的盘根路径（E:\xxx.db）会把日志写到盘根。
+    /// </summary>
+    [Fact]
+    public async Task RuntimeState_DataDir_FollowsDataDirOverride()
+    {
+        var resp = await http.GetAsync(baseUrl + "/api/app/runtime-state");
+        using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync());
+        Assert.Equal(
+            Path.GetFullPath(tempDir).TrimEnd(Path.DirectorySeparatorChar),
+            Path.GetFullPath(doc.RootElement.GetProperty("data_dir").GetString()!).TrimEnd(Path.DirectorySeparatorChar));
+    }
+
+    /// <summary>
+    /// 契约端点必须回定长 JSON。Tauri 壳（raw_http）在第一个空行处切分首部后直接把
+    /// 剩余内容交给 serde_json；若 Kestrel 回 `Transfer-Encoding: chunked`，壳解析
+    /// 必然失败并报「后端启动超时（15s 未确认身份）」——即 v2.3.0 的启动失败现场。
+    /// </summary>
+    [Fact]
+    public void ContractEndpoints_UseContentLength_NotChunked()
+    {
+        var port = new Uri(baseUrl).Port;
+        var raw = RawHttpGet("/api/app/runtime-state", $"127.0.0.1:{port}");
+        Assert.False(raw.Contains("Transfer-Encoding", StringComparison.OrdinalIgnoreCase), raw);
+        Assert.True(raw.Contains("Content-Length", StringComparison.OrdinalIgnoreCase), raw);
+        var split = raw.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+        Assert.True(split > 0, raw);
+        using var doc = JsonDocument.Parse(raw[(split + 4)..]);
+        Assert.Equal(InstanceId, doc.RootElement.GetProperty("instance_id").GetString());
+    }
+
+    /// <summary>裸 socket 请求：完全复刻 Tauri 壳 raw_http 的报文形状。</summary>
+    private string RawHttpGet(string path, string host)
+    {
+        using var client = new TcpClient();
+        client.Connect(IPAddress.Loopback, new Uri(baseUrl).Port);
+        client.ReceiveTimeout = 15000;
+        using var stream = client.GetStream();
+        var request = Encoding.ASCII.GetBytes(
+            $"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+        stream.Write(request, 0, request.Length);
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     [Fact]

@@ -6,6 +6,7 @@ import type {
   DemoRecord,
   ImportSource,
   ImportSummary,
+  LogClearResult,
   MatchGroup,
   MatchRecord,
   Player,
@@ -137,6 +138,9 @@ export const bridge = {
   deletePlayerMatches: (steamId: string, ids: string[]) =>
     call<void>("DeletePlayerMatches", steamId, ids),
   clearAllData: () => call<void>("ClearAllData"),
+  logsDir: () => call<string>("LogsDir"),
+  openLogsDir: () => call<void>("OpenLogsDir"),
+  clearLogs: () => call<LogClearResult>("ClearLogs"),
   chooseDatabase: () => call<AppConfig>("ChooseDatabase"),
   buildRadar: (steamId: string, ids: string[]) =>
     call<RadarResponse>("BuildRadar", steamId, ids),

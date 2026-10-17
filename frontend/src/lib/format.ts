@@ -24,3 +24,15 @@ export function signed(value: number) {
 export function errorMessage(value: unknown) {
   return value instanceof Error ? value.message : String(value);
 }
+
+export function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}

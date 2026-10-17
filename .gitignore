@@ -47,6 +47,9 @@ frontend/dist/
 frontend/src-tauri/staged/
 frontend/src-tauri/target/
 frontend/src-tauri/WixTools/
+frontend/src-tauri/gen/
+# No committed Cargo.lock: the shell resolves its own dependency graph at build time.
+frontend/src-tauri/Cargo.lock
 
 # Local runtime data
 tmp/

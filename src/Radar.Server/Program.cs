@@ -12,6 +12,7 @@ using System.Text;
 using System.Text.Json;
 using Radar.Api;
 using Radar.Domain.Models;
+using Radar.Infrastructure;
 
 var preferredPort = EnvInt("CS_RADAR_PORT", 19871);
 var instanceId = EnvStr("CS_RADAR_INSTANCE_ID") is { Length: > 0 } id ? id : NewInstanceId();
@@ -21,8 +22,10 @@ var webDirArg = ArgOrEnv(args, 2, "CS_RADAR_WEB_DIR");
 
 var port = ProbeLoopbackPort(preferredPort);
 var app = new DesktopApp(configPath, dbPath);
-var dataDir = Path.GetDirectoryName(Path.GetFullPath(app.CurrentConfig.DatabasePath))
-    ?? Path.GetTempPath();
+// 数据/日志根目录必须与 CWD、数据库路径无关：安装器拉起进程时 CWD 可能停在
+// 安装包所在的盘（例如 E:\），而历史 config.json 里可能留着 E:\xxx.db，
+// 旧实现据此推导数据目录会把日志写到盘根。
+var dataDir = AppPaths.DataDir();
 var recoveryMarker = Path.Combine(dataDir, "recovery-required.json");
 var cleanShutdown = false;
 AppDomain.CurrentDomain.ProcessExit += (_, _) =>
@@ -57,7 +60,9 @@ web.UseCors();
 var jsonOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
 var webDir = ResolveWebDir(webDirArg);
-Log($"CSStatsRadar.Server v{version} instance={instanceId} port={port} webDir={webDir ?? "(api-only)"} dataDir={dataDir}");
+Log($"CSStatsRadar.Server v{version} instance={instanceId} port={port} webDir={webDir ?? "(api-only)"} dataDir={dataDir} config={configPath ?? ConfigManager.DefaultConfigPath()} db={app.CurrentConfig.DatabasePath}");
+if (IsDriveRoot(Path.GetDirectoryName(Path.GetFullPath(app.CurrentConfig.DatabasePath))))
+    Log($"警告：数据库位于盘根目录（{app.CurrentConfig.DatabasePath}）。日志与恢复标记已固定写入 {dataDir}，不受其影响；若该库不需要，可在设置中改回默认路径。");
 Console.WriteLine($"__CSRADAR_PORT__={port}");
 Console.WriteLine($"__CSRADAR_INSTANCE__={instanceId}");
 Console.Out.Flush();
@@ -86,9 +91,15 @@ byte[] BridgeResult(object? result, object? error) =>
 
 // ─── sidecar 契约 ───
 
-web.MapGet("/api/health", () => Results.Json(new { status = "ok", version }));
+// 契约端点必须用定长 JSON：Kestrel 对 Results.Json 这类流式写入使用
+// `Transfer-Encoding: chunked`，朴素客户端（Tauri 壳的 raw_http、旧版桥）在第一个
+// 空行处切分后解析 JSON 必然失败，表现为「后端启动超时（15s 未确认身份）」。
+IResult FixedJson(object payload, int statusCode = StatusCodes.Status200OK) =>
+    Results.Text(JsonSerializer.Serialize(payload), "application/json; charset=utf-8", Encoding.UTF8, statusCode);
 
-web.MapGet("/api/app/runtime-state", () => Results.Json(new
+web.MapGet("/api/health", () => FixedJson(new { status = "ok", version }));
+
+web.MapGet("/api/app/runtime-state", () => FixedJson(new
 {
     pid = Environment.ProcessId,
     instance_id = instanceId,
@@ -100,8 +111,8 @@ web.MapGet("/api/app/runtime-state", () => Results.Json(new
 web.MapPost("/api/app/prepare-exit", (string? instance_id) =>
 {
     if (instance_id != instanceId)
-        return Results.Conflict(new { instance_id = instanceId, allowed = false, message = "暂时无法确认后台任务状态，请稍后重试。" });
-    return Results.Json(new { instance_id = instanceId, allowed = true });
+        return FixedJson(new { instance_id = instanceId, allowed = false, message = "暂时无法确认后台任务状态，请稍后重试。" }, StatusCodes.Status409Conflict);
+    return FixedJson(new { instance_id = instanceId, allowed = true });
 });
 
 web.MapPost("/api/app/shutdown", async (IHostApplicationLifetime lifetime) =>
@@ -115,7 +126,7 @@ web.MapPost("/api/app/shutdown", async (IHostApplicationLifetime lifetime) =>
         lifetime.StopApplication();
     });
     await Task.CompletedTask;
-    return Results.Json(new { safe_to_exit = true });
+    return FixedJson(new { safe_to_exit = true });
 });
 
 // ─── 旧桥接兼容 ───
@@ -275,6 +286,16 @@ static string? EnvStr(string name)
 {
     var v = Environment.GetEnvironmentVariable(name);
     return string.IsNullOrEmpty(v) ? null : v;
+}
+
+/// 判断目录是否是盘根（`E:\`、`/`）——仅用于日志告警，不做自动迁移。
+static bool IsDriveRoot(string? dir)
+{
+    if (string.IsNullOrEmpty(dir)) return false;
+    var full = Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    var root = (Path.GetPathRoot(Path.GetFullPath(dir)) ?? string.Empty)
+        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    return root.Length > 0 && full.Equals(root, StringComparison.OrdinalIgnoreCase);
 }
 
 static int EnvInt(string name, int fallback) =>

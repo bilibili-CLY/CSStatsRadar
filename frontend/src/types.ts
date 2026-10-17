@@ -20,6 +20,13 @@ export interface TeamPrefixCleanResult {
   status: string;
   reason: string;
 }
+export interface LogClearResult {
+  logs_dir: string;
+  deleted_files: number;
+  freed_bytes: number;
+  /** 删除失败的文件与原因（文件被占用时出现）。 */
+  failed: string[];
+}
 export interface ImportSource {
   id: string;
   name: string;

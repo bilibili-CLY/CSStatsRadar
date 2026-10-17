@@ -3364,6 +3364,12 @@ input[type="checkbox"]:disabled:checked {
   justify-self: start;
 }
 
+.settings-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .settings-source-list {
   display: grid;
   gap: 6px;

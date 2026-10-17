@@ -196,6 +196,28 @@ public class DesktopApp : IDisposable
 
     public void ClearAllData() => repo.DeleteAllPlayers();
 
+    /// <summary>日志目录（与 sidecar、Tauri 壳共用的 &lt;dataDir&gt;/logs）。</summary>
+    public string LogsDir() => AppPaths.LogsDir();
+
+    /// <summary>清空应用日志；日志目录不存在或为空时返回 0，不报错。</summary>
+    public LogClearResult ClearLogs() => LogFiles.Clear();
+
+    /// <summary>在系统文件管理器里打开日志目录（便于用户交日志排查）。</summary>
+    public void OpenLogsDir()
+    {
+        var dir = AppPaths.LogsDir();
+        Directory.CreateDirectory(dir);
+        var (fileName, arguments) = OperatingSystem.IsWindows()
+            ? ("explorer.exe", $"\"{dir}\"")
+            : OperatingSystem.IsMacOS()
+                ? ("open", $"\"{dir}\"")
+                : ("xdg-open", $"\"{dir}\"");
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(fileName, arguments)
+        {
+            UseShellExecute = true,
+        });
+    }
+
     public AggregateRadarResponse BuildRadar(string steamID, List<string> demoRecordIDs)
     {
         var player = repo.GetPlayer(steamID);
