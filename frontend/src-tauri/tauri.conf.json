@@ -37,7 +37,9 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "staged/*": ""
+      "staged/server": "server",
+      "staged/ffmpeg": "ffmpeg",
+      "staged/release_version.txt": "release_version.txt"
     },
     "windows": {
       "webviewInstallMode": {

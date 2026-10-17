@@ -1,8 +1,9 @@
 // Tauri 打包资源装配：把自包含 sidecar + FFmpeg 内嵌到 src-tauri/staged/，
-// tauri.conf.json 的 "resources": { "staged/*": "" } 会将其打进安装包。
+// tauri.conf.json 的 "resources" 以 map 形式指向这些目录（必须写目录路径本身，不能写
+// "staged/*" 这类 glob：Tauri 的 ResourcePaths 会跳过 glob 命中的目录，静默只打进去零散文件）。
 // 用法：npm run stage:resources（CI Windows 作业 / 本地 Windows 打包前执行）。
-// 失败即 loud fail：缺 dotnet、发布失败、找不到 FFmpeg 都直接 exit 1。
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+// 失败即 loud fail：缺 dotnet、发布失败、找不到 FFmpeg、FFmpeg 只是包管理器 shim 都直接 exit 1。
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -69,9 +70,23 @@ if (!ffmpegFound || !existsSync(ffmpegFound)) {
 }
 const ffmpegSrc = realpathSync(ffmpegFound);
 run(ffmpegSrc, ["-version"], { stdio: "pipe" });
+const ffmpegSize = statSync(ffmpegSrc).size;
+// Windows 打包用包管理器装的 ffmpeg：bin/ 下常常只是 shim 代理壳（几十~几百 KB），真身在
+// lib/<pkg>/tools/ 里。shim 在没装该包管理器的目标机上就是废文件，所以这里强制要求真身。
+// （macOS 的 homebrew 是动态链接的 400 KB 主程序，且本仓库只发布 Windows NSIS，故不设限。）
+if (process.platform === "win32" && ffmpegSize < 20 * 1024 * 1024) {
+  console.error(
+    `[stage] resolved ffmpeg looks like a shim/wrapper (${(ffmpegSize / 1048576).toFixed(1)} MiB): ${ffmpegSrc}\n` +
+    "[stage] point CS_RADAR_FFMPEG_EXE at the real binary, e.g. " +
+    "C:\\ProgramData\\chocolatey\\lib\\ffmpeg\\tools\\<build>\\bin\\ffmpeg.exe",
+  );
+  process.exit(1);
+}
 const ffmpegName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
 cpSync(ffmpegSrc, join(ffmpegDir, ffmpegName));
-console.log(`[stage] ffmpeg: ${ffmpegSrc} -> staged/ffmpeg/${ffmpegName}`);
+console.log(
+  `[stage] ffmpeg: ${ffmpegSrc} (${(ffmpegSize / 1048576).toFixed(1)} MiB) -> staged/ffmpeg/${ffmpegName}`,
+);
 
 // 3. 版本标记（运行时自检与问题定位用）。
 const pkgVersion = JSON.parse(readFileSync(join(frontendRoot, "package.json"), "utf8")).version;

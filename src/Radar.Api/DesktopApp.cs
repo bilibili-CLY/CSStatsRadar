@@ -441,6 +441,11 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
     {
         var configured = cfg.Showcase.FFmpegPath;
         var candidates = new List<string> { configured, "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg" };
+        // 安装包内嵌的 ffmpeg：边车在 <安装目录>/server/，内嵌 ffmpeg 在 <安装目录>/ffmpeg/。
+        var ffmpegName = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
+        var baseDir = AppContext.BaseDirectory;
+        candidates.Insert(0, Path.GetFullPath(Path.Combine(baseDir, "..", "ffmpeg", ffmpegName)));
+        candidates.Insert(0, Path.Combine(baseDir, "ffmpeg", ffmpegName));
         var which = Which("ffmpeg");
         if (which != null) candidates.Insert(0, which);
         foreach (var candidate in candidates)
