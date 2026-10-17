@@ -7,7 +7,7 @@
     <RootNamespace>Radar.Server</RootNamespace>
     <AssemblyName>CSStatsRadar.Server</AssemblyName>
     <!-- 与 frontend/package.json、src-tauri/Cargo.toml 对齐，由 stamp:versions 门禁。 -->
-    <Version>2.0.0</Version>
+    <Version>2.3.0</Version>
     <!-- 自包含单文件发布就绪：Tauri sidecar 形态，不依赖目标机 .NET 运行时。 -->
     <PublishSingleFile>true</PublishSingleFile>
     <RollForward>LatestMajor</RollForward>
