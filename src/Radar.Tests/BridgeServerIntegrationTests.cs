@@ -67,7 +67,7 @@ public class BridgeServerIntegrationTests
             var json = await Call(server, "GetRatingMethodology");
             using var doc = JsonDocument.Parse(json);
             Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("error").ValueKind);
-            Assert.Equal("local-r3-2026.08-v2", doc.RootElement.GetProperty("result").GetProperty("algorithm_version").GetString());
+            Assert.Equal("local-r3-2026.09-v1", doc.RootElement.GetProperty("result").GetProperty("algorithm_version").GetString());
 
             // BuildRadar with no records -> error
             var errJson = await Call(server, "BuildRadar", "nonexistent", new List<string> { "x" });
