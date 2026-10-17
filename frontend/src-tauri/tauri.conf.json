@@ -1,8 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "CSStatsRadar",
-  // 版本单一来源：Cargo.toml。发版时由 scripts/stamp-versions.mjs 校验三处一致
-  //（frontend/package.json、src-tauri/Cargo.toml），不再在 tauri.conf 里重复写。
   "identifier": "com.csstatsradar.app",
   "build": {
     "devUrl": "http://127.0.0.1:5173",
