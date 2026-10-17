@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.IO.Compression;
 using Radar.Domain.Models;
 using Radar.Parser;
 
@@ -8,8 +7,6 @@ namespace Radar.Application;
 public class ImportService
 {
     private const long MaxImportFileSize = 4L << 30;
-    private const long MaxExtractedDemoSize = 2L << 30;
-    private const ulong MaxZipRatio = 200;
 
     private readonly IHistoryRepository repo;
     private readonly HistoryService history;
@@ -247,33 +244,20 @@ public class ImportService
         }
     }
 
+    /// <summary>
+    /// 解出 zip 中唯一的 DEM（解压策略与重解析共用 <see cref="DemoSourceFile.Resolve"/>，
+    /// 保证「导入」与「补写缺失数据」看到同一套规则与安全限制）。
+    /// </summary>
     private static (string Path, Action? Cleanup, string? Error) ExtractSingleDemo(string zipPath)
     {
         try
         {
-            using var archive = ZipFile.OpenRead(zipPath);
-            ZipArchiveEntry? demo = null;
-            foreach (var entry in archive.Entries)
-            {
-                if (entry.FullName.EndsWith("/")) continue;
-                if (!Path.GetExtension(entry.Name).Equals(".dem", StringComparison.OrdinalIgnoreCase)) continue;
-                if (demo != null) return ("", null, "ZIP 中包含多个 DEM，请先整理压缩包");
-                demo = entry;
-            }
-            if (demo == null) return ("", null, "ZIP 中没有 DEM 文件");
-            if (demo.Length > MaxExtractedDemoSize) return ("", null, "ZIP 中的 DEM 超过 2GB 安全限制");
-            if (demo.CompressedLength > 0 && (ulong)demo.Length / (ulong)demo.CompressedLength > MaxZipRatio)
-                return ("", null, "ZIP 压缩比异常，已拒绝解压");
-
-            var tempDir = Path.Combine(Path.GetTempPath(), "cs-radar-import-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempDir);
-            var targetPath = Path.Combine(tempDir, Path.GetFileName(demo.Name));
-            demo.ExtractToFile(targetPath, overwrite: false);
-            return (targetPath, () => { try { Directory.Delete(tempDir, true); } catch { /* ignore */ } }, null);
+            var resolved = DemoSourceFile.Resolve(zipPath);
+            return (resolved.Path, resolved.Dispose, null);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
-            return ("", null, "ZIP 解压失败或超过安全限制：" + ex.Message);
+            return ("", null, ex.Message);
         }
     }
 

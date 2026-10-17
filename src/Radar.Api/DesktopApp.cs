@@ -29,7 +29,7 @@ public class DesktopApp : IDisposable
         repo.Init();
         history = new HistoryService(repo);
         parser = new CsdaParser();
-        imports = new ImportService(repo, history, ParseDemoFile);
+        imports = new ImportService(repo, history, path => ParseDemoFile(path));
     }
 
     public void Shutdown() => repo.Close();
@@ -61,7 +61,7 @@ public class DesktopApp : IDisposable
         if (analysis != null) return analysis;
         var demo = repo.GetDemo(demoID);
         if (demo == null) throw AppErrors.New("demo_not_found", AppErrors.StatusNotFound);
-        var parsed = ParseDemoFile(demo.SourcePath);
+        var parsed = ParseDemoFile(demo.SourcePath, demo.FileName);
         analysis = DemoAnalysisBuilder.Build(demoID, parsed.Demo);
         repo.SaveDemoAnalysis(demoID, analysis);
         return analysis;
@@ -71,7 +71,7 @@ public class DesktopApp : IDisposable
     {
         var demo = repo.GetDemo(demoID);
         if (demo == null) throw AppErrors.New("demo_not_found", AppErrors.StatusNotFound);
-        var parsed = ParseDemoFile(demo.SourcePath);
+        var parsed = ParseDemoFile(demo.SourcePath, demo.FileName);
         var analysis = DemoAnalysisBuilder.Build(demoID, parsed.Demo);
         repo.SaveDemoAnalysis(demoID, analysis);
         return analysis;
@@ -126,7 +126,7 @@ public class DesktopApp : IDisposable
                 {
                     try
                     {
-                        parsed = ParseDemoFile(demoRec.SourcePath!);
+                        parsed = ParseDemoFile(demoRec.SourcePath!, demoRec.FileName);
                         parsedByDemo[demoRec.DemoRecordID] = parsed;
                     }
                     catch (Exception ex)
@@ -435,7 +435,7 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         foreach (var id in requested)
             if (!participants.Contains(id))
                 throw AppErrors.New("player_not_found", AppErrors.StatusBadRequest, "所选玩家不属于该场比赛。");
-        var parsed = ParseDemoFile(demo.SourcePath);
+        var parsed = ParseDemoFile(demo.SourcePath, demo.FileName);
         history.FollowParsedDemoPlayersAtSource(demo.FileName, demo.SourcePath, parsed, requested);
     }
 
@@ -445,7 +445,7 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         if (path == null) throw AppErrors.New("demo_parse_failed", AppErrors.StatusBadRequest, "未选择文件。");
         var demo = repo.GetDemo(demoID);
         if (demo == null) throw AppErrors.New("demo_not_found", AppErrors.StatusNotFound);
-        var parsed = ParseDemoFile(path);
+        var parsed = ParseDemoFile(path, demo.FileName);
         var analysis = DemoAnalysisBuilder.Build(demo.DemoRecordID, parsed.Demo);
         repo.SaveDemoAnalysis(demo.DemoRecordID, analysis);
         repo.UpdateDemoSourcePath(demo.DemoRecordID, path);
@@ -818,11 +818,18 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         }
     }
 
-    private ParsedDemo ParseDemoFile(string path)
+    /// <summary>
+    /// 解析 demo 文件。<paramref name="path"/> 可能是导入时用的 .zip（记录里保存的
+    /// source_path 就是它，导入流程解析完会把临时解压出的 DEM 删掉），所以必须先
+    /// 还原成 csda 能读的 DEM，否则补写/重解析一律报 ErrInvalidFileType。
+    /// <paramref name="preferFileName"/> 用于多 DEM 的 zip（按记录的 file_name 精确匹配）。
+    /// </summary>
+    private ParsedDemo ParseDemoFile(string path, string? preferFileName = null)
     {
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
             throw AppErrors.New("demo_not_found", AppErrors.StatusNotFound);
-        var result = parser.ParseAll(path);
+        using var source = DemoSourceFile.Resolve(path, preferFileName);
+        var result = parser.ParseAll(source.Path);
         if (result == null)
             throw AppErrors.New("demo_parse_failed", AppErrors.StatusUnprocessable);
         return result;

@@ -86,6 +86,50 @@ public class ImportServiceTests
     }
 
     [Fact]
+    public void Reparse_Zip_Imported_Demo_Backfills_Missing_Players()
+    {
+        if (!File.Exists(DemoPath)) return;
+        var dir = CreateTempDir();
+        try
+        {
+            var zipPath = Path.Combine(dir, "packed.zip");
+            using (var stream = new FileStream(zipPath, FileMode.Create))
+            using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
+                zip.CreateEntryFromFile(G163DemoPath(), "inside_dust2.dem");
+
+            using var app = new DesktopApp(Path.Combine(dir, "config.json"), Path.Combine(dir, "test.db"));
+            var summary = WaitForJob(app, app.StartFileImport(new List<string> { zipPath }));
+            Assert.Equal("imported", summary.Items[0].Status);
+
+            var demos = app.ListDemos();
+            Assert.Single(demos);
+            var demo = demos[0];
+            // 源文件保留为 zip：重解析必须自己把 DEM 从压缩包里还原出来。
+            Assert.Equal(zipPath, demo.SourcePath);
+
+            var steamID = demo.Participants[0].SteamID;
+            Assert.Empty(app.GetPlayerMatches(steamID));
+
+            // 曾经在这里抛 ErrInvalidFileType（csda 把 zip 当成 demo）。
+            app.FollowDemoPlayers(demo.DemoRecordID, new List<string> { steamID });
+
+            var matches = app.GetPlayerMatches(steamID);
+            Assert.Single(matches);
+            Assert.Equal("inside_dust2.dem", matches[0].FileName);
+            Assert.Equal("de_nuke", matches[0].MapName);
+            Assert.Equal(18, matches[0].Rounds);
+
+            var analysis = app.ReparseDemoAnalysis(demo.DemoRecordID);
+            Assert.Equal("de_nuke", analysis.MapName);
+            Assert.Equal(18, analysis.Rounds);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
     public void Import_Same_Demo_Twice_Reports_Duplicate()
     {
         if (!File.Exists(DemoPath)) return;
