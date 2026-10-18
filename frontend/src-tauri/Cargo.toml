@@ -1,6 +1,6 @@
 [package]
 name = "csstatsradar-desktop"
-version = "2.3.0"
+version = "2.4.0"
 description = "Lightweight Tauri shell for CSStatsRadar (spawns the .NET sidecar)"
 authors = ["CSStatsRadar contributors"]
 edition = "2021"

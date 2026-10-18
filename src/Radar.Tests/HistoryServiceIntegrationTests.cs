@@ -109,6 +109,10 @@ public class HistoryServiceIntegrationTests
             Assert.NotNull(match.RoundSwing);
             Assert.Equal("cs2demo-analytics/" + Cs2Demo.Analytics.StatsCalculator.Rating30Version, match.RatingAlgorithm);
             Assert.Equal(6, match.Metrics.Count);
+
+            // 两个剖面同源：切换 Rating 2.0/3.0 时 KPR、ADR 的数值不得变化。
+            AssertMetricParity(match.Metrics, match.Rating3Metrics!, "KPR");
+            AssertMetricParity(match.Metrics, match.Rating3Metrics!, "ADR");
         }
         finally
         {
@@ -227,6 +231,10 @@ public class HistoryServiceIntegrationTests
             Assert.NotNull(response.Profiles.Rating3);
             Assert.True(response.Rating3Status.Available);
             Assert.Equal(6, response.Profiles.Rating3!.Dimensions.Count);
+
+            // 汇总雷达同样必须同源：两个剖面的 KPR、ADR 值一致。
+            AssertPayloadMetricParity(response.Radar, response.Profiles.Rating3!, "KPR");
+            AssertPayloadMetricParity(response.Radar, response.Profiles.Rating3!, "ADR");
         }
         finally
         {
@@ -330,5 +338,27 @@ public class HistoryServiceIntegrationTests
             repo.Close();
             Directory.Delete(dir, recursive: true);
         }
+    }
+
+    /// <summary>同一场比赛的 Rating 2.0 / Rating 3.0 指标值必须一致（KPR、ADR 为同源原始口径）。</summary>
+    private static void AssertMetricParity(List<RadarMetric> rating2, List<RadarMetric> rating3, string name)
+    {
+        var m2 = rating2.Single(metric => metric.Name == name);
+        var m3 = rating3.Single(metric => metric.Name == name);
+        Assert.NotNull(m2.Value);
+        Assert.NotNull(m3.Value);
+        Assert.Equal(m2.Value!.Value, m3.Value!.Value, 6);
+    }
+
+    /// <summary>汇总雷达的 Rating 2.0 / Rating 3.0 剖面必须对同名维度给出相同数值。</summary>
+    private static void AssertPayloadMetricParity(RadarPayload rating2, RadarPayload rating3, string name)
+    {
+        var index2 = rating2.Dimensions.IndexOf(name);
+        var index3 = rating3.Dimensions.IndexOf(name);
+        Assert.True(index2 >= 0, $"Rating 2.0 剖面缺少 {name}");
+        Assert.True(index3 >= 0, $"Rating 3.0 剖面缺少 {name}");
+        Assert.NotNull(rating2.Values[index2]);
+        Assert.NotNull(rating3.Values[index3]);
+        Assert.Equal(rating2.Values[index2]!.Value, rating3.Values[index3]!.Value, 6);
     }
 }

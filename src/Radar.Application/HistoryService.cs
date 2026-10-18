@@ -206,8 +206,10 @@ public class HistoryService
     /// <summary>
     /// match 级统计来自 Cs2Demo.Analytics（csda）口径。
     /// 注意：Multi-Kill 仍按本项目口径（每回合 ≥2 杀的回合占比）在映射后的 DemoData 上本地计算；
-    /// 包 PlayerMatchStats30.MultiKill 为连杀强度口径（Σ i²·count/轮 ÷ 1.1693），不直接采用。
-    /// Rating3Metrics.ADR 采用包的原始 ADR（已发布的 0.3.0 未提供 eADR）。
+    /// 包 0.4.0 的 PlayerMatchStats30.MultiKill 也是同一占比口径 ×100，保留本地计算以与 DemoData 映射保持一致。
+    /// Rating3Metrics 的 KPR/ADR 必须与 Rating 2.0 剖面完全一致（csda 原始口径）；
+    /// 包的 s3.EKpr/s3.EAdr 是包内 Rating30 公式的对枪难度加权输入，仅用于计算 Rating，
+    /// 绝不可再作为 KPR/ADR 对外显示（否则两版剖面会出现「切到 3.0 数值变小」的观感）。
     /// </summary>
     public static PlayerMatchRecord PlayerPackageStatsToMatchRecord(string demoRecordID, Player player, MatchData match, DemoData demo)
     {
@@ -279,9 +281,11 @@ public class HistoryService
     private static List<RadarMetric> BuildPackageRating3Metrics(PlayerMatchStats s1, PlayerMatchStats30 s3, double? multiKill)
         => MetricsForOrder(new Dictionary<string, RadarMetric>
         {
-            ["KPR"] = PlayerStatsCalculator.OkMetric("KPR", s3.EKpr ?? 0, "number", ""),
+            // KPR/ADR 与 Rating 2.0 剖面同源（csda 原始口径），两个剖面必须显示相同的数值。
+            // s3.EKpr/s3.EAdr 只参与包内 Rating30 公式，不再外露。
+            ["KPR"] = PlayerStatsCalculator.OkMetric("KPR", s1.Kpr ?? 0, "number", ""),
             ["Surviving"] = PlayerStatsCalculator.OkMetric("Surviving", (s1.Surviving ?? 0) / 100.0, "percentage", ""),
-            ["ADR"] = PlayerStatsCalculator.OkMetric("ADR", s3.EAdr ?? 0, "number", ""),
+            ["ADR"] = PlayerStatsCalculator.OkMetric("ADR", s1.Adr ?? 0, "number", ""),
             ["KAST"] = PlayerStatsCalculator.OkMetric("KAST", (s1.Kast ?? 0) / 100.0, "percentage", ""),
             ["Multi-Kill"] = PlayerStatsCalculator.OkMetric("Multi-Kill", multiKill ?? 0, "percentage", "多杀回合占比（每回合≥2杀）。"),
             ["Rating"] = PlayerStatsCalculator.OkMetric("Rating", s3.Rating30 ?? 0, "number", ""),

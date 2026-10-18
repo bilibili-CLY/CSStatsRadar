@@ -76,13 +76,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 88.625,
+        "value": 94.857,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -96,13 +96,13 @@
       },
       "KPR": {
         "name": "KPR",
-        "value": 0.942,
+        "value": 1,
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
@@ -216,13 +216,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 97.903,
+        "value": 106.857,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -236,13 +236,13 @@
       },
       "KPR": {
         "name": "KPR",
-        "value": 0.777,
+        "value": 0.857,
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
@@ -356,13 +356,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 19.667,
+        "value": 20.571,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -382,7 +382,7 @@
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
@@ -496,13 +496,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 39.686,
+        "value": 42.857,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -516,13 +516,13 @@
       },
       "KPR": {
         "name": "KPR",
-        "value": 0.393,
+        "value": 0.429,
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
@@ -636,13 +636,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 65.75,
+        "value": 63,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -656,13 +656,13 @@
       },
       "KPR": {
         "name": "KPR",
-        "value": 0.585,
+        "value": 0.571,
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
@@ -776,13 +776,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 190.24,
+        "value": 187.286,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -796,13 +796,13 @@
       },
       "KPR": {
         "name": "KPR",
-        "value": 1.769,
+        "value": 1.857,
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
@@ -916,13 +916,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 87.729,
+        "value": 100.571,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -936,13 +936,13 @@
       },
       "KPR": {
         "name": "KPR",
-        "value": 0.965,
+        "value": 1.143,
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
@@ -1056,13 +1056,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 53.409,
+        "value": 54.143,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -1076,13 +1076,13 @@
       },
       "KPR": {
         "name": "KPR",
-        "value": 0.446,
+        "value": 0.429,
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
@@ -1196,13 +1196,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 62.977,
+        "value": 58.143,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -1216,13 +1216,13 @@
       },
       "KPR": {
         "name": "KPR",
-        "value": 0.435,
+        "value": 0.429,
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",
@@ -1336,13 +1336,13 @@
     "rating_3_metrics": {
       "ADR": {
         "name": "ADR",
-        "value": 86.326,
+        "value": 81.429,
         "display_type": "number",
         "max_value": 100,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "KAST": {
         "name": "KAST",
@@ -1356,13 +1356,13 @@
       },
       "KPR": {
         "name": "KPR",
-        "value": 0.699,
+        "value": 0.714,
         "display_type": "number",
         "max_value": 1,
         "min_value": 0,
         "status": "ok",
         "reason": "",
-        "note": "已按枪械对位修正。"
+        "note": ""
       },
       "Multi-Kill": {
         "name": "Multi-Kill",

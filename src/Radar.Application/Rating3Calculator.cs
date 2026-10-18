@@ -54,9 +54,11 @@ public static class Rating3Calculator
 
         var metrics = new Dictionary<string, RadarMetric>
         {
-            ["KPR"] = PlayerStatsCalculator.OkMetric("KPR", eKPR, "number", "已按枪械对位修正。"),
+            // KPR/ADR 与 Rating 2.0 剖面同源（原始击杀/伤害 ÷ 回合），两个剖面必须显示相同的数值。
+            // eKPR/eADR 等加权量只参与上面的 Rating 公式，不再外露。
+            ["KPR"] = PlayerStatsCalculator.OkMetric("KPR", baseStats.Kills / rounds, "number", ""),
             ["Surviving"] = PlayerStatsCalculator.OkMetric("Surviving", baseStats.SurvivedRounds / rounds, "percentage", ""),
-            ["ADR"] = PlayerStatsCalculator.OkMetric("ADR", eADR, "number", "已按枪械对位修正。"),
+            ["ADR"] = PlayerStatsCalculator.OkMetric("ADR", (baseStats.TotalDamage ?? 0) / rounds, "number", ""),
             ["KAST"] = PlayerStatsCalculator.OkMetric("KAST", eKAST, "percentage", ""),
             ["Multi-Kill"] = PlayerStatsCalculator.OkMetric("Multi-Kill", multiKillRounds / rounds, "percentage", "多杀回合占比（每回合≥2杀）。"),
             ["Rating"] = PlayerStatsCalculator.OkMetric("Rating", rating3, "number", "Rating 3.0 本地近似。"),

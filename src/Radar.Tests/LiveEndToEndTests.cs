@@ -60,12 +60,29 @@ public class LiveEndToEndTests
             Assert.NotNull(matches[0].RoundSwing);
             Assert.Equal("cs2demo-analytics/" + Cs2Demo.Analytics.StatsCalculator.Rating30Version, matches[0].RatingAlgorithm);
 
+            // Rating 3.0 剖面的 KPR/ADR 与 Rating 2.0 同源：真实 demo 上切换版本数值不变。
+            foreach (var name in new[] { "KPR", "ADR" })
+            {
+                var value2 = matches[0].Metrics.Single(metric => metric.Name == name).Value;
+                var value3 = matches[0].Rating3Metrics.Single(metric => metric.Name == name).Value;
+                Assert.NotNull(value2);
+                Assert.NotNull(value3);
+                Assert.Equal(value2!.Value, value3!.Value, 6);
+            }
+
             // 4. BuildRadar aggregates and includes Rating 3.0 profile
             var radar = app.BuildRadar(steamID, new List<string> { demoID });
             Assert.Equal(1, radar.MatchCount);
             Assert.Equal(6, radar.Radar.Dimensions.Count);
             Assert.True(radar.Rating3Status.Available);
             Assert.Equal(6, radar.Profiles.Rating3!.Dimensions.Count);
+            foreach (var name in new[] { "KPR", "ADR" })
+            {
+                var index2 = radar.Radar.Dimensions.IndexOf(name);
+                var index3 = radar.Profiles.Rating3!.Dimensions.IndexOf(name);
+                Assert.True(index2 >= 0 && index3 >= 0);
+                Assert.Equal(radar.Radar.Values[index2]!.Value, radar.Profiles.Rating3!.Values[index3]!.Value, 6);
+            }
 
             // 5. GetDemoAnalysis builds round-by-round analysis
             var analysis = app.GetDemoAnalysis(demoID);
