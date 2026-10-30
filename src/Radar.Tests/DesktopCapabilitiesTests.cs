@@ -189,9 +189,10 @@ public class DesktopCapabilitiesTests
         var raw = "data:image/png;base64," + Convert.ToBase64String(new byte[] { 9, 8, 7 });
         Assert.Equal(new byte[] { 9, 8, 7 }, ShowcaseVideo.DecodePNGDataURL(raw));
         Assert.Throws<InvalidOperationException>(() => ShowcaseVideo.DecodePNGDataURL("text/plain"));
-        Assert.Equal("[1:a]adelay=500:all=1,atrim=duration=2.000,asetpts=N/SR/TB[a]", ShowcaseVideo.AudioFilter(500, 2.0));
-        Assert.Equal("[1:a]atrim=start=0.500,asetpts=PTS-STARTPTS,atrim=duration=2.000[a]", ShowcaseVideo.AudioFilter(-500, 2.0));
-        Assert.Equal("[1:a]atrim=duration=2.000,asetpts=PTS-STARTPTS[a]", ShowcaseVideo.AudioFilter(0, 2.0));
+        Assert.Equal("[1:a]volume=1.5,adelay=500:all=1,atrim=duration=2.000,asetpts=N/SR/TB[a]", ShowcaseVideo.AudioFilter(500, 2.0, 150));
+        Assert.Equal("[1:a]volume=1.5,atrim=start=0.500,asetpts=PTS-STARTPTS,atrim=duration=2.000[a]", ShowcaseVideo.AudioFilter(-500, 2.0, 150));
+        Assert.Equal("[1:a]volume=2.5,atrim=duration=2.000,asetpts=PTS-STARTPTS[a]", ShowcaseVideo.AudioFilter(0, 2.0, 250));
+        Assert.Equal("[1:a]volume=-0.5,atrim=duration=2.000,asetpts=PTS-STARTPTS[a]", ShowcaseVideo.AudioFilter(0, 2.0, -50));
     }
 
     [Fact]
@@ -200,6 +201,8 @@ public class DesktopCapabilitiesTests
         Assert.NotNull(ShowcaseVideo.Validate(new VideoExportRequest { Width = 0, Height = 1080, FPS = 60, DurationMS = 4000 }));
         Assert.NotNull(ShowcaseVideo.Validate(new VideoExportRequest { Width = 1920, Height = 1080, FPS = 0, DurationMS = 4000 }));
         Assert.NotNull(ShowcaseVideo.Validate(new VideoExportRequest { Width = 1920, Height = 1080, FPS = 60, DurationMS = 0 }));
+        Assert.NotNull(ShowcaseVideo.Validate(new VideoExportRequest { Width = 1920, Height = 1080, FPS = 60, DurationMS = 4000, AudioVolume = double.NaN }));
         Assert.Null(ShowcaseVideo.Validate(new VideoExportRequest { Width = 1920, Height = 1080, FPS = 60, DurationMS = 4000 }));
+        Assert.Null(ShowcaseVideo.Validate(new VideoExportRequest { Width = 1920, Height = 1080, FPS = 60, DurationMS = 4000, AudioVolume = 1_000_000 }));
     }
 }

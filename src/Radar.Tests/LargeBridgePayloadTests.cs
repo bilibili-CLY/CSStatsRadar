@@ -43,7 +43,7 @@ public class LargeBridgePayloadTests
         try
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-            var beginJson = await Call(client, server, "BeginVideoExport", 1920, 1080, 30, 2000, 0, "cs2-showcase.mp4");
+            var beginJson = await Call(client, server, "BeginVideoExport", 1920, 1080, 30, 2000, 0, "cs2-showcase.mp4", 250);
             using var beginDoc = JsonDocument.Parse(beginJson);
             Assert.Equal(JsonValueKind.Null, beginDoc.RootElement.GetProperty("error").ValueKind);
             var id = beginDoc.RootElement.GetProperty("result").GetString();
@@ -93,7 +93,7 @@ public class LargeBridgePayloadTests
         try
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
-            var beginJson = await Call(client, server, "BeginVideoExport", 320, 180, 10, 1000, 0, "cs2-showcase.mp4");
+            var beginJson = await Call(client, server, "BeginVideoExport", 320, 180, 10, 1000, 0, "cs2-showcase.mp4", 100);
             using var beginDoc = JsonDocument.Parse(beginJson);
             if (beginDoc.RootElement.GetProperty("error").ValueKind != JsonValueKind.Null)
             {

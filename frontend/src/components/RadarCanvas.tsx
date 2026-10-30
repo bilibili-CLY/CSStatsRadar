@@ -12,6 +12,29 @@ import { radarOuterRingRadius } from "../lib/radarGeometry";
 export interface RadarCanvasHandle {
   toDataURL: (width: number, height: number) => string;
 }
+export const RADAR_METRIC_CHINESE_NAMES: Record<string, string> = {
+  KPR: "回合击杀",
+  Surviving: "存活率",
+  ADR: "回合伤害",
+  KAST: "不白给率",
+  Kast: "不白给率",
+  "Multi-Kill": "回合多杀",
+  MultiKill: "回合多杀",
+};
+
+const textMeasureCache = new Map<string, number>();
+function measureCachedText(ctx: CanvasRenderingContext2D, text: string, font: string): number {
+  const key = `${font}:${text}`;
+  let width = textMeasureCache.get(key);
+  if (width == null) {
+    ctx.font = font;
+    width = ctx.measureText(text).width;
+    if (textMeasureCache.size > 800) textMeasureCache.clear();
+    textMeasureCache.set(key, width);
+  }
+  return width;
+}
+
 export interface RadarCanvasProps {
   radar?: RadarResponse | null;
   averageRadar?: RadarResponse | null;
@@ -26,7 +49,11 @@ export interface RadarCanvasProps {
   previewHeight?: number;
   highlightedOverlayId?: string | null;
   bestMetricIndexes?: number[];
+  /** 每个指标 0~1 的 BEST 样式占比；用于玩家切换时连续淡入淡出 BEST 视觉。 */
+  bestAmounts?: number[];
   showBestMarkers?: boolean;
+  /** 标签安全区必须落在该矩形内（雷达子画布坐标），用于把标签收紧在 Data Panel 内。 */
+  labelRegion?: RadarBounds;
   radarScaleMode?: string;
   radarScale?: number;
   radarAxisScale?: Record<string, number>;
@@ -35,6 +62,8 @@ export interface RadarCanvasProps {
   fontScale?: number;
   /** Explicit pixel size for metric names, values, and BEST only. */
   metricLabelFontSize?: number;
+  /** Explicit value font scale multiplier relative to label size. Defaults to 1.3. */
+  valueFontScale?: number;
   averageLineStyle?: "dashed" | "solid";
   hideLabels?: boolean;
   showReferenceLabels?: boolean;
@@ -58,6 +87,10 @@ export interface RadarCanvasProps {
   primaryOpacity?: number;
   /** Opacity of the average baseline only, for opener fade handoffs. */
   averageOpacity?: number;
+  averageGlow?: boolean;
+  averageGlowProgress?: number;
+  averageGlowColor?: string;
+  metricGrowthTransforms?: Record<string, { opacity: number; translateY: number; scale?: number }>;
 }
 
 interface Point {
@@ -117,9 +150,13 @@ export function roundSwingBarRadii(
   return positive ? [0, radius, radius, 0] : [radius, 0, 0, radius];
 }
 
-export function roundSwingTrackHeight(height: number, multiplier = 1) {
+export function roundSwingTrackHeight(
+  height: number,
+  multiplier = 1,
+  fontScale = 1,
+) {
   const base = Math.max(10, Math.min(14, height * 0.18));
-  return base * multiplier;
+  return base * multiplier * fontScale;
 }
 
 export function formatRoundSwing(value: number) {
@@ -173,17 +210,32 @@ function pointAt(
 }
 
 const labelBoundsCache = new Map<string, Bounds>();
+function clipToRegion(bounds: Bounds, region?: RadarBounds): Bounds {
+  if (!region) return bounds;
+  const left = Math.max(bounds.left, region.left);
+  const right = Math.min(bounds.right, region.right);
+  const top = Math.max(bounds.top, region.top);
+  const bottom = Math.min(bounds.bottom, region.bottom);
+  // 区域小到放不下任何标签时视为无效（例如雷达被拖到 Data Panel 之外），保留原安全区
+  if (right - left < 48 || bottom - top < 32) return bounds;
+  return { left, right, top, bottom };
+}
+function labelRegionKey(region?: RadarBounds) {
+  return region
+    ? `${Math.round(region.left)},${Math.round(region.top)},${Math.round(region.right)},${Math.round(region.bottom)}`
+    : "";
+}
 function labelBounds(props: RadarCanvasProps, width: number, height: number): Bounds {
   const showSwing = !props.hideSwing && props.ratingVersion === "rating_3";
-  const key = `${props.compact ? 1 : 0}|${showSwing ? 1 : 0}|${width}|${height}`;
+  const key = `${props.compact ? 1 : 0}|${showSwing ? 1 : 0}|${width}|${height}|${labelRegionKey(props.labelRegion)}`;
   const cached = labelBoundsCache.get(key);
   if (cached) return cached;
-  const value = {
+  const value = clipToRegion({
     left: width * 0.035,
     right: width * 0.965,
     top: height * 0.035,
-    bottom: height * (showSwing ? (props.compact ? 0.82 : 0.82) : 0.95),
-  };
+    bottom: height * (showSwing ? 0.82 : 0.95),
+  }, props.labelRegion);
   if (labelBoundsCache.size > 128) labelBoundsCache.clear();
   labelBoundsCache.set(key, value);
   return value;
@@ -206,7 +258,7 @@ function axisLabelBounds(
     { left: width * 0.035, right: width * 0.32, top: height * 0.54, bottom },
     { left: width * 0.035, right: width * 0.32, top: height * 0.08, bottom: height * 0.46 },
   ];
-  return boxes[index] ?? labelBounds(props, width, height);
+  return clipToRegion(boxes[index] ?? labelBounds(props, width, height), props.labelRegion);
 }
 
 function distanceToBounds(
@@ -239,9 +291,18 @@ export function radarLabelSafeDistance(
   const dy = Math.sin(angle);
   const candidates = [
     dx > 0 ? (bounds.right - footprint.halfWidth - cx) / dx : dx < 0 ? (bounds.left + footprint.halfWidth - cx) / dx : Infinity,
+    // footprint.top 是相对中心线上移后的负值（标签框上边缘），因此上边界的可行中心是 bounds.top - footprint.top
     dy > 0 ? (bounds.bottom - footprint.bottom - cy) / dy : dy < 0 ? (bounds.top - footprint.top - cy) / dy : Infinity,
-  ].filter((distance) => distance > 0 && Number.isFinite(distance));
-  return Math.min(...candidates);
+  ].filter((distance) => Number.isFinite(distance));
+  const limit = Math.min(...candidates);
+  // 标签整块比安全区还宽时没有可行解，退回到「中心贴边」，保持对称溢出而不是被画布裁掉
+  if (!Number.isFinite(limit) || limit <= 0) {
+    const fallback = distanceToBounds(cx, cy, count, index, bounds);
+    return Number.isFinite(fallback)
+      ? fallback
+      : Math.max(bounds.right - bounds.left, bounds.bottom - bounds.top);
+  }
+  return limit;
 }
 
 function metricDistances(
@@ -351,9 +412,11 @@ function radarPoints(
       sourceIndex >= 0 ? radar.radar.max_values[sourceIndex] || 1 : 1;
     const normalized = radarNormalizedValue(props, dimension, value, maximum);
     const clearance = Math.max(
-      props.showBestMarkers && props.bestMetricIndexes?.includes(index)
-        ? width * (props.compact ? 0.075 : 0.055)
-        : 28,
+      // 标签整块的实测高度：BEST 放大后的数值 + 小写 best 会把顶点推得更远，避免相交
+      labelFootprints?.[index]
+        ? labelFootprints[index].bottom - labelFootprints[index].top
+        : 0,
+      28,
       width * (props.compact ? 0.055 : 0.038),
     );
     const { pointDistance } = metricDistances(
@@ -373,37 +436,42 @@ function radarPoints(
   });
 }
 
-interface MetricLabelLayout {
-  labelLines: string[];
+export interface MetricLabelLayout {
   displayValue: string;
   labelSize: number;
   valueSize: number;
   line: number;
-  labelStart: number;
-  valueOffset: number;
-  bestOffset?: number;
+  isBest: boolean;
+  /** 0~1 的 BEST 样式占比：玩家切换时用来平滑混入/淡出 BEST 视觉。 */
+  bestAmount: number;
+  nameWidth: number;
+  valueWidth: number;
+  bestWordSize: number;
+  bestWordWidth: number;
+  /** 相对第一行中线的纵向偏移；非 BEST 为 0 */
+  bestWordOffsetY: number;
+  gap: number;
+  rowWidth: number;
+  aliasSize: number;
+  /** 相对第一行中线的纵向偏移 */
+  aliasOffsetY: number;
+  /** BEST 数值与 best 小字的字形发光模糊半径；非 BEST 为 0 */
+  glowRadius: number;
+  radialPush: number;
   footprint: RadarLabelFootprint;
 }
 
-function wrapMetricLabel(
-  ctx: CanvasRenderingContext2D,
-  label: string,
-  maxWidth: number,
-  font: string,
-) {
-  ctx.font = font;
-  if (ctx.measureText(label).width <= maxWidth) return [label];
-  const lines: string[] = [];
-  let line = "";
-  for (const character of Array.from(label)) {
-    const candidate = `${line}${character}`;
-    if (line && ctx.measureText(candidate).width > maxWidth) {
-      lines.push(line);
-      line = character;
-    } else line = candidate;
-  }
-  if (line) lines.push(line);
-  return lines;
+export const BEST_VALUE_FONT_SCALE = 1.45;
+export const BEST_WORD_FONT_SCALE = 2 / 3;
+export const RADAR_BEST_WORD = "best";
+export const RADAR_BEST_RADIAL_PUSH = 1.3;
+/** 光晕用字形阴影绘制，此值是相对数值字号的模糊半径倍数（不是圆形光斑半径）。 */
+export const RADAR_BEST_GLOW_RADIUS = 0.7;
+
+/** 只依赖 font 与 measureText，便于在 node 环境断言排版。 */
+export interface RadarTextMeasurer {
+  font: string;
+  measureText(text: string): { width: number };
 }
 
 function compactRadarValue(value: number | null, type: string) {
@@ -417,58 +485,158 @@ function compactRadarValue(value: number | null, type: string) {
   return Math.abs(value) >= 100_000 ? value.toExponential(2) : formatValue(value, type);
 }
 
-function metricLabelLayout(
-  ctx: CanvasRenderingContext2D,
+export const RADAR_VALUE_FONT_SCALE = 1.3;
+
+// BEST 数值与 best 小字共用的展示字体（自托管 OFL 字体，运行期不请求外网）
+export const SHOWCASE_DISPLAY_FONT = "Playfair Display";
+export const SHOWCASE_DISPLAY_FONT_URL = "/fonts/PlayfairDisplay-Italic-VF.ttf";
+export function radarDisplayFont(size: number) {
+  return `italic 900 ${size}px "${SHOWCASE_DISPLAY_FONT}", "Noto Sans SC", system-ui`;
+}
+
+export const RADAR_SINGLE_PLAYER_FILL_OPACITY = 0.27;
+export const RADAR_MULTI_FOCUSED_FILL_OPACITY = 0.24;
+export const RADAR_MULTI_FILL_OPACITY = 0.105;
+/** AGENTS.md 规定：数值多边形外圈为 2.2 倍线宽、40% 透明的柔和高光。 */
+export const RADAR_POLYGON_GLOW_INNER_SCALE = 2.2;
+export const RADAR_POLYGON_GLOW_INNER_ALPHA = 0.4;
+export type RadarGlowLayer = { width: number; alpha: number; blur: number | null };
+export function radarPolygonGlowLayers(lineWidth: number, width: number, blurred: boolean): RadarGlowLayer[] {
+  if (!blurred)
+    return [
+      { width: lineWidth * 5.0, alpha: 0.05, blur: null },
+      { width: lineWidth * 3.6, alpha: 0.10, blur: null },
+      { width: lineWidth * RADAR_POLYGON_GLOW_INNER_SCALE, alpha: RADAR_POLYGON_GLOW_INNER_ALPHA, blur: null },
+    ];
+  return [
+    { width: lineWidth * 4.2, alpha: 0.16, blur: Math.max(8, Math.round(width / 70)) },
+    { width: lineWidth * 2.8, alpha: 0.28, blur: Math.max(3, Math.round(width / 220)) },
+    { width: lineWidth * RADAR_POLYGON_GLOW_INNER_SCALE, alpha: RADAR_POLYGON_GLOW_INNER_ALPHA, blur: null },
+  ];
+}
+export function radarPolygonFillOpacity(
+  input: { average: boolean; playerCount: number; focused: boolean },
+  multiplier = 1,
+) {
+  if (input.average) return 0;
+  const base = input.playerCount <= 1
+    ? RADAR_SINGLE_PLAYER_FILL_OPACITY
+    : input.focused ? RADAR_MULTI_FOCUSED_FILL_OPACITY : RADAR_MULTI_FILL_OPACITY;
+  return base * Math.max(0, Math.min(1, multiplier));
+}
+
+export function radarValueFont(size: number, isBest: boolean) {
+  return isBest ? radarDisplayFont(size) : `750 ${size}px "Noto Sans SC", system-ui`;
+}
+
+export function radarMetricLabelLayout(
+  measurer: RadarTextMeasurer,
   props: RadarCanvasProps,
   width: number,
   label: string,
   value: number | null,
   type: string,
-  isBest: boolean,
+  best: boolean | number,
   bounds: Bounds,
 ): MetricLabelLayout {
+  const bestAmount = typeof best === "number" ? Math.max(0, Math.min(1, best)) : best ? 1 : 0;
+  const isBest = bestAmount > 0.001;
   const fontScale = props.fontScale ?? 1;
   const requestedSize = props.metricLabelFontSize;
-  const baseLabelSize = requestedSize ?? Math.max(12, width * (props.compact ? 0.018 : 0.012)) * fontScale;
-  const baseValueSize = requestedSize ?? Math.max(11, width * (props.compact ? 0.015 : 0.011)) * fontScale;
+  const baseLabelSize = requestedSize != null
+    ? requestedSize * fontScale
+    : Math.max(12, width * (props.compact ? 0.018 : 0.012)) * fontScale;
+  const isReference = Boolean(props.showReferenceLabels);
+  // 只有阶段三 (reference) 数值调大字号，其余时间保持正常大小
+  const valueMultiplier = props.valueFontScale ?? (isReference ? RADAR_VALUE_FONT_SCALE : 1);
+  const baseValueSize = (requestedSize != null
+    ? requestedSize * fontScale
+    : Math.max(11, width * (props.compact ? 0.015 : 0.011)) * fontScale) * valueMultiplier;
   const maxWidth = Math.max(28, bounds.right - bounds.left - 8);
   const displayValue = compactRadarValue(value, type);
+  const gap = Math.max(4, Math.round(width * 0.004));
+  // BEST 数值放大后仍与 best 小字共用同一字体，按实际绘制字体测量
+  const bestBoost = 1 + (BEST_VALUE_FONT_SCALE - 1) * bestAmount;
   let scale = 1;
-  let labelLines: string[] = [label];
+  let nameWidth = 0;
+  let valueWidth = 0;
+  let bestWordWidth = 0;
+  const measureAt = (candidate: number) => {
+    const candidateLabelSize = baseLabelSize * candidate;
+    const candidateValueSize = baseValueSize * candidate * bestBoost;
+    measurer.font = `700 ${candidateLabelSize}px "Noto Sans SC", system-ui`;
+    nameWidth = measurer.measureText(label).width;
+    measurer.font = radarValueFont(candidateValueSize, isBest);
+    valueWidth = measurer.measureText(displayValue).width;
+    measurer.font = radarDisplayFont(candidateValueSize * BEST_WORD_FONT_SCALE);
+    bestWordWidth = isBest ? measurer.measureText(RADAR_BEST_WORD).width : 0;
+  };
   while (scale > 0.58) {
-    const labelSize = baseLabelSize * scale;
-    const valueSize = baseValueSize * scale;
-    labelLines = wrapMetricLabel(ctx, label, maxWidth, `700 ${labelSize}px "Noto Sans SC", system-ui`);
-    ctx.font = `700 ${valueSize}px "Bangers", "Noto Sans SC", system-ui`;
-    if (ctx.measureText(displayValue).width <= maxWidth && labelLines.length <= 2) break;
+    measureAt(scale);
+    if (nameWidth + gap + Math.max(valueWidth, bestWordWidth) <= maxWidth) break;
     scale -= 0.08;
   }
+  // 循环可能因下限退出，最后重新按落到的最小字号测量，避免宽度与绘制字号脱节
+  scale = Math.max(0.5, scale);
+  measureAt(scale);
   const labelSize = baseLabelSize * scale;
-  const valueSize = baseValueSize * scale;
+  let valueSize = baseValueSize * scale * bestBoost;
+  let bestWordSize = valueSize * BEST_WORD_FONT_SCALE;
   const line = Math.max(12, labelSize * 1.05);
-  labelLines = wrapMetricLabel(ctx, label, maxWidth, `700 ${labelSize}px "Noto Sans SC", system-ui`).slice(0, 2);
-  const labelStart = (isBest ? -line * 1.15 : -line * 0.72) - (labelLines.length - 1) * line * 0.42;
-  const valueOffset = labelStart + labelLines.length * line * 0.94;
-  const bestOffset = isBest ? valueOffset + line * 0.92 : undefined;
-  ctx.font = `700 ${labelSize}px "Noto Sans SC", system-ui`;
-  const labelWidth = Math.max(...labelLines.map((lineText) => ctx.measureText(lineText).width));
-  ctx.font = `700 ${valueSize}px "Bangers", "Noto Sans SC", system-ui`;
-  const valueWidth = ctx.measureText(displayValue).width;
-  const bestWidth = isBest ? ctx.measureText("BEST").width : 0;
-  const bestValueSize = valueSize;
+  const aliasSize = Math.max(9, Math.round(labelSize * 0.76));
+  let bestWordOffsetY = isBest ? valueSize * 0.52 + bestWordSize * 0.5 : 0;
+  // 别名必须整行落在「指标名 + 数值」这一行下方，不能压住指标名本身
+  let aliasOffsetY = isBest
+    ? bestWordOffsetY + bestWordSize * 0.55 + aliasSize * 0.6
+    : Math.max(labelSize, valueSize) * 0.5 + aliasSize * 0.68;
+
+  const blockExtent = () => ({
+    top: -Math.max(labelSize, valueSize) * 0.62,
+    bottom: Math.max(
+      aliasOffsetY + aliasSize * 0.55,
+      isBest ? bestWordOffsetY + bestWordSize * 0.55 : Number.NEGATIVE_INFINITY,
+    ),
+  });
+  let block = blockExtent();
+  const availableH = Math.max(0, bounds.bottom - bounds.top);
+  // 高度超出该轴安全区时只收缩数值与 best，指标名保持全局字号，保证整块仍然完整可见
+  if (isBest && block.bottom - block.top > availableH) {
+    const fit = Math.max(0.5, Math.min(1, availableH / (block.bottom - block.top)));
+    valueSize *= fit;
+    bestWordSize = valueSize * BEST_WORD_FONT_SCALE;
+    bestWordOffsetY = valueSize * 0.52 + bestWordSize * 0.5;
+    aliasOffsetY = bestWordOffsetY + bestWordSize * 0.55 + aliasSize * 0.6;
+    block = blockExtent();
+  }
+  const rowWidth = nameWidth + gap + Math.max(valueWidth, bestWordWidth);
+  const radialPush = Math.max(16, Math.round(width * 0.024))
+    * (1 + (RADAR_BEST_RADIAL_PUSH - 1) * bestAmount);
+  // 绘制时会再沿径向推开 radialPush，安全区必须完整扣掉「半个实际行宽 + 位移」，
+  // 不能用 maxWidth 截断，否则侧边指标会被雷达子画布左/右边缘裁掉。
+  const halfWidth = rowWidth / 2 + 2 + radialPush;
   return {
-    labelLines,
     displayValue,
     labelSize,
-    valueSize: bestValueSize,
+    valueSize,
     line,
-    labelStart,
-    valueOffset,
-    bestOffset,
+    isBest,
+    bestAmount,
+    nameWidth,
+    valueWidth,
+    bestWordSize,
+    bestWordWidth,
+    bestWordOffsetY,
+    gap,
+    rowWidth,
+    aliasSize,
+    aliasOffsetY,
+    glowRadius: isBest ? valueSize * RADAR_BEST_GLOW_RADIUS * bestAmount : 0,
+    radialPush,
+    // 一个整体框：指标名 + 数值 + best + 中文别名，BEST 放大后自动把标签推得更远
     footprint: {
-      halfWidth: Math.min(maxWidth / 2, Math.max(labelWidth, valueWidth, bestWidth) / 2 + 2),
-      top: labelStart - labelSize * 0.55,
-      bottom: (bestOffset ?? valueOffset) + bestValueSize * 0.62,
+      halfWidth,
+      top: block.top - radialPush * 1.2,
+      bottom: block.bottom + radialPush * 1.2,
     },
   };
 }
@@ -586,14 +754,16 @@ export function renderRadarCanvas(
     const displayType = sourceIndex >= 0 ? labelRadar.radar.display_types[sourceIndex] : "number";
     const valueMaximum = sourceIndex >= 0 ? labelRadar.radar.max_values[sourceIndex] || 1 : 1;
     const displayedValue = props.showReferenceLabels ? valueMaximum : playerValue;
-    return metricLabelLayout(
+    return radarMetricLabelLayout(
       ctx,
       props,
       width,
       label,
       displayedValue,
       displayType,
-      Boolean(props.showBestMarkers && props.bestMetricIndexes?.includes(index)),
+      props.showBestMarkers
+        ? props.bestAmounts?.[index] ?? (props.bestMetricIndexes?.includes(index) ? 1 : 0)
+        : 0,
       axisLabelBounds(props, width, height, index, dimensions.length),
     );
   });
@@ -617,15 +787,17 @@ export function renderRadarCanvas(
       ctx.lineWidth = Math.max(1, width / 1200);
       ctx.stroke();
       if (props.highlightOuterRing) {
-      const highlightOpacity = Math.max(0, Math.min(1, props.outerRingHighlightOpacity ?? 1));
-      ctx.strokeStyle = `rgba(244,246,248,${0.9 * highlightOpacity})`;
-      ctx.lineWidth = Math.max(2, width / 480);
-      ctx.shadowColor = "rgba(244,246,248,.72)";
-      ctx.shadowBlur = Math.max(6, width / 150);
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(184,196,208,.18)";
-      ctx.lineWidth = Math.max(1, width / 1200);
-      ctx.shadowBlur = 0;
+        const highlightOpacity = Math.max(0, Math.min(1, props.outerRingHighlightOpacity ?? 1));
+        if (highlightOpacity > 0.01) {
+          ctx.save();
+          ctx.strokeStyle = `rgba(244,246,248,${0.25 * highlightOpacity})`;
+          ctx.lineWidth = Math.max(5, width / 240);
+          ctx.stroke();
+          ctx.strokeStyle = `rgba(244,246,248,${0.95 * highlightOpacity})`;
+          ctx.lineWidth = Math.max(2, width / 480);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
       ctx.restore();
     } else ctx.stroke();
@@ -659,35 +831,95 @@ export function renderRadarCanvas(
       ? props.averageOpacity ?? 1
       : props.primaryOpacity ?? 1));
     ctx.globalAlpha = (muted ? 0.2 : 1) * datasetOpacity;
-    if (focused) {
-      ctx.shadowColor = dataset.color;
-      ctx.shadowBlur = Math.max(14, width / 55);
+    if (average && props.averageGlow) {
+      const glowProgress = Math.max(0, Math.min(1, props.averageGlowProgress ?? 1));
+      if (glowProgress > 0.01) {
+        ctx.save();
+        ctx.setLineDash([]);
+
+        // 1. 内部微弱暗红呼吸面 (复刻参考图内部隐约透出的深红环境光)
+        ctx.fillStyle = `rgba(220, 38, 38, ${0.045 * glowProgress})`;
+        polygon(ctx, points);
+        ctx.fill();
+
+        // 2. 外部深红与亮红弥散光雾 (复刻参考图中深邃柔和、大范围扩散的光雾)
+        const hasNativeFilter = typeof ctx.filter === "string";
+        if (hasNativeFilter) {
+          // (a) 外围超宽深邃绯红光雾 (扩散极开，柔和无边)
+          ctx.filter = `blur(${Math.max(12, Math.round(width / 65))}px)`;
+          ctx.strokeStyle = `rgba(220, 38, 38, ${0.42 * glowProgress})`;
+          ctx.lineWidth = Math.max(6, width / 180);
+          polygon(ctx, points);
+          ctx.stroke();
+
+          // (b) 近核亮绯红光雾
+          ctx.filter = `blur(${Math.max(4, Math.round(width / 180))}px)`;
+          ctx.strokeStyle = `rgba(255, 60, 75, ${0.68 * glowProgress})`;
+          ctx.lineWidth = Math.max(3, width / 340);
+          polygon(ctx, points);
+          ctx.stroke();
+
+          ctx.filter = "none";
+        } else {
+          // 优雅降级多层弥散
+          const layers = [
+            { w: Math.max(24, width / 45), a: 0.08, c: "rgba(220, 38, 38," },
+            { w: Math.max(15, width / 75), a: 0.18, c: "rgba(235, 45, 55," },
+            { w: Math.max(8, width / 130), a: 0.35, c: "rgba(255, 60, 70," },
+            { w: Math.max(4, width / 240), a: 0.65, c: "rgba(255, 80, 95," },
+          ];
+          for (const l of layers) {
+            ctx.lineWidth = l.w;
+            ctx.strokeStyle = `${l.c}${l.a * glowProgress})`;
+            polygon(ctx, points);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
     }
     if (average && props.averageLineStyle !== "solid")
       ctx.setLineDash([Math.max(6, width / 180), Math.max(4, width / 260)]);
     polygon(ctx, points);
-    const baseFillOpacity = average ? 0 : datasets.length > 1 ? (focused ? 0.16 : 0.07) : 0.18;
+    const lineWidth = average && props.averageGlow
+      ? Math.max(1.8, width / 680)
+      : Math.max(focused ? 3.5 : 2.5, width / (focused ? 420 : 520));
+    const playerCount = datasets.reduce(
+      (count, entry) => count + (entry.id === "average" ? 0 : 1),
+      0,
+    );
     ctx.fillStyle = hexAlpha(
       dataset.color,
-      average ? 0 : baseFillOpacity * Math.max(0, Math.min(1, props.primaryFillOpacity ?? 1)),
+      radarPolygonFillOpacity(
+        { average, playerCount, focused },
+        props.primaryFillOpacity ?? 1,
+      ),
     );
-    ctx.strokeStyle = dataset.color;
-    ctx.lineWidth = Math.max(focused ? 3 : 2, width / (focused ? 480 : 650));
     ctx.fill();
+
+    // 先填充再叠发光：填充不会盖掉光晕的一半，模糊层负责真正的向外扩散
+    if (!average) {
+      const blurred = typeof ctx.filter === "string";
+      for (const layer of radarPolygonGlowLayers(lineWidth, width, blurred)) {
+        ctx.filter = layer.blur != null ? `blur(${layer.blur}px)` : "none";
+        ctx.lineWidth = layer.width;
+        ctx.strokeStyle = hexAlpha(dataset.color, layer.alpha);
+        polygon(ctx, points);
+        ctx.stroke();
+      }
+      ctx.filter = "none";
+    }
+    if (focused) {
+      ctx.shadowColor = dataset.color;
+      ctx.shadowBlur = Math.max(14, width / 55);
+    }
+
+    // 复刻参考图：发光时核心线极其纤细 (1.8px)、明亮通透，呈高亮珊瑚粉霓虹色 (#ffa088)
+    ctx.strokeStyle = average && props.averageGlow ? "#ffa088" : dataset.color;
+    ctx.lineWidth = lineWidth;
     ctx.stroke();
     ctx.setLineDash([]);
-    if (!average) points.forEach((point) => {
-      ctx.beginPath();
-      ctx.fillStyle = dataset.color;
-      ctx.arc(
-        point.x,
-        point.y,
-        Math.max(focused ? 4 : 3, width / 430),
-        0,
-        Math.PI * 2,
-      );
-      ctx.fill();
-    });
+    // 代表每项数值的点已按要求删除，保持数值线条清爽利落
     ctx.restore();
   });
 
@@ -697,49 +929,135 @@ export function renderRadarCanvas(
     const metricLabelOpacity = Math.max(0, Math.min(1, props.metricLabelOpacity ?? baseLabelOpacity));
     const valueLabelOpacity = Math.max(0, Math.min(1, props.valueLabelOpacity ?? baseLabelOpacity));
     dimensions.forEach((_, index) => {
-    const layout = labelLayouts[index];
-    const label = dimensions[index];
-    const sourceIndex = labelRadar.radar.dimensions.indexOf(label);
-    const value = sourceIndex >= 0 ? labelRadar.radar.values[sourceIndex] : null;
-    const maximum = sourceIndex >= 0 ? labelRadar.radar.max_values[sourceIndex] || 1 : 1;
-    const normalized = props.fixedLabelPlacement
-      ? 0
-      : radarNormalizedValue(props, label, value, maximum);
-    const clearance = Math.max(
-      layout.line * (layout.bestOffset != null ? 3.5 : 2.05),
-      layout.footprint.bottom - layout.footprint.top,
-      width * (props.compact ? 0.055 : 0.038),
-    );
-    const { labelDistance } = metricDistances(
-      props,
-      width,
-      height,
-      cx,
-      cy,
-      radius,
-      dimensions.length,
-      index,
-      normalized,
-      clearance,
-      layout.footprint,
-    );
-    const text = pointAt(cx, cy, dimensions.length, index, labelDistance);
-    ctx.textAlign = "center";
-    ctx.globalAlpha = metricLabelOpacity;
-    ctx.fillStyle = "#d7dde3";
-    ctx.font = `700 ${layout.labelSize}px "Noto Sans SC", system-ui`;
-    layout.labelLines.forEach((lineText, lineIndex) => {
-      ctx.fillText(lineText, text.x, text.y + layout.labelStart + lineIndex * layout.line * 0.84);
-    });
-    const isBest = layout.bestOffset != null;
-    ctx.globalAlpha = valueLabelOpacity;
-    ctx.fillStyle = isBest ? "#ffd76a" : props.labelValueColor ?? (props.showReferenceLabels ? "#f4f6f8" : valueDataset?.color ?? "#ef4444");
-    ctx.font = `700 ${layout.valueSize}px "Bangers", "Noto Sans SC", system-ui`;
-    ctx.fillText(layout.displayValue, text.x, text.y + layout.valueOffset);
-    if (isBest && layout.bestOffset != null) {
-      ctx.font = `700 ${layout.valueSize}px "Bangers", "Noto Sans SC", system-ui`;
-      ctx.fillText("BEST", text.x, text.y + layout.bestOffset);
-    }
+      const layout = labelLayouts[index];
+      const label = dimensions[index];
+      const sourceIndex = labelRadar.radar.dimensions.indexOf(label);
+      const value = sourceIndex >= 0 ? labelRadar.radar.values[sourceIndex] : null;
+      const maximum = sourceIndex >= 0 ? labelRadar.radar.max_values[sourceIndex] || 1 : 1;
+      const normalized = props.fixedLabelPlacement
+        ? 0
+        : radarNormalizedValue(props, label, value, maximum);
+      // 标签整块 (名字 + 数值 + best + 别名) 的实测高度即为与顶点之间的安全距离
+      const clearance = Math.max(
+        layout.line * 2.05,
+        layout.footprint.bottom - layout.footprint.top,
+        width * (props.compact ? 0.055 : 0.038),
+      );
+      const { labelDistance } = metricDistances(
+        props,
+        width,
+        height,
+        cx,
+        cy,
+        radius,
+        dimensions.length,
+        index,
+        normalized,
+        clearance,
+        layout.footprint,
+      );
+      const text = pointAt(cx, cy, dimensions.length, index, labelDistance);
+
+      const growth = props.metricGrowthTransforms?.[label];
+      if (growth && growth.opacity <= 0.001) return;
+
+      // 径向向外推开充足的安全呼吸间距，确保 Rating/Surviving/MultiKill/ADR 各项绝对不遮挡雷达图
+      const angle = (index * 2 * Math.PI) / dimensions.length - Math.PI / 2;
+      const radialPush = layout.radialPush;
+      const renderCenterX = text.x + Math.cos(angle) * radialPush;
+      const renderCenterY = text.y + Math.sin(angle) * (radialPush * 1.2) - (growth?.translateY ?? 0);
+
+      const itemOpacity = growth?.opacity ?? 1;
+      const row1Y = renderCenterY;
+      const chineseName = RADAR_METRIC_CHINESE_NAMES[label];
+      const valueLeft = renderCenterX - layout.rowWidth / 2 + layout.nameWidth + layout.gap;
+
+      ctx.save();
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+
+      // 1. 第一行：指标名与数值同排
+      ctx.globalAlpha = metricLabelOpacity * itemOpacity;
+      ctx.fillStyle = "#d7dde3";
+      ctx.font = `700 ${layout.labelSize}px "Noto Sans SC", system-ui`;
+      ctx.fillText(label, valueLeft - layout.gap - layout.nameWidth, row1Y);
+
+      // 2. BEST：数值放大 + 沿字形轮廓扩散的发光（不是圆形光斑）
+      ctx.globalAlpha = valueLabelOpacity * itemOpacity;
+      if (layout.bestAmount > 0.001) {
+        // BEST 切换：先画淡出的普通字形，再叠入金色字形，避免样式硬切
+        if (layout.bestAmount < 0.999) {
+          ctx.globalAlpha = valueLabelOpacity * itemOpacity * (1 - layout.bestAmount);
+          ctx.fillStyle = props.labelValueColor ?? (props.showReferenceLabels ? "#f4f6f8" : valueDataset?.color ?? "#ef4444");
+          ctx.font = radarValueFont(layout.valueSize, false);
+          ctx.fillText(layout.displayValue, valueLeft, row1Y);
+          ctx.globalAlpha = valueLabelOpacity * itemOpacity;
+        }
+        ctx.save();
+        ctx.globalAlpha *= layout.bestAmount;
+        const bestX = valueLeft - layout.valueSize * 0.02;
+        const bestY = row1Y + layout.bestWordOffsetY;
+        const bestValueFont = radarDisplayFont(layout.valueSize);
+        const bestWordFont = radarDisplayFont(layout.bestWordSize);
+        const glyphGlow = layout.glowRadius;
+        if (glyphGlow > 0.5) {
+          // 先用模糊阴影把数值与 best 本身的字形轮廓投成柔光，再叠一层贴字热芯
+          ctx.font = bestValueFont;
+          ctx.shadowColor = "rgba(255,184,72,.45)";
+          ctx.shadowBlur = glyphGlow;
+          ctx.fillStyle = "rgba(255,206,116,.5)";
+          ctx.fillText(layout.displayValue, valueLeft, row1Y);
+          ctx.font = bestWordFont;
+          ctx.fillText(RADAR_BEST_WORD, bestX, bestY);
+          ctx.font = bestValueFont;
+          ctx.shadowColor = "rgba(255,240,196,.92)";
+          ctx.shadowBlur = Math.max(2, glyphGlow * 0.32);
+          ctx.fillStyle = "rgba(255,246,220,.85)";
+          ctx.fillText(layout.displayValue, valueLeft, row1Y);
+          ctx.font = bestWordFont;
+          ctx.fillText(RADAR_BEST_WORD, bestX, bestY);
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = "transparent";
+        }
+        ctx.font = bestValueFont;
+        ctx.lineJoin = "round";
+        // 先描深金外缘、再描奶油内缘，最后填充金面渐变，得到参考图的微立体高光感
+        ctx.strokeStyle = "rgba(120,66,10,.85)";
+        ctx.lineWidth = Math.max(1, layout.valueSize * 0.05);
+        ctx.strokeText(layout.displayValue, valueLeft, row1Y);
+        ctx.strokeStyle = "rgba(255,247,224,.8)";
+        ctx.lineWidth = Math.max(0.6, layout.valueSize * 0.03);
+        ctx.strokeText(layout.displayValue, valueLeft, row1Y);
+        const face = ctx.createLinearGradient(
+          0, row1Y - layout.valueSize * 0.55,
+          0, row1Y + layout.valueSize * 0.55,
+        );
+        face.addColorStop(0, "#fff4d2");
+        face.addColorStop(0.55, "#f6c968");
+        face.addColorStop(1, "#e8a12a");
+        ctx.fillStyle = face;
+        ctx.fillText(layout.displayValue, valueLeft, row1Y);
+
+        // 小写 best 紧跟数值左下角，字号为数值的 2/3，与数值同一字体
+        ctx.fillStyle = "#f7d98a";
+        ctx.font = bestWordFont;
+        ctx.fillText(RADAR_BEST_WORD, bestX, bestY);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = props.labelValueColor ?? (props.showReferenceLabels ? "#f4f6f8" : valueDataset?.color ?? "#ef4444");
+        ctx.font = radarValueFont(layout.valueSize, false);
+        ctx.fillText(layout.displayValue, valueLeft, row1Y);
+      }
+
+      // 3. 中文别名括号标签，整行排在「指标名 + 数值/best」下方
+      if (chineseName) {
+        ctx.globalAlpha = metricLabelOpacity * itemOpacity * 0.85;
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(215, 221, 227, 0.82)";
+        ctx.font = `600 ${layout.aliasSize}px "Noto Sans SC", system-ui`;
+        ctx.fillText(`(${chineseName})`, renderCenterX, row1Y + layout.aliasOffsetY);
+      }
+      ctx.restore();
     });
     ctx.restore();
   }
@@ -774,78 +1092,6 @@ export function renderRadarCanvas(
     ctx.font = `650 ${Math.max(10, width * 0.0085)}px "Noto Sans SC", system-ui`;
     ctx.fillText("Rating 3.0 本地近似 · 非 HLTV 官方", width * 0.022, height * 0.972);
   }
-}
-
-function drawBestMarkers(
-  ctx: CanvasRenderingContext2D,
-  props: RadarCanvasProps,
-  dimensions: string[],
-  width: number,
-  height: number,
-  fontScale: number,
-) {
-  const best = (props.bestMetricIndexes ?? []).filter(
-    (index) => index >= 0 && index < dimensions.length,
-  );
-  if (!best.length) return;
-  const datasets = datasetsFor(props);
-  const highlighted = props.highlightedOverlayId
-    ? datasets.find((dataset) => dataset.id === props.highlightedOverlayId)
-    : undefined;
-  const valueDataset =
-    highlighted ??
-    datasets.find((dataset) => dataset.id !== "average") ??
-    datasets[0];
-  const count = dimensions.length;
-  const { cx, cy, radius } = geometry(props, width, height);
-  const bounds = labelBounds(props, width, height);
-  const size = Math.max(15, width * 0.022) * fontScale;
-  const half = size / 2;
-  const labelSize =
-    Math.max(12, width * (props.compact ? 0.018 : 0.012)) * fontScale;
-  const line = Math.max(14, labelSize * 1.05);
-  const clearance = Math.max(
-    line * 2.05,
-    width * (props.compact ? 0.055 : 0.038),
-  );
-  const clamp = (point: Point) => ({
-    x: Math.max(bounds.left + half, Math.min(bounds.right - half, point.x)),
-    y: Math.max(bounds.top + half, Math.min(bounds.bottom - half, point.y)),
-  });
-  ctx.save();
-  ctx.fillStyle = "#ffd76a";
-  ctx.shadowColor = "#ffd76a";
-  ctx.shadowBlur = Math.max(10, width / 55);
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "center";
-  ctx.font = `400 ${size}px "Bangers", "Noto Sans SC", system-ui`;
-  best.forEach((index) => {
-    const dimension = dimensions[index] ?? "";
-    const sourceIndex = valueDataset?.radar.radar.dimensions.indexOf(dimension) ?? -1;
-    const value = sourceIndex >= 0 ? valueDataset?.radar.radar.values[sourceIndex] : null;
-    const maximum = sourceIndex >= 0 ? valueDataset?.radar.radar.max_values[sourceIndex] || 1 : 1;
-    const normalized = radarNormalizedValue(props, dimension, value, maximum);
-    const { labelDistance } = metricDistances(
-      props,
-      width,
-      height,
-      cx,
-      cy,
-      radius,
-      count,
-      index,
-      normalized,
-      clearance,
-    );
-    const text = pointAt(cx, cy, count, index, labelDistance);
-    const isBottom = index === Math.floor(count / 2);
-    const point = clamp({
-      x: isBottom ? text.x + Math.max(size * 1.5, line * 2) : text.x,
-      y: isBottom ? text.y + line * 0.65 : text.y + line * 2,
-    });
-    ctx.fillText("BEST", point.x, point.y);
-  });
-  ctx.restore();
 }
 
 function drawOverlayLegend(
@@ -1005,6 +1251,8 @@ export function renderSwingCanvas(
   overflowLimit?: number | null,
   metricLabelFontSize?: number,
   targetCanvas?: HTMLCanvasElement | OffscreenCanvas,
+  displayFillValue?: number | null,
+  valueFontScale?: number,
 ) {
   const canvas = targetCanvas ?? createRadarCanvas(width, height);
   if (canvas.width !== width) canvas.width = width;
@@ -1016,9 +1264,16 @@ export function renderSwingCanvas(
   if (stage === "player" && value == null) return canvas;
   const centerX = width / 2;
   const trackHalfWidth = halfWidth ?? width * 0.3;
-  const trackHeight = roundSwingTrackHeight(height, 2.25);
+  // Round Swing 赛道条高度增加 50%
+  const trackHeight = Math.round(roundSwingTrackHeight(height, 2.25, fontScale) * 1.5);
   const y = height * 0.5 - trackHeight / 2;
-  const fontSize = metricLabelFontSize ?? Math.max(12, width * 0.012) * fontScale;
+  const fontSize = metricLabelFontSize != null
+    ? metricLabelFontSize * fontScale
+    : Math.max(12, width * 0.012) * fontScale;
+  const isReferenceStage = stage === "reference";
+  // 只有阶段三调大数值字号，其余时间字号调整为正常大小
+  const valMultiplier = valueFontScale ?? (isReferenceStage ? RADAR_VALUE_FONT_SCALE : 1);
+  const valFontSize = fontSize * valMultiplier;
   const averageValue = average?.radar.round_swing;
   const effectiveOverflowLimit = Math.max(
     ROUND_SWING_TRACK_LIMIT,
@@ -1028,47 +1283,76 @@ export function renderSwingCanvas(
   );
   const overflowHalfWidth = Math.max(
     trackHalfWidth,
-    width / 2 - Math.max(6, width * 0.03),
+    width / 2 - Math.max(6 * fontScale, width * 0.03),
   );
+  const isAverageStage = stage === "average";
+  const isReferenceFill = isReferenceStage;
+  const isAverageFill = isAverageStage && averageValue != null && Number.isFinite(averageValue);
+
+  let activeFillValue = (value ?? 0);
+  if (isReferenceFill) {
+    activeFillValue = displayFillValue ?? 5;
+  } else if (isAverageFill) {
+    activeFillValue = averageValue * Math.max(0, Math.min(1, playerFillOpacity));
+  }
+  const positive = activeFillValue >= 0;
   const barWidth = roundSwingBarDistance(
-    value ?? 0,
+    activeFillValue,
     trackHalfWidth,
     overflowHalfWidth,
     effectiveOverflowLimit,
   );
-  const positive = (value ?? 0) >= 0;
   const color = positive ? "#35d07f" : "#f05252";
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, appearance));
-  ctx.fillStyle = "rgba(255,255,255,.1)";
-  ctx.beginPath();
-  ctx.roundRect(centerX - trackHalfWidth, y, trackHalfWidth * 2, trackHeight, trackHeight / 2);
-  ctx.fill();
-  if ((stage === "player" || stage === "outro") && dataset && barWidth > 1) {
+
+  // 条内数值块 (直角矩形，阶段二生长到平均线位置，阶段三生长到 +5% 位置)
+  if ((((stage === "player" || stage === "outro") && dataset) || isAverageFill || isReferenceFill) && barWidth > 1) {
     const barX = positive ? centerX : centerX - barWidth;
     const gradient = ctx.createLinearGradient(barX, y, barX + (positive ? barWidth : -barWidth), y);
-    gradient.addColorStop(0, `${color}88`);
-    gradient.addColorStop(1, color);
+    if (isReferenceFill) {
+      if (positive) {
+        // 数值块为+值时，颜色为绿色而不是白色
+        gradient.addColorStop(0, "rgba(53, 208, 127, 0.28)");
+        gradient.addColorStop(0.75, "rgba(53, 208, 127, 0.72)");
+        gradient.addColorStop(1, "rgba(53, 208, 127, 0.95)");
+      } else {
+        gradient.addColorStop(0, "rgba(240, 82, 82, 0.28)");
+        gradient.addColorStop(0.75, "rgba(240, 82, 82, 0.72)");
+        gradient.addColorStop(1, "rgba(240, 82, 82, 0.95)");
+      }
+    } else {
+      const barColor = isAverageFill ? averageLineColor : color;
+      gradient.addColorStop(0, `${barColor}66`);
+      gradient.addColorStop(1, barColor);
+    }
     ctx.save();
-    ctx.globalAlpha *= Math.max(0, Math.min(1, playerFillOpacity));
+    ctx.globalAlpha *= Math.max(0, Math.min(1, isReferenceFill ? 1 : playerFillOpacity));
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    const radius = Math.min((trackHeight - 4) / 2, barWidth / 2);
-    ctx.roundRect(
+    const barPad = Math.max(1, Math.round(1.5 * fontScale));
+    ctx.rect(
       barX,
-      y + 2,
+      y + barPad,
       barWidth,
-      trackHeight - 4,
-      roundSwingBarRadii(positive, radius),
+      Math.max(1, trackHeight - barPad * 2),
     );
     ctx.fill();
+
+    // 阶段三端点边缘垂直高亮线 (+值时为亮绿)
+    if (isReferenceFill) {
+      ctx.fillStyle = positive ? "#5efca8" : "#f05252";
+      ctx.fillRect(positive ? barX + barWidth - 1 : barX, y, 2, trackHeight);
+    }
     ctx.restore();
   }
-  if (stage !== "empty") {
-    ctx.fillStyle = "rgba(255,255,255,.72)";
-    ctx.fillRect(centerX - 1, y - 4, 2, trackHeight + 8);
-  }
-  if ((stage === "average" || stage === "outro" || stage === "player") && averageValue != null && Number.isFinite(averageValue)) {
+
+  // 中心点 0 点的白色线 (任何阶段均呈现，包括入场阶段)
+  ctx.fillStyle = "rgba(255,255,255,.85)";
+  const centerLineW = Math.max(1, Math.round(2 * fontScale));
+  const centerLineOver = Math.max(2, Math.round(4 * fontScale));
+  ctx.fillRect(centerX - centerLineW / 2, y - centerLineOver, centerLineW, trackHeight + centerLineOver * 2);
+  if (averageValue != null && Number.isFinite(averageValue)) {
     const averageDistance = roundSwingBarDistance(
       averageValue,
       trackHalfWidth,
@@ -1076,40 +1360,76 @@ export function renderSwingCanvas(
       effectiveOverflowLimit,
     );
     const averageX = centerX + (averageValue < 0 ? -averageDistance : averageDistance);
+    const avgLineOver = Math.max(3, Math.round(7 * fontScale));
     ctx.save();
     ctx.globalAlpha *= Math.max(0, Math.min(1, averageLineOpacity));
     ctx.strokeStyle = averageLineColor;
-    ctx.lineWidth = Math.max(3, width / 500);
+    ctx.lineWidth = Math.max(2, Math.round(3 * fontScale));
     ctx.beginPath();
-    ctx.moveTo(averageX, y - 7);
-    ctx.lineTo(averageX, y + trackHeight + 7);
+    ctx.moveTo(averageX, y - avgLineOver);
+    ctx.lineTo(averageX, y + trackHeight + avgLineOver);
     ctx.stroke();
     ctx.restore();
   }
   const shownValue = displayValue ?? ((stage === "average" || stage === "outro") ? averageValue : value);
-  if ((stage === "average" || stage === "outro" || stage === "player") && shownValue != null) {
+  if ((stage === "average" || stage === "reference" || stage === "outro" || stage === "player") && (shownValue != null || isReferenceStage)) {
+    const titleText = "Round Swing";
+    const valText = isReferenceStage ? "+5%" : formatRoundSwing(shownValue ?? 0);
+    const titleFont = `700 ${fontSize}px "Noto Sans SC", system-ui`;
+    // 与雷达图数值字号严格保持一致
+    const valFont = `750 ${valFontSize}px "Noto Sans SC", system-ui`;
+    const gap = Math.max(8, Math.round(fontSize * 0.45));
+
+    const titleW = measureCachedText(ctx, titleText, titleFont);
+    const valW = measureCachedText(ctx, valText, valFont);
+    const totalRowW = titleW + gap + valW;
+
+    const row1Y = y + trackHeight + Math.max(6, fontSize * 0.4);
+    const row1StartX = centerX - totalRowW / 2;
+
+    // 1. 同行第一行：左侧为 "Round Swing"，右边紧接着数值文字
     ctx.save();
-    ctx.font = `700 ${fontSize}px "Noto Sans SC", system-ui`;
+    ctx.textBaseline = "top";
+
+    // 标题文字 (颜色用六项文字同样的颜色 #d7dde3)
     ctx.textAlign = "left";
-    ctx.globalAlpha *= Math.max(0, Math.min(1, textOpacity));
-    ctx.fillStyle = stage === "average" ? averageLineColor : dataset?.color ?? averageLineColor;
-    ctx.fillText("Round Swing", centerX - trackHalfWidth, y - fontSize * 0.75);
-    ctx.textAlign = "right";
+    ctx.globalAlpha = Math.max(0, Math.min(1, textOpacity));
+    ctx.fillStyle = "#d7dde3";
+    ctx.font = titleFont;
+    ctx.fillText(titleText, row1StartX, row1Y);
+
+    // 数值文字 (在同一行的右边)
     ctx.globalAlpha = Math.max(0, Math.min(1, appearance)) * Math.max(0, Math.min(1, valueOpacity));
-    ctx.fillStyle = displayValueColor ?? (stage === "average" ? averageLineColor : color);
-    ctx.font = `750 ${fontSize}px ui-monospace, monospace`;
-    ctx.fillText(formatRoundSwing(shownValue), centerX + trackHalfWidth, y - fontSize * 0.75);
+    ctx.fillStyle = isReferenceStage
+      ? (displayValueColor ?? "#f4f6f8")
+      : (displayValueColor ?? (stage === "average" ? averageLineColor : color));
+    ctx.font = valFont;
+    ctx.fillText(valText, row1StartX + titleW + gap, row1Y);
+    ctx.restore();
+
+    // 2. 底部用括号居中显示 "(回合影响)"
+    ctx.save();
+    const row2Y = row1Y + fontSize * 1.16;
+    const subFontSize = Math.max(9, Math.round(fontSize * 0.76));
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.globalAlpha = Math.max(0, Math.min(1, textOpacity)) * 0.85;
+    ctx.fillStyle = "rgba(215, 221, 227, 0.85)";
+    ctx.font = `600 ${subFontSize}px "Noto Sans SC", system-ui`;
+    ctx.fillText("(回合影响)", centerX, row2Y);
     ctx.restore();
   }
-  if (referenceLabelOpacity > 0) {
+  if (referenceLabelOpacity > 0 && !isReferenceStage) {
     ctx.save();
     ctx.globalAlpha *= Math.max(0, Math.min(1, referenceLabelOpacity));
-    ctx.font = `650 ${Math.max(10, fontSize * .78)}px "Noto Sans SC", system-ui`;
+    const refFontSize = Math.max(8 * fontScale, fontSize * .78);
+    ctx.font = `650 ${refFontSize}px "Noto Sans SC", system-ui`;
     ctx.fillStyle = "rgba(244,246,248,.92)";
+    ctx.textBaseline = "top";
     ctx.textAlign = "left";
-    ctx.fillText("-5%", centerX - trackHalfWidth, y + trackHeight + fontSize * 1.05);
+    ctx.fillText("-5%", centerX - trackHalfWidth, y + trackHeight + Math.max(5, fontSize * 0.4));
     ctx.textAlign = "right";
-    ctx.fillText("+5%", centerX + trackHalfWidth, y + trackHeight + fontSize * 1.05);
+    ctx.fillText("+5%", centerX + trackHalfWidth, y + trackHeight + Math.max(5, fontSize * 0.4));
     ctx.restore();
   }
   ctx.restore();

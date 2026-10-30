@@ -635,10 +635,18 @@ public DemoAnalysis GetDemoAnalysisFromFile(string path)
         if (err != null) throw AppErrors.New(err, AppErrors.StatusInternal);
     }
 
-    public string BeginVideoExport(int width, int height, int fps, int durationMS, int audioOffsetMS, string suggestedName)
+    public string BeginVideoExport(int width, int height, int fps, int durationMS, int audioOffsetMS, string suggestedName, double audioVolumePercent = 100)
     {
         var ffmpegPath = DetectFFmpeg();
-        var request = new VideoExportRequest { Width = width, Height = height, FPS = fps, DurationMS = durationMS, AudioOffsetMS = audioOffsetMS };
+        var request = new VideoExportRequest
+        {
+            Width = width,
+            Height = height,
+            FPS = fps,
+            DurationMS = durationMS,
+            AudioOffsetMS = audioOffsetMS,
+            AudioVolume = audioVolumePercent,
+        };
         var validateErr = ShowcaseVideo.Validate(request);
         if (validateErr != null) throw AppErrors.New(validateErr, AppErrors.StatusBadRequest);
         if (!suggestedName.ToLowerInvariant().EndsWith(".mp4")) suggestedName += ".mp4";

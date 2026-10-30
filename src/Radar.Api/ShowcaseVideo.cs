@@ -10,6 +10,7 @@ public class VideoExportRequest
     public int FPS { get; set; }
     public int DurationMS { get; set; }
     public int AudioOffsetMS { get; set; }
+    public double AudioVolume { get; set; } = 100;
 }
 
 /// <summary>
@@ -69,6 +70,8 @@ public static class ShowcaseVideo
             return "invalid_showcase_video";
         if (request.AudioOffsetMS < -MaxShowcaseAudioOffsetMS || request.AudioOffsetMS > MaxShowcaseAudioOffsetMS)
             return "invalid_showcase_video";
+        if (!double.IsFinite(request.AudioVolume))
+            return "invalid_showcase_video";
         return null;
     }
 
@@ -83,12 +86,14 @@ public static class ShowcaseVideo
         return Convert.FromBase64String(raw.Substring(prefix.Length));
     }
 
-    public static string AudioFilter(int offsetMS, double durationSeconds)
+    public static string AudioFilter(int offsetMS, double durationSeconds, double audioVolumePercent)
     {
         var duration = durationSeconds.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
-        if (offsetMS > 0) return $"[1:a]adelay={offsetMS}:all=1,atrim=duration={duration},asetpts=N/SR/TB[a]";
-        if (offsetMS < 0) return $"[1:a]atrim=start={((double)-offsetMS / 1000).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS,atrim=duration={duration}[a]";
-        return $"[1:a]atrim=duration={duration},asetpts=PTS-STARTPTS[a]";
+        var volume = (audioVolumePercent / 100.0).ToString("0.################", System.Globalization.CultureInfo.InvariantCulture);
+        var level = $"volume={volume},";
+        if (offsetMS > 0) return $"[1:a]{level}adelay={offsetMS}:all=1,atrim=duration={duration},asetpts=N/SR/TB[a]";
+        if (offsetMS < 0) return $"[1:a]{level}atrim=start={((double)-offsetMS / 1000).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS,atrim=duration={duration}[a]";
+        return $"[1:a]{level}atrim=duration={duration},asetpts=PTS-STARTPTS[a]";
     }
 
     /// <summary>
@@ -113,7 +118,7 @@ public static class ShowcaseVideo
             args.Add("-i");
             args.Add(musicPath);
             args.Add("-filter_complex");
-            args.Add(AudioFilter(request.AudioOffsetMS, request.DurationMS / 1000.0));
+            args.Add(AudioFilter(request.AudioOffsetMS, request.DurationMS / 1000.0, request.AudioVolume));
             args.Add("-map");
             args.Add("0:v:0");
             args.Add("-map");

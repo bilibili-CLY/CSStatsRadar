@@ -225,7 +225,7 @@ public class BridgeServer
     GetShowcaseMusic: function(){ return post('GetShowcaseMusic'); },
     GetShowcaseMusicInfo: function(){ return post('GetShowcaseMusicInfo'); },
     ClearShowcaseMusic: function(){ return post('ClearShowcaseMusic'); },
-    BeginVideoExport: function(w,h,fps,dur,offset,name){ return post('BeginVideoExport',[w,h,fps,dur,offset,name]); },
+    BeginVideoExport: function(w,h,fps,dur,offset,name,volume){ return post('BeginVideoExport',[w,h,fps,dur,offset,name,volume]); },
     AppendVideoFrames: function(id,start,frames){ return post('AppendVideoFrames',[id,start,frames]); },
     FinishVideoExport: function(id){ return post('FinishVideoExport',[id]); },
     CancelVideoExport: function(id){ return post('CancelVideoExport',[id]); }

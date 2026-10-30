@@ -62,6 +62,7 @@ export function ImportView({ followedSteamIDs }: Props) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const jobIdRef = useRef("");
   const finalizedJobs = useRef(new Set<string>());
@@ -317,7 +318,7 @@ export function ImportView({ followedSteamIDs }: Props) {
             选择文件
           </button>
           <button
-            className="primary import-scan-button"
+            className="primary-cyan import-scan-button"
             onClick={() => start()}
             disabled={!sources.length || running}
           >
@@ -416,9 +417,37 @@ export function ImportView({ followedSteamIDs }: Props) {
         </div>
       </section>
 
-      {summary && <section className="import-task-summary card" aria-label="本次导入结果">
-        <div><strong>本次任务</strong><span>{summary.processed}/{summary.total} 已处理</span></div>
-        <div className="catalog-stats"><span>新增 <strong>{summary.imported}</strong></span><span>重复 <strong>{summary.duplicates}</strong></span><span className={summary.failed ? "danger-text" : ""}>失败 <strong>{summary.failed}</strong></span></div>
+      {summary && (
+        <section className="import-task-summary card" aria-label="本次导入结果">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+            <div>
+              <strong>本次任务</strong>
+              <span>
+                {summary.processed}/{summary.total} 已处理
+              </span>
+            </div>
+            <div className="catalog-stats">
+              <span>
+                新增 <strong>{summary.imported}</strong>
+              </span>
+              <span>
+                重复 <strong>{summary.duplicates}</strong>
+              </span>
+              <span className={summary.failed ? "danger-text" : ""}>
+                失败 <strong>{summary.failed}</strong>
+              </span>
+            </div>
+            {!running && (summary.imported > 0 || summary.processed > 0) && (
+              <button
+                type="button"
+                className="primary-cyan"
+                style={{ marginLeft: "auto", fontSize: "12px", padding: "6px 14px" }}
+                onClick={() => navigate("/library")}
+              >
+                导入完成 · 前往资料库选材制作轮播 ➔
+              </button>
+            )}
+          </div>
 
         {running && summary && (
           <div className="import-progress-panel">
@@ -440,11 +469,26 @@ export function ImportView({ followedSteamIDs }: Props) {
         )}
 
         {!!visibleItems.filter((item) => item.status !== "imported").length && <div className="import-task-items">{visibleItems.filter((item) => item.status !== "imported").map((item) => <ImportTaskCard item={item} key={item.path} onOpen={() => { setSelected(new Set()); setActiveItem(item); }}/>)}</div>}
-      </section>}
+      </section>)}
 
-      <section className="demo-catalog" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const paths = Array.from(event.dataTransfer.files).map((file) => (file as File & { path?: string }).path).filter(Boolean) as string[]; if (paths.length) start(paths); }}>
+      <section
+        className={`demo-catalog ${isDragging ? "drag-over" : ""}`}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setIsDragging(false);
+          const paths = Array.from(event.dataTransfer.files)
+            .map((file) => (file as File & { path?: string }).path)
+            .filter(Boolean) as string[];
+          if (paths.length) start(paths);
+        }}
+      >
         <div className="demo-catalog-heading"><div><h2>比赛目录</h2><p>成功解析的 Demo 会跨页面和重启保留。</p></div><div className="catalog-bulk-actions"><label><input type="checkbox" checked={visibleDemos.length > 0 && visibleDemos.every((demo) => selectedDemos.has(demo.demo_record_id))} onChange={(event) => setSelectedDemos(event.target.checked ? new Set(visibleDemos.map((demo) => demo.demo_record_id)) : new Set())}/>全选当前</label><button className="danger-action" disabled={!selectedDemos.size || deleting} onClick={() => setPendingDelete(Array.from(selectedDemos))}><Trash2 size={15}/>删除所选 ({selectedDemos.size})</button></div></div>
-	        <div className="demo-catalog-content">{visibleDemos.length ? <div className={`demo-record-grid ${viewMode}`}>{visibleDemos.map((demo) => <DemoCard key={demo.demo_record_id} demo={demo} variant="catalog" selected={selectedDemos.has(demo.demo_record_id)} onSelected={(checked) => setSelectedDemos((current) => { const next = new Set(current); checked ? next.add(demo.demo_record_id) : next.delete(demo.demo_record_id); return next; })} editableNote onSavedNote={refreshDemos} footer={<><button onClick={() => { setSelected(new Set()); setActiveDemo(demo); }}>玩家</button><button onClick={() => navigate(`/analysis/${demo.demo_record_id}`)}><Play size={15}/>{demo.analysis_ready ? "分析" : "打开时补解析"}</button><button className="icon-button danger-action" aria-label={`删除 ${demo.file_name}`} onClick={() => setPendingDelete([demo.demo_record_id])}><Trash2 size={15}/></button></>}/>)}</div> : <div className="demo-empty-state"><span><UploadCloud size={29}/></span><h2>{demos.length ? "没有符合当前筛选的 Demo" : "还没有比赛记录"}</h2><p>{demos.length ? "调整文件名、来源或状态筛选后再试。" : "添加素材目录并扫描，或将 DEM / ZIP 文件拖到此处。"}</p>{!demos.length && <div><button className="primary" onClick={chooseFiles}><FileUp size={16}/>选择文件</button><button className="quiet" onClick={addSource}><FolderPlus size={16}/>添加目录</button></div>}</div>}</div>
+	        <div className="demo-catalog-content">{visibleDemos.length ? <div className={`demo-record-grid ${viewMode}`}>{visibleDemos.map((demo) => <DemoCard key={demo.demo_record_id} demo={demo} variant="catalog" selected={selectedDemos.has(demo.demo_record_id)} onSelected={(checked) => setSelectedDemos((current) => { const next = new Set(current); checked ? next.add(demo.demo_record_id) : next.delete(demo.demo_record_id); return next; })} editableNote onSavedNote={refreshDemos} footer={<><button onClick={() => { setSelected(new Set()); setActiveDemo(demo); }}>玩家</button><button onClick={() => navigate(`/analysis/${demo.demo_record_id}`)}><Play size={15}/>{demo.analysis_ready ? "分析" : "打开时补解析"}</button><button className="icon-button danger-action" aria-label={`删除 ${demo.file_name}`} onClick={() => setPendingDelete([demo.demo_record_id])}><Trash2 size={15}/></button></>}/>)}</div> : <div className="demo-empty-state"><span><UploadCloud size={29}/></span><h2>{demos.length ? "没有符合当前筛选的 Demo" : "战术素材投递机舱"}</h2><p>{demos.length ? "调整文件名、来源或状态筛选后再试。" : "直接拖入多个 .dem 或 .zip 压缩包至此处，或选择文件批量导入并解析。"}</p>{!demos.length && <div style={{ display: "flex", gap: "10px" }}><button className="primary-cyan" onClick={chooseFiles}><FileUp size={16}/>批量选择文件</button><button className="quiet" onClick={addSource}><FolderPlus size={16}/>添加 Demo 目录</button></div>}</div>}</div>
 	        <footer className="catalog-footer"><span>显示 {visibleDemos.length} / {demos.length} 个 Demo</span></footer>
       </section>
 

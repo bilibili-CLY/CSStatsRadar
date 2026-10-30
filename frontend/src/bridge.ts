@@ -212,6 +212,7 @@ export const bridge = {
     durationMs: number,
     audioOffsetMs: number,
     name: string,
+    audioVolume: number,
   ) =>
     call<string>(
       "BeginVideoExport",
@@ -221,6 +222,7 @@ export const bridge = {
       durationMs,
       audioOffsetMs,
       name,
+      audioVolume,
     ),
   appendVideoFrames: (id: string, start: number, frames: string[]) =>
     call<void>("AppendVideoFrames", id, start, frames),

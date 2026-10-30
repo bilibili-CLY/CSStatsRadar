@@ -1,29 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   CalendarClock,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
   Eraser,
   Layers3,
+  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
   Search,
+  Shield,
+  Square,
   Star,
   StarOff,
   Trash2,
+  Users,
   Video,
   X,
 } from "lucide-react";
 import { bridge } from "../../bridge";
 import { BusyMessage, Spinner } from "../../components/Busy";
 import { PlayerAvatarView, applyAvatar } from "../../components/PlayerAvatar";
+import { Field } from "../../components/ui";
 import { useAppStore } from "../../stores/appStore";
 import { useStudioStore } from "../../stores/studioStore";
 import { saveSeedToDraft, studioToastLabels } from "../studio/draftMutations";
 import type {
   MatchGroup,
   MatchRecord,
+  PlayerTeam,
   SavedPlayer,
   StudioKind,
   StudioSeed,
@@ -39,6 +47,7 @@ import {
 } from "./selection";
 
 export function LibraryView() {
+  const navigate = useNavigate();
   const players = useAppStore((state) => state.players);
   const refreshPlayers = useAppStore((state) => state.refreshPlayers);
   const [search, setSearch] = useState("");
@@ -69,6 +78,37 @@ export function LibraryView() {
     x: number;
     y: number;
   } | null>(null);
+
+  // 战队管理与多选状态
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(new Set());
+  const [teams, setTeams] = useState<PlayerTeam[]>(() => {
+    try {
+      const saved = localStorage.getItem("cs_radar_player_teams");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const saveTeams = (nextTeams: PlayerTeam[]) => {
+    setTeams(nextTeams);
+    try {
+      localStorage.setItem("cs_radar_player_teams", JSON.stringify(nextTeams));
+    } catch {}
+  };
+  const [teamDialogOpen, setTeamDialogOpen] = useState(false);
+  const [teamNameInput, setTeamNameInput] = useState("");
+  const [teamLogoInput, setTeamLogoInput] = useState("");
+  const teamLogoFileInputRef = useRef<HTMLInputElement>(null);
+
+  const teamPlayerMap = useMemo(() => {
+    const map = new Map<string, PlayerTeam>();
+    for (const team of teams) {
+      for (const steamId of team.playerSteamIds) {
+        map.set(steamId, team);
+      }
+    }
+    return map;
+  }, [teams]);
   const visiblePlayers = useMemo(
     () =>
       sortPlayers(players
@@ -111,6 +151,33 @@ export function LibraryView() {
       : mode === "recent"
         ? recentMatchIDs(filtered, recentN)
         : Array.from(chosen);
+
+  const playerStatsSummary = useMemo(() => {
+    if (!matches.length) return null;
+    let totalKills = 0;
+    let totalDeaths = 0;
+    let totalAdr = 0;
+    let totalRating = 0;
+    let count = 0;
+    for (const m of matches) {
+      if (m.kills != null) totalKills += m.kills;
+      if (m.deaths != null) totalDeaths += m.deaths;
+      if (m.adr != null) totalAdr += m.adr;
+      if (m.rating != null) {
+        totalRating += m.rating;
+        count++;
+      }
+    }
+    const kd = totalDeaths > 0 ? (totalKills / totalDeaths).toFixed(2) : (totalKills > 0 ? totalKills.toFixed(2) : "—");
+    const avgAdr = matches.length > 0 ? (totalAdr / matches.length).toFixed(1) : "—";
+    const avgRating = count > 0 ? (totalRating / count).toFixed(2) : "—";
+    return {
+      totalMatches: matches.length,
+      kd,
+      avgAdr,
+      avgRating,
+    };
+  }, [matches]);
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
@@ -168,14 +235,48 @@ export function LibraryView() {
       setBusyAction("");
     }
   }
-  async function addAllToShowcase() {
-    const targets = playersWithStats(sortPlayers(players, playerSort));
-    if (!targets.length) return;
+  function handleSaveTeam() {
+    const name = teamNameInput.trim();
+    if (!name) return;
+    const playerIds = Array.from(selectedPlayerIds);
+    if (!playerIds.length && selected) playerIds.push(selected.steam_id);
+    if (!playerIds.length) return;
+
+    // 清除选定玩家在其他战队的旧关联，避免重复
+    const nextTeams = teams
+      .map((t) => ({
+        ...t,
+        playerSteamIds: t.playerSteamIds.filter((id) => !playerIds.includes(id)),
+      }))
+      .filter((t) => t.playerSteamIds.length > 0);
+
+    const newTeam: PlayerTeam = {
+      id: `team_${Date.now()}`,
+      name,
+      logoUrl: teamLogoInput.trim() || undefined,
+      playerSteamIds: playerIds,
+    };
+    nextTeams.push(newTeam);
+    saveTeams(nextTeams);
+    setTeamDialogOpen(false);
+    setSelectedPlayerIds(new Set());
+    setTeamNameInput("");
+    setTeamLogoInput("");
+    useAppStore.getState().showToast(`已成功将 ${playerIds.length} 名玩家编入战队 [${name}]`);
+  }
+
+  async function addTeamToShowcase(team: PlayerTeam) {
+    const memberPlayers = players.filter((p) => team.playerSteamIds.includes(p.steam_id));
+    const targets = playersWithStats(memberPlayers);
+    if (!targets.length) {
+      useAppStore.getState().showToast(`战队 [${team.name}] 成员暂无比赛统计`);
+      return;
+    }
     const failures: string[] = [];
     let completed = 0;
     let lastSeed: StudioSeed | null = null;
     try {
-      setBusyAction("studio:showcase-all");
+      setBusyAction(`team:showcase:${team.id}`);
       setError("");
       setBulkProgress({ processed: 0, total: targets.length });
       for (const [index, player] of targets.entries()) {
@@ -185,7 +286,9 @@ export function LibraryView() {
           if (!matchIds.length) continue;
           const radar = await bridge.buildRadar(player.steam_id, matchIds);
           const seed: StudioSeed = { player, matchIds, radar };
-          await saveSeedToDraft("showcase", seed, useAppStore.getState().config);
+          await saveSeedToDraft("showcase", seed, useAppStore.getState().config, {
+            teamLogoUrl: team.logoUrl,
+          });
           lastSeed = seed;
           completed += 1;
         } catch {
@@ -195,10 +298,63 @@ export function LibraryView() {
       }
       if (lastSeed) useStudioStore.getState().setSeed(lastSeed);
       if (completed)
+        useAppStore.getState().showToast(`战队 [${team.name}] 已整体加入轮播（${completed} 人）`);
+      if (failures.length)
+        setError(`未能加入轮播：${failures.join("、")}`);
+    } finally {
+      setBusyAction("");
+      setBulkProgress(null);
+    }
+  }
+
+  async function addAllToShowcase() {
+    const targets = playersWithStats(sortPlayers(players, playerSort));
+    if (!targets.length) return;
+
+    // 播放队列以战队为一组进行排序：同一战队的玩家排在一起，未分组的玩家排在最后
+    const sortedTargets = [...targets].sort((a, b) => {
+      const teamA = teamPlayerMap.get(a.steam_id);
+      const teamB = teamPlayerMap.get(b.steam_id);
+      if (teamA && teamB) {
+        if (teamA.id === teamB.id) return 0;
+        return teamA.name.localeCompare(teamB.name);
+      }
+      if (teamA) return -1;
+      if (teamB) return 1;
+      return 0;
+    });
+
+    const failures: string[] = [];
+    let completed = 0;
+    let lastSeed: StudioSeed | null = null;
+    try {
+      setBusyAction("studio:showcase-all");
+      setError("");
+      setBulkProgress({ processed: 0, total: sortedTargets.length });
+      for (const [index, player] of sortedTargets.entries()) {
+        try {
+          const playerMatches = await bridge.getMatches(player.steam_id);
+          const matchIds = playerMatches.map((match) => match.demo_record_id);
+          if (!matchIds.length) continue;
+          const radar = await bridge.buildRadar(player.steam_id, matchIds);
+          const seed: StudioSeed = { player, matchIds, radar };
+          const playerTeam = teamPlayerMap.get(player.steam_id);
+          await saveSeedToDraft("showcase", seed, useAppStore.getState().config, {
+            teamLogoUrl: playerTeam?.logoUrl,
+          });
+          lastSeed = seed;
+          completed += 1;
+        } catch {
+          failures.push(player.name);
+        }
+        setBulkProgress({ processed: index + 1, total: sortedTargets.length });
+      }
+      if (lastSeed) useStudioStore.getState().setSeed(lastSeed);
+      if (completed)
         useAppStore.getState().showToast(
           failures.length
             ? `已加入轮播：${completed} 名玩家；${failures.length} 名未完成`
-            : `已加入轮播：${completed} 名玩家`,
+            : `已加入轮播：${completed} 名玩家（已按战队分组）`,
         );
       if (failures.length)
         setError(`未能加入轮播：${failures.join("、")}`);
@@ -538,15 +694,16 @@ export function LibraryView() {
             <span>已保存玩家</span>
           </div>
           <button
-            className="quiet"
+            className="primary-cyan"
             onClick={addAllToShowcase}
             disabled={!playersWithStats(players).length || Boolean(busyAction)}
-            aria-label="将所有有比赛统计的玩家加入轮播"
+            aria-label="将所有有比赛统计的玩家一键批量加入轮播"
+            title="一键提取全部玩家的战绩生成轮播雷达"
           >
             {busyAction === "studio:showcase-all" ? <Spinner /> : <Video size={17} />}
             {busyAction === "studio:showcase-all"
               ? `正在加入 ${bulkProgress?.processed ?? 0}/${bulkProgress?.total ?? 0}`
-              : "全部加入轮播"}
+              : "全部选手一键加入轮播"}
           </button>
           <button
             className="quiet"
@@ -582,31 +739,133 @@ export function LibraryView() {
               <option value="match_count_desc">场次降序</option>
             </select>
           </label>
+          {selectedPlayerIds.size > 0 && (
+            <div style={{ margin: "6px 0 10px 0", padding: "8px 10px", background: "rgba(34,211,238,0.08)", border: "1px solid rgba(34,211,238,0.2)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--cyan)" }}>
+                已选 {selectedPlayerIds.size} 人
+              </span>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button
+                  className="primary-cyan"
+                  style={{ height: "24px", fontSize: "11px", padding: "0 8px" }}
+                  onClick={() => {
+                    setTeamNameInput("");
+                    setTeamLogoInput("");
+                    setTeamDialogOpen(true);
+                  }}
+                >
+                  <Shield size={12} /> 编为战队
+                </button>
+                <button
+                  className="quiet"
+                  style={{ height: "24px", fontSize: "11px", padding: "0 6px" }}
+                  onClick={() => setSelectedPlayerIds(new Set())}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          )}
           <div className="player-list">
-            {visiblePlayers.map((player) => (
-              <button
-                key={player.steam_id}
-                className={`player-item ${selected?.steam_id === player.steam_id ? "active" : ""}`}
-                onClick={() => setSelected(player)}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  setMenu({ player, x: event.clientX, y: event.clientY });
-                }}
-              >
-                <PlayerAvatarView name={player.name} steamId={player.steam_id}/>
-                <span>
-                  <strong>{player.name}</strong>
-                  <small>
-                    {player.match_count} 场 ·{" "}
-                    {player.followed ? "已关注" : "未关注"}
-                  </small>
-                </span>
-                {player.followed && (
-                  <Star size={15} className="followed-icon" />
-                )}
-                <ChevronRight size={16} />
-              </button>
-            ))}
+            {visiblePlayers.map((player) => {
+              const playerTeam = teamPlayerMap.get(player.steam_id);
+              const isChecked = selectedPlayerIds.has(player.steam_id);
+              return (
+                <div
+                  key={player.steam_id}
+                  role="button"
+                  tabIndex={0}
+                  className={`player-item ${selected?.steam_id === player.steam_id ? "active" : ""}`}
+                  onClick={() => setSelected(player)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelected(player);
+                    }
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setMenu({ player, x: event.clientX, y: event.clientY });
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="icon-button"
+                    style={{ width: "20px", height: "20px", padding: 0, marginRight: "4px", opacity: isChecked ? 1 : 0.35 }}
+                    title={isChecked ? "取消勾选" : "勾选玩家"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedPlayerIds((curr) => {
+                        const next = new Set(curr);
+                        if (next.has(player.steam_id)) next.delete(player.steam_id);
+                        else next.add(player.steam_id);
+                        return next;
+                      });
+                    }}
+                  >
+                    {isChecked ? <CheckSquare size={16} color="var(--cyan)" /> : <Square size={16} />}
+                  </button>
+                  <PlayerAvatarView name={player.name} steamId={player.steam_id}/>
+                  <span className="player-item-meta">
+                    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <strong>{player.name}</strong>
+                      {playerTeam && (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "3px",
+                            fontSize: "10px",
+                            padding: "1px 5px",
+                            borderRadius: "4px",
+                            background: "rgba(34,211,238,0.12)",
+                            color: "var(--cyan)",
+                            fontWeight: 600,
+                          }}
+                          title={`所属战队: ${playerTeam.name}`}
+                        >
+                          {playerTeam.logoUrl && (
+                            <img src={playerTeam.logoUrl} alt="" style={{ width: "12px", height: "12px", objectFit: "contain" }} />
+                          )}
+                          {playerTeam.name}
+                        </span>
+                      )}
+                    </span>
+                    <small>
+                      {player.match_count} 场 ·{" "}
+                      {player.followed ? "已关注" : "未关注"}
+                    </small>
+                  </span>
+                <div className="player-item-actions">
+                  <button
+                    type="button"
+                    className={`icon-button star-toggle-btn ${player.followed ? "starred" : ""}`}
+                    title={player.followed ? "取消关注" : "设为关注"}
+                    aria-label={player.followed ? "取消关注" : "设为关注"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void toggleFollow(player);
+                    }}
+                  >
+                    <Star size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button more-toggle-btn"
+                    title="更多操作（重命名/刷新头像/删除）"
+                    aria-label="更多操作"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setMenu({ player, x: rect.right + 2, y: rect.top });
+                    }}
+                  >
+                    <MoreHorizontal size={14} />
+                  </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </aside>
         <main className="card match-browser">
@@ -638,11 +897,31 @@ export function LibraryView() {
                   ) : (
                     <>
                       <Star size={16} />
-                      关注玩家
+                      关注选手
                     </>
                   )}
                 </button>
               </div>
+              {playerStatsSummary && (
+                <div className="player-stats-summary-grid">
+                  <div className="summary-stat-chip">
+                    <span className="stat-label">已导入比赛</span>
+                    <strong className="stat-value">{playerStatsSummary.totalMatches} 场</strong>
+                  </div>
+                  <div className="summary-stat-chip">
+                    <span className="stat-label">场均 Rating</span>
+                    <strong className="stat-value accent-cyan">{playerStatsSummary.avgRating}</strong>
+                  </div>
+                  <div className="summary-stat-chip">
+                    <span className="stat-label">场均 ADR</span>
+                    <strong className="stat-value">{playerStatsSummary.avgAdr}</strong>
+                  </div>
+                  <div className="summary-stat-chip">
+                    <span className="stat-label">生涯 K/D</span>
+                    <strong className="stat-value">{playerStatsSummary.kd}</strong>
+                  </div>
+                </div>
+              )}
               <div className="filter-toolbar">
                 <div className="segmented">
                   <button
@@ -700,6 +979,38 @@ export function LibraryView() {
                     <option key={map}>{map}</option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  className="quiet"
+                  style={{
+                    borderColor:
+                      chosen.size === filtered.length && filtered.length > 0
+                        ? "var(--cyan)"
+                        : "var(--border)",
+                    color:
+                      chosen.size === filtered.length && filtered.length > 0
+                        ? "var(--cyan)"
+                        : "var(--text)",
+                    fontSize: "12px",
+                    padding: "4px 10px",
+                    minHeight: "32px",
+                  }}
+                  onClick={() => {
+                    setMode("custom");
+                    if (chosen.size === filtered.length && filtered.length > 0) {
+                      setChosen(new Set());
+                    } else {
+                      setChosen(
+                        new Set(filtered.map((m) => m.demo_record_id)),
+                      );
+                    }
+                  }}
+                  title="一键选中当前筛选的所有比赛记录"
+                >
+                  {chosen.size === filtered.length && filtered.length > 0
+                    ? "清空全选"
+                    : `全选全部 ${filtered.length} 场`}
+                </button>
               </div>
               {groupView === "grouped" && (
                 <div className="group-toolbar">
@@ -1026,15 +1337,31 @@ export function LibraryView() {
                   {busyAction === "studio:overlay" ? "加入中" : "加入叠图"}
                 </button>
                 <button
+                  className="primary-cyan"
                   onClick={() => create("showcase")}
                   disabled={!activeIds.length || Boolean(busyAction)}
+                  title="为当前选手将已选比赛生成雷达并加入轮播工坊"
                 >
                   {busyAction === "studio:showcase" ? (
                     <Spinner />
                   ) : (
                     <Video size={17} />
                   )}
-                  {busyAction === "studio:showcase" ? "加入中" : "加入轮播"}
+                  {busyAction === "studio:showcase" ? "正在装载…" : "装载至轮播"}
+                </button>
+                <button
+                  type="button"
+                  className="quiet"
+                  style={{
+                    borderColor: "rgba(34, 211, 238, 0.35)",
+                    background: "rgba(34, 211, 238, 0.08)",
+                    color: "var(--cyan)",
+                    fontWeight: 700,
+                  }}
+                  onClick={() => navigate("/studio")}
+                  title="立即前往轮播工坊预览、排版并导出视频"
+                >
+                  <span>前往轮播工坊 ➔</span>
                 </button>
               </div>
               <button className="text-danger-button" onClick={deletePlayerData}>
@@ -1072,6 +1399,66 @@ export function LibraryView() {
             )}
             {menu.player.followed ? "取消关注" : "关注"}
           </button>
+          {(() => {
+            const playerTeam = teamPlayerMap.get(menu.player.steam_id);
+            return (
+              <>
+                {playerTeam ? (
+                  <>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMenu(null);
+                        void addTeamToShowcase(playerTeam);
+                      }}
+                    >
+                      <Video size={15} />
+                      {playerTeam.name} 整体加入轮播
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMenu(null);
+                        const nextTeams = teams
+                          .map((t) =>
+                            t.id === playerTeam.id
+                              ? {
+                                  ...t,
+                                  playerSteamIds: t.playerSteamIds.filter(
+                                    (id) => id !== menu.player.steam_id,
+                                  ),
+                                }
+                              : t,
+                          )
+                          .filter((t) => t.playerSteamIds.length > 0);
+                        saveTeams(nextTeams);
+                        useAppStore
+                          .getState()
+                          .showToast(`玩家已退出战队 [${playerTeam.name}]`);
+                      }}
+                    >
+                      <X size={15} />
+                      退出战队
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setSelectedPlayerIds(new Set([menu.player.steam_id]));
+                      setTeamNameInput("");
+                      setTeamLogoInput("");
+                      setTeamDialogOpen(true);
+                      setMenu(null);
+                    }}
+                  >
+                    <Shield size={15} />
+                    编为战队
+                  </button>
+                )}
+              </>
+            );
+          })()}
           <button
             role="menuitem"
             onClick={() => refreshAvatarFromMenu(menu.player)}
@@ -1096,6 +1483,115 @@ export function LibraryView() {
             <Trash2 size={15} />
             删除资历
           </button>
+        </div>
+      )}
+      {teamDialogOpen && (
+        <div className="modal-backdrop" onClick={() => setTeamDialogOpen(false)}>
+          <div
+            className="modal-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "420px", maxWidth: "90vw" }}
+          >
+            <h2 style={{ fontSize: "16px", marginBottom: "6px" }}>编为战队</h2>
+            <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "16px" }}>
+              为选中的 {selectedPlayerIds.size || 1} 名玩家创建或关联战队。加入轮播时可整体加入或按战队分组。
+            </p>
+            <div style={{ display: "grid", gap: "14px", marginBottom: "18px" }}>
+              <Field label="战队名称">
+                <input
+                  placeholder="例如 NAVI / FaZe / Team Spirit"
+                  value={teamNameInput}
+                  onChange={(e) => setTeamNameInput(e.target.value)}
+                  autoFocus
+                />
+              </Field>
+              <Field label="战队 Logo">
+                <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                  {teamLogoInput ? (
+                    <img
+                      src={teamLogoInput}
+                      alt="战队Logo"
+                      style={{
+                        width: "48px",
+                        height: "48px",
+                        objectFit: "contain",
+                        background: "rgba(0,0,0,0.35)",
+                        borderRadius: "8px",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: "48px",
+                        height: "48px",
+                        background: "rgba(255,255,255,0.05)",
+                        borderRadius: "8px",
+                        border: "1px dashed rgba(255,255,255,0.2)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "11px",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      无Logo
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="quiet"
+                    onClick={() => teamLogoFileInputRef.current?.click()}
+                  >
+                    {teamLogoInput ? "更换Logo" : "上传图片"}
+                  </button>
+                  {teamLogoInput && (
+                    <button
+                      type="button"
+                      className="danger-action"
+                      onClick={() => setTeamLogoInput("")}
+                    >
+                      清除
+                    </button>
+                  )}
+                </div>
+                <input
+                  ref={teamLogoFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      setTeamLogoInput(reader.result as string);
+                      if (teamLogoFileInputRef.current)
+                        teamLogoFileInputRef.current.value = "";
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </Field>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+              <button
+                type="button"
+                className="quiet"
+                onClick={() => setTeamDialogOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="primary-cyan"
+                onClick={handleSaveTeam}
+                disabled={!teamNameInput.trim()}
+              >
+                确认保存战队
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

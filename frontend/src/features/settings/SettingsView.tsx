@@ -352,7 +352,7 @@ export function SettingsView() {
                   })
                 }
               />
-              <span>播放轮播开场动画（6 秒）</span>
+              <span>播放轮播开场动画（8 秒）</span>
             </label>
             <label className="check-row">
               <input
@@ -551,6 +551,34 @@ export function SettingsView() {
                 }
               />
             </label>
+            {draft.team_tags && draft.team_tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean).length > 0 && (
+              <div className="tag-list" style={{ marginTop: "2px", marginBottom: "6px" }}>
+                {draft.team_tags
+                  .split(/[,，]/)
+                  .map((t) => t.trim())
+                  .filter(Boolean)
+                  .map((tag, i) => (
+                    <span key={i} className="team-tag-chip">
+                      {tag}
+                      <button
+                        type="button"
+                        className="tag-remove-btn"
+                        title="移除此前缀"
+                        onClick={() => {
+                          const tags = (draft.team_tags ?? "")
+                            .split(/[,，]/)
+                            .map((t) => t.trim())
+                            .filter(Boolean);
+                          tags.splice(i, 1);
+                          setDraft({ ...draft, team_tags: tags.join(", ") });
+                        }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+              </div>
+            )}
             <p className="field-note">
               完美平台 demo 会把玩家名记为「战队名 玩家名」。逗号分隔的战队名会在导入时自动去掉；
               同一场比赛中重复出现的前缀也会被自动识别。

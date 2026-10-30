@@ -205,6 +205,13 @@ export interface PlayerMedia {
   background_url?: string;
 }
 
+export interface PlayerTeam {
+  id: string;
+  name: string;
+  logoUrl?: string;
+  playerSteamIds: string[];
+}
+
 export interface ShowcaseSlide {
   id: string;
   radar: RadarResponse;
@@ -215,7 +222,56 @@ export interface ShowcaseSlide {
   imageUrl?: string;
   avatarUrl?: string;
   backgroundUrl?: string;
-  imageTransform?: { x: number; y: number; scale?: number };
+  teamLogoUrl?: string;
+  teamLogoTransform?: { x: number; y: number; scale?: number };
+}
+
+export interface ShowcaseIntroStageDurations {
+  matchInfo: number;
+  empty: number;
+  reference: number;
+  average: number;
+  outro?: number;
+}
+
+export interface ShowcaseTextElement {
+  id: string;
+  type: "text";
+  content: string;
+  x: number;
+  y: number;
+  fontSize?: number;
+  color?: string;
+  align?: "left" | "center" | "right";
+  fontWeight?: "normal" | "bold" | "800";
+}
+
+export interface ShowcaseImageElement {
+  id: string;
+  type: "image";
+  url: string;
+  x: number;
+  y: number;
+  scale?: number;
+  width?: number;
+  height?: number;
+}
+
+export type ShowcaseElement = ShowcaseTextElement | ShowcaseImageElement;
+
+export interface ShowcaseDataPanelJellyParams {
+  expandProgress: number; // 膨胀至 100% 尺寸所占的时间比例 (0.1 ~ 0.5)
+  decay: number;          // 阻尼衰减系数 (1.0 ~ 8.0)
+  cycles: number;         // 振荡半波数 / 频率 (2.0 ~ 10.0)
+  ampW: number;           // 宽度果冻过冲幅度 (0.05 ~ 0.80)
+  ampH: number;           // 高度果冻挤压幅度 (0.05 ~ 0.60)
+}
+
+export interface ShowcaseIntroConfig {
+  stages: ShowcaseIntroStageDurations;
+  elements: ShowcaseElement[];
+  blackFadeIn?: boolean;
+  jellyParams?: ShowcaseDataPanelJellyParams;
 }
 
 export interface ShowcaseLayoutDraft {
@@ -228,12 +284,23 @@ export interface ShowcaseLayoutDraft {
   titleX: number;
   titleY: number;
   titleScale: number;
+  titleColor?: string;
+  titleFontSize?: number;
   subtitleX: number;
   subtitleY: number;
   subtitleScale: number;
+  subtitleColor?: string;
+  subtitleFontSize?: number;
+  subtitlePreset?: "gold" | "silver" | "bronze" | "white" | "custom";
+  subtitleBold?: boolean;
+  subtitleItalic?: boolean;
+  subtitleGlow?: boolean;
   imageX: number;
   imageY: number;
   imageScale: number;
+  teamLogoX?: number;
+  teamLogoY?: number;
+  teamLogoScale?: number;
   metricLabelFontSize: number;
   swingX: number;
   swingY: number;
@@ -242,6 +309,18 @@ export interface ShowcaseLayoutDraft {
   layers: string[];
   nameAlign: "left" | "center" | "right";
   imageFit: "contain" | "cover";
+}
+
+export interface ShowcaseDraft {
+  slides: ShowcaseSlide[];
+  active: number;
+  layout: ShowcaseLayoutDraft;
+  fps: number;
+  width: number;
+  height: number;
+  audioOffsetMs?: number;
+  audioVolume?: number;
+  intro?: ShowcaseIntroConfig;
 }
 
 export interface PlayerAvatar {

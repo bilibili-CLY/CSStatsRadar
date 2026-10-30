@@ -5,13 +5,15 @@ import type { StudioKind } from "../../types";
 import { OverlayEditor } from "./OverlayEditor";
 import { RadarEditor } from "./RadarEditor";
 import { ShowcaseEditor } from "./ShowcaseEditor";
+import { NewShowcaseView } from "./NewShowcaseView";
 
-const studioKinds: StudioKind[] = ["radar", "overlay", "showcase"];
+export type StudioTab = StudioKind | "new-showcase";
+const studioTabs: StudioTab[] = ["radar", "overlay", "showcase", "new-showcase"];
 
 export function StudioView() {
   const { kind: kindParam } = useParams();
-  const kind: StudioKind = (studioKinds as string[]).includes(kindParam ?? "")
-    ? (kindParam as StudioKind)
+  const kind: StudioTab = (studioTabs as string[]).includes(kindParam ?? "")
+    ? (kindParam as StudioTab)
     : "radar";
   const seed = useStudioStore((state) => state.seed);
   const config = useAppStore((state) => state.config);
@@ -43,7 +45,13 @@ export function StudioView() {
             className={kind === "showcase" ? "active" : ""}
             onClick={() => navigate("/studio/showcase")}
           >
-            展示轮播
+            轮播
+          </button>
+          <button
+            className={kind === "new-showcase" ? "active" : ""}
+            onClick={() => navigate("/studio/new-showcase")}
+          >
+            新轮播
           </button>
         </div>
       </header>
@@ -70,7 +78,8 @@ export function StudioView() {
           onNeedMaterial={onNeedMaterial}
           onShowMethodology={onShowMethodology}
         />
-      )}
+      )}{" "}
+      {kind === "new-showcase" && <NewShowcaseView />}
     </div>
   );
 }

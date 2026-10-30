@@ -66,6 +66,11 @@ export default function App() {
     void bootstrap();
   }, [bootstrap]);
 
+  useEffect(() => {
+    // BEST 数值用 Playfair Display 斜体：资料库/叠图雷达不走 Showcase 的字体校验，先预热避免首帧回退
+    void document.fonts?.load('italic 900 32px "Playfair Display"');
+  }, []);
+
   if (bootError && !bootstrapped)
     return (
       <div className="boot-screen">
@@ -116,11 +121,14 @@ export default function App() {
             <Database size={15} />
             <span>
               <strong>本地资料库</strong>
-              <small>{players.length} 名玩家</small>
+              <small>{players.length} 名选手 · 离线存储</small>
             </span>
-            <i />
+            <i title="数据桥梁与分析服务正常运行" />
           </div>
-          <p>离线运行 · 数据保存在本机</p>
+          <div className="sidebar-version-badge">
+            <span>CS2 Radar Studio</span>
+            <small>v2.4.0</small>
+          </div>
         </div>
       </aside>
       <main id="main-content" className="app-content" tabIndex={-1}>
