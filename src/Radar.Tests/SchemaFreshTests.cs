@@ -11,7 +11,7 @@ namespace Radar.Tests;
 /// </summary>
 public class SchemaFreshTests
 {
-    private const string DemoPath = "/Users/cly/Documents/CSPlayerStatsRadar/doc/perfect-world.dem";
+    private const string DemoPath = "/Users/cly/Desktop/CSPlayerStatsRadar/doc/perfect-world.dem";
 
     [Fact]
     public void Init_Creates_All_Tables_With_Expected_Columns()

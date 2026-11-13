@@ -39,6 +39,7 @@ public static class Program
         Log($"frontend: {frontendDir}");
 
         var app = new DesktopApp(configPath, dbPath);
+        app.SetLogHandler(Log);
         var bridge = new BridgeServer(app, frontendDir);
         bridge.OnShutdownRequested = () => ShutdownSignal.Set();
         bridge.Start();

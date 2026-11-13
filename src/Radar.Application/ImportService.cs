@@ -14,6 +14,7 @@ public class ImportService
     private readonly object jobsLock = new();
     private readonly Dictionary<string, ImportJob> jobs = new();
     private Action<ImportSummary>? onProgress;
+    private Action<string>? log;
 
     private class ImportJob
     {
@@ -31,6 +32,14 @@ public class ImportService
     }
 
     public void SetProgressHandler(Action<ImportSummary> handler) => onProgress = handler;
+
+    public void SetLogHandler(Action<string> handler) => log = handler;
+
+    private void LogImportFailure(string path, Exception ex)
+    {
+        try { log?.Invoke($"导入失败 {path}: {ex}"); }
+        catch { /* 日志失败不影响导入 */ }
+    }
 
     public static (List<string>? Paths, string? Error) ScanSourcePaths(List<ImportSource> sources)
     {
@@ -107,6 +116,7 @@ public class ImportService
                             Status = "failed",
                             Message = "导入异常：" + ex.Message,
                         };
+                        LogImportFailure(path, ex);
                     }
                     lock (job.Lock)
                     {
@@ -206,10 +216,15 @@ public class ImportService
             {
                 parseResult = parseDemo(demoPath);
             }
-            catch
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 result.Status = "failed";
-                result.Message = "解析失败。";
+                result.Message = string.IsNullOrWhiteSpace(ex.Message) ? "解析失败。" : ex.Message;
+                LogImportFailure(path, ex);
                 return result;
             }
             var data = parseResult.Demo;

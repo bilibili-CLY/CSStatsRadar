@@ -10,8 +10,8 @@ namespace Radar.Tests;
 
 public class LiveEndToEndTests
 {
-    private const string DemoPath = "/Users/cly/Documents/CSPlayerStatsRadar/doc/perfect-world.dem";
-    private const string FrontendDir = "/Users/cly/Documents/CSPlayerStatsRadar/frontend/dist";
+    private const string DemoPath = "/Users/cly/Desktop/CSPlayerStatsRadar/doc/perfect-world.dem";
+    private const string FrontendDir = "/Users/cly/Desktop/CSPlayerStatsRadar/frontend/dist";
 
     private static string TestDataPath(string name) => Path.Combine(AppContext.BaseDirectory, "TestData", name);
 

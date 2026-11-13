@@ -26,6 +26,7 @@ var app = new DesktopApp(configPath, dbPath);
 // 安装包所在的盘（例如 E:\），而历史 config.json 里可能留着 E:\xxx.db，
 // 旧实现据此推导数据目录会把日志写到盘根。
 var dataDir = AppPaths.DataDir();
+app.SetLogHandler(Log);
 var recoveryMarker = Path.Combine(dataDir, "recovery-required.json");
 var cleanShutdown = false;
 AppDomain.CurrentDomain.ProcessExit += (_, _) =>

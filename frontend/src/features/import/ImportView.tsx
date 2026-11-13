@@ -650,7 +650,7 @@ function ImportTaskCard({ item, onOpen }: { item: ImportItem; onOpen: () => void
         </span>
         <span>保存 {item.saved_count} 名</span>
       </span>
-      <span className="demo-card-description">
+      <span className="demo-card-description" title={item.message || undefined}>
         {item.message ||
           (success ? "解析完成，关注玩家数据已写入资料库。" : "文件已处理。")}
       </span>

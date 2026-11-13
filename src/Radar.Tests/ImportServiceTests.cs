@@ -9,7 +9,7 @@ namespace Radar.Tests;
 
 public class ImportServiceTests
 {
-    private const string DemoPath = "/Users/cly/Documents/CSPlayerStatsRadar/doc/perfect-world.dem";
+    private const string DemoPath = "/Users/cly/Desktop/CSPlayerStatsRadar/doc/perfect-world.dem";
 
     private static string TestDataPath(string name) => Path.Combine(AppContext.BaseDirectory, "TestData", name);
 
@@ -282,6 +282,36 @@ public class ImportServiceTests
             Assert.Equal(0, summary.Duplicates);
             Assert.All(summary.Items, item => Assert.Equal("imported", item.Status));
             Assert.Single(app.ListDemos());
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void Failed_Parse_Surfaces_Real_Error_And_Logs_It()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            var badDemo = Path.Combine(dir, "broken.dem");
+            File.WriteAllText(badDemo, "this is not a demo file");
+            using var app = new DesktopApp(Path.Combine(dir, "config.json"), Path.Combine(dir, "test.db"));
+            var logged = new List<string>();
+            app.SetLogHandler(line => { lock (logged) logged.Add(line); });
+
+            var jobID = app.StartFileImport(new List<string> { badDemo });
+            var summary = WaitForJob(app, jobID);
+
+            Assert.Equal("completed", summary.Status);
+            Assert.Equal(1, summary.Failed);
+            var item = summary.Items[0];
+            Assert.Equal("failed", item.Status);
+            Assert.Contains("Demo 解析失败", item.Message);
+            Assert.NotEqual("解析失败。", item.Message);
+            lock (logged)
+                Assert.Contains(logged, line => line.Contains("broken.dem") && line.Contains("Demo 解析失败"));
         }
         finally
         {

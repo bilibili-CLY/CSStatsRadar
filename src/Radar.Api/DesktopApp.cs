@@ -34,6 +34,8 @@ public class DesktopApp : IDisposable
 
     public void Shutdown() => repo.Close();
 
+    public void SetLogHandler(Action<string> handler) => imports.SetLogHandler(handler);
+
     public void Dispose()
     {
         Shutdown();
